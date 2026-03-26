@@ -118,7 +118,7 @@ Epic tracking:
 
 ## Current Priorities
 
-1. `P-020` Seed the rewrite database with sample user, installation, tariff, and reading data for local development.
+1. `P-020` Seed the database with sample user, installation, tariff, and reading data for local development.
 2. `P-021` Build the first server-side read path in `apps/web` that exercises billing domain logic against stored data.
 3. `Q-008` Add seed-backed integration coverage for that first billing slice.
 4. `Q-010` Define and enforce PR rules for the rewrite branch, including the conventional PR naming expectations we want to keep.
