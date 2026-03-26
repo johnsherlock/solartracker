@@ -1,0 +1,125 @@
+{
+  "name": "pv-manager",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "@testing-library/jest-dom": "^5.16.5",
+    "@testing-library/react": "^13.4.0",
+    "@testing-library/user-event": "^13.5.0",
+    "@types/jest": "^27.5.2",
+    "@types/node": "^16.18.12",
+    "@types/react": "^18.0.27",
+    "@types/react-datepicker": "^4",
+    "@types/react-dom": "^18.0.10",
+    "@aws-sdk/client-dynamodb": "^3.321.1",
+    "@aws-sdk/client-lambda": "^3.321.1",
+    "@aws-sdk/client-s3": "^3.321.1",
+    "@mhoc/axios-digest-auth": "^0.8.0",
+    "@types/cors": "^2.8.13",
+    "@types/express": "^4.17.16",
+    "async": "^3.2.4",
+    "aws-sdk": "^2.1366.0",
+    "axios": "^1",
+    "bootstrap": "^5.2.3",
+    "bootswatch": "^5",
+    "chart.js": "^4",
+    "chartjs-adapter-moment": "^1.0.1",
+    "husky": "^8.0.3",
+    "lint-staged": "^13.1.1",
+    "moment": "^2.29.4",
+    "prettier": "^2.8.4",
+    "react": "^18.2.0",
+    "react-bootstrap": "^2.7.2",
+    "react-chartjs-2": "^5",
+    "react-datepicker": "^4",
+    "react-dom": "^18.2.0",
+    "react-scripts": "^5.0.1",
+    "react-swipe": "^6.0.4",
+    "react-swipeable": "^7.0.0",
+    "swipe-js-iso": "^2.1.5",
+    "swipejs": "^2.3.1",
+    "typescript": "^4.9.5",
+    "visibilityjs": "^2.0.2",
+    "web-vitals": "^2.1.4",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "luxon": "^3.3.0",
+    "nodemailer": "^6.9.1"
+  },
+  "devDependencies": {
+    "@types/react-swipe": "^6.0.2",
+    "eslint-config-airbnb": "^19.0.4",
+    "eslint-config-airbnb-typescript": "^17.0.0",
+    "eslint-config-prettier": "^8.6.0",
+    "eslint-plugin-jsx-a11y": "^6.7.1",
+    "eslint-plugin-prettier": "^4.2.1",
+    "husky": "^8.0.3",
+    "jest-canvas-mock": "^2.4.0",
+    "prettier": "^2.8.3",
+    "ts-node": "^10.9.1",
+    "@types/async": "^3.2.20",
+    "@types/luxon": "^3.2.0",
+    "@types/nodemailer": "^6.4.7"
+  },
+  "lint-staged": {
+    "{app,tools,acceptance,public}/**/*.{t,j}s{,x}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "app/**/*.scss": [
+      "stylelint --fix"
+    ]
+  },
+  "jest": {
+    "resetMocks": false,
+    "collectCoverageFrom": [
+      "app/**/*.{j,t}s{,x}",
+      "!app/index.ts"
+    ],
+    "transform": {
+      "\\.(js|ts|jsx|tsx)$": "babel-jest",
+      "\\.(jpg|jpeg|png|gif|ico|eot|otf|webp|svg|ttf|woff|woff2|mp4|webm|wav|mp3|m4a|aac|oga|webmanifest|xml)$": "<rootDir>/jest/fileTransformer.js"
+    },
+    "transformIgnorePatterns": [
+      "node_modules/(?!axios)"
+    ],
+    "moduleNameMapper": {
+      "\\.(css|sass)$": "identity-obj-proxy"
+    }
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "watch": "tsc -w",
+    "test": "react-scripts test --coverage",
+    "test:watch": "npm run test -- --watchAll",
+    "lint": "eslint '{app,tools,acceptance,shared,back-end,public}/**/*.{t,j}s{,x}' && stylelint 'app/**/*.{,s}css'",
+    "lint:fix": "eslint --fix '{app,tools,acceptance,shared,back-end,public}/**/*.{t,j}s{,x}' && stylelint --fix 'app/**/*.{,s}css'",
+    "pre-commit": "lint-staged",
+    "prepare": "husky install",
+    "jestrunner.jestCommand": "npm run test --"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged"
+    }
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}

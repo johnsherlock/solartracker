@@ -1,0 +1,137 @@
+# Solar Stats Delivery Backlog
+
+This backlog is the working delivery tracker for the rewrite. It should be updated as work is completed or as discoveries introduce new items.
+
+Execution discipline:
+
+- Pull one active story at a time into `In Progress`.
+- Every active story must have explicit acceptance criteria before implementation starts.
+- Prefer finishing a vertical slice with verification and commit history before starting the next story.
+- Keep "Current Priorities" short and map them to concrete backlog items wherever possible.
+
+Status values:
+
+- `Todo`
+- `In Progress`
+- `Blocked`
+- `Done`
+- `Deferred`
+
+Epic tracking:
+
+- When all active items in an epic are complete for the intended phase, mark the epic section heading with `Done`.
+- Do not mark an epic done just because discovery notes exist; it should reflect meaningful completion of the scoped work.
+- When GitHub Issues are adopted for execution, keep this Markdown file as the roadmap view and link issue IDs back into the relevant backlog items.
+
+## Phase 1: Discovery and Product Definition `Done`
+
+| ID | Epic | Title | Objective | Acceptance Criteria | Dependencies | Status | Notes / Discoveries |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| D-001 | Discovery | Write product brief | Capture the product goal, target users, success criteria, and non-goals. | `docs/product-brief.md` exists and reflects the rewrite direction. | None | Done | Seeded from planning discussion. |
+| D-002 | Discovery | Write use-case inventory | Capture the user questions and major product flows the new app must support. | `docs/use-cases.md` exists with core stories and acceptance notes. | D-001 | Done | Seeded from planning discussion and current-app audit. |
+| D-003 | Discovery | Audit current app features | Capture current live-app behaviors and codebase features as reference material only. | Current feature set is summarized and gaps are noted for the rewrite. | None | Done | Live browser audit completed; current app remains reference only. |
+| D-004 | Discovery | Gather financial evidence | Collect bills, tariff docs, and sample datasets for validation. | Source files are available in an agreed location and referenced from docs. | None | Done | Initial Energia bills and supplier CSV exports are present under `sample data/` and referenced from the calculation spec. |
+| D-005 | Discovery | Define success metrics | Decide how we will judge the rewrite for product quality and correctness. | Product and engineering success metrics are documented. | D-001 | Done | Included in the product brief. |
+| D-006 | Discovery | Define privacy expectations | Capture beta-user privacy, deletion, and operator-access expectations before implementation starts. | Privacy requirements are documented and reflected in architecture and backlog. | D-001 | Done | Seeded from user feedback on privacy and trust. |
+
+## Phase 2: Financial Model and Validation `In Progress`
+
+| ID | Epic | Title | Objective | Acceptance Criteria | Dependencies | Status | Notes / Discoveries |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| F-001 | Financial Model | Create calculation spec | Turn product intent and current known rules into an explicit working spec. | `docs/calculation-spec.md` exists with known logic, open decisions, and required evidence. | D-001, D-002 | Done | Must be revised when bills and sample data arrive. |
+| F-002 | Financial Model | Define "saving" | Decide what counts as savings and how it is presented. | Savings definition is written and approved in the calculation spec. | F-001, D-004 | Done | Savings now defaults to `withoutSolar.netCost - actual.netCost`, with export value still shown separately. |
+| F-003 | Financial Model | Define no-solar baseline | Decide how the counterfactual bill is modeled. | Baseline logic is written with examples and edge cases. | F-001, D-004 | Done | Default now uses actual household demand as the baseline load shape rather than supplier import totals. |
+| F-004 | Financial Model | Define export treatment | Decide whether export offsets import directly or is shown separately. | Export treatment is documented and testable. | F-001, D-004 | Done | Export is modeled as a separate credit line that rolls into net bill impact rather than negative import. |
+| F-005 | Financial Model | Define fixed-charge handling | Validate standing charge, PSO, VAT, discount, and bill-period rules. | Fixed charges and tax treatment are documented with examples. | F-001, D-004 | Done | Fixed charges now default to date-ranged tariff properties present in both scenarios; remaining work is evidence validation, not rules definition. |
+| F-006 | Financial Model | Define tariff versioning rules | Model plan changes across time without breaking history. | Date-ranged tariff rules are documented and examples span a plan change. | F-001 | Done | Tariff and fixed-charge versions now resolve at sub-billing-period granularity; Sept-Oct 2025 remains the key validation case. |
+| F-007 | Financial Model | Build golden fixtures | Turn bills and sample datasets into repeatable validation fixtures. | Fixture set exists with expected outputs for multiple periods. | D-004, F-002, F-003, F-004, F-005 | Todo | Use anonymized or reduced samples where possible. |
+| F-008 | Financial Model | Define supplier-vs-solar reconciliation rules | Decide how supplier interval evidence and MyEnergi telemetry are compared when validating bills and usage models during development. | Reconciliation approach is documented, including expected mismatches and what source is authoritative for each validation use case. | D-004, F-007 | Done | Reconciliation is now defined as internal validation only, with supplier bills as authority and CSV/MyEnergi comparisons used for diagnostics. |
+| F-009 | Financial Model | Define tariff validity versus contract dates | Separate tariff validity windows from contract end dates and define how reminders and recalculation should work. | The model distinguishes tariff validity from contract dates and supports retrospective correction. | F-006 | Done | Tariff validity now drives calculations, while contract dates remain reminder metadata only. |
+
+## Phase 3: Data Model and Platform
+
+| ID | Epic | Title | Objective | Acceptance Criteria | Dependencies | Status | Notes / Discoveries |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| P-001 | Data Model | Choose final stack | Confirm the new runtime, hosting, auth, database, and job strategy. | `docs/architecture.md` reflects final chosen stack and rationale. | D-001, D-002 | Done | Architecture now records the current stack choice as Next.js + Supabase + Postgres + scheduled jobs. |
+| P-002 | Data Model | Define domain entities | Specify `User`, `Installation`, `TariffPlan`, `TariffPlanVersion`, `EnergyReading`, `DailySummary`, and `BillingComparison`. | Architecture doc includes entity responsibilities and relationships. | P-001, F-006 | Done | Architecture now defines entity responsibilities plus first-pass supporting entities like fixed-charge versions and contract reminders. |
+| P-003 | Data Model | Define ingestion workflow | Describe scheduled import, normalization, summary generation, and health tracking. | Architecture doc includes ingestion and query flow. | P-001 | Done | Initial workflow documented. |
+| P-004 | Data Model | Define local-dev approach | Ensure the new app can run locally without deployed Lambdas. | Local-dev expectations are documented in architecture notes. | P-001 | Done | Included in architecture doc. |
+| P-005 | Data Model | Design persistence schema | Translate domain entities into relational schema and migration plan. | Schema proposal exists with tables, keys, and constraints. | P-002, F-006 | Done | Architecture now includes a first-pass Postgres schema proposal, relationships, and migration sequence. |
+| P-006 | Deployment / Operations | Centralize job execution and logs | Keep scheduled jobs, app runtime, and operational visibility within one coherent platform surface where possible. | Job strategy and logging approach are documented and avoid split-brain operations. | P-001, P-003 | Todo | Avoid dispersing logs across GitHub and hosting if beta scale grows to 100 users. |
+| P-007 | Auth / Multi-user | Design privacy and deletion model | Ensure account deletion, data removal, and least-privilege access are first-class in the schema and architecture. | Deletion, retention, and access-control requirements are documented and mapped to entities. | D-006, P-002 | Done | Architecture now defines ownership boundaries, deletion workflow, retention defaults, and least-privilege access expectations. |
+| P-008 | Ingestion | Define canonical energy model | Create a provider-agnostic internal reading format so core logic is insulated from MyEnergi-specific payloads. | Canonical reading fields and adapter boundary are documented and reflected in schema design. | P-002, P-003 | Done | Canonical reading fields and tariff-local-time assumptions are now documented in architecture and reflected in the proposed schema. |
+| P-009 | Ingestion | Design provider adapter contract | Define how provider-specific import code maps raw payloads into canonical readings. | Adapter responsibilities and input/output contract are documented. | P-008 | Done | Architecture now defines adapter responsibilities, I/O shape, timezone handling, and MyEnergi-first assumptions without leaking provider schema into core logic. |
+| P-010 | Data Model | Keep validation evidence outside the runtime ingestion model | Ensure supplier CSV and bill evidence can inform validation without becoming a product ingestion path or runtime dependency. | Architecture and schema keep runtime product data centered on provider telemetry and user-entered tariff/bill metadata, while dev-only validation tooling stays separate. | P-005, F-008 | Done | The rewrite app now lives separately under `apps/web`, with runtime schema/code focused on product data and supplier CSV evidence kept out of the app model. |
+| P-011 | Deployment / Operations | Design provider health-check jobs | Define the hourly provider-health check, stale-data detection rules, and internal job flow for alerting users. | Health-check cadence, failure heuristics, and job responsibilities are documented. | P-003, P-006 | Todo | Start with hourly checks and email notifications. |
+| P-012 | Auth / Multi-user | Design beta access request and invite flow | Define how prospective users request access, how admins approve them, and how invites are issued securely. | The beta request, approval, and invitation flow is documented end to end. | P-001, P-007 | Todo | Initial beta should stay gated and MyEnergi-only. |
+| P-013 | Auth / Multi-user | Design user auth and terms acceptance | Define supported auth providers, approval-gated signup, and mandatory terms/privacy acceptance. | Auth and signup requirements are documented, including Google and terms acceptance. | P-001, P-007 | Todo | Keep onboarding low-friction but explicit about data use and deletion rights. |
+| P-014 | Auth / Multi-user | Design account entitlements and gifted pro access | Define how premium entitlements work, including gifted pro access from an admin view. | Entitlement model supports gifted pro access and future premium gating. | P-001, P-007 | Deferred | Useful for testing premium features before adding payment flows. |
+| P-015 | Data Model | Design provider-tenant growth model | Keep the data model compatible with future provider-level or white-label onboarding without making it core beta scope. | Architecture and schema notes identify how a provider or organization tenant could be added later. | P-002 | Deferred | Commercialization path for provider partnerships and bulk user onboarding. |
+| P-016 | Deployment / Operations | Set up GitHub execution access | Enable issue and pull-request workflows from this environment so implementation work can be tracked and reviewed properly. | GitHub CLI or equivalent access is configured, authenticated, and verified for issue creation and PR workflows on this repo. | P-001 | Todo | High priority before active feature implementation so commits, issues, and PRs can be linked cleanly. |
+| P-017 | Rewrite App | Scaffold separate rewrite application | Create a separate codebase for the rewrite inside the repo so legacy and new product work do not interfere with each other. | A standalone rewrite app exists with its own package boundary, build, and database configuration. | P-001 | Done | `apps/web` now contains a separate Next.js + Drizzle rewrite app that builds successfully without modifying the legacy root app. |
+| P-018 | Rewrite App | Create first database migration baseline | Turn the schema proposal into an executable migration baseline for the rewrite app. | The rewrite app contains generated Drizzle migrations that match the current schema design. | P-005, P-017 | Done | Initial Drizzle schema and migration were added under `apps/web/src/db` and `apps/web/drizzle`. |
+| P-019 | Rewrite App | Add first domain services over the schema | Start implementation of billing-oriented domain logic that uses the rewrite model rather than legacy code. | A first domain module exists for core billing/tariff behavior and is independent of the legacy app. | F-002, F-003, F-004, P-018 | Done | `apps/web/src/domain/billing.ts` now holds first-pass tariff resolution and billing comparison logic. |
+| P-020 | Rewrite App | Seed rewrite database with development fixture data | Create a lightweight seed path so the rewrite app can be exercised locally with a sample user, installation, tariff setup, and representative readings. | A repeatable seed command exists in `apps/web`; it inserts a coherent sample dataset spanning tariff windows; documentation notes how to run it locally. | P-018, P-019 | Todo | Keep this development-only and small enough to inspect manually. |
+| P-021 | Rewrite App | Build first server-side billing read path | Expose one server-side path that loads stored readings and tariff data, runs the billing domain logic, and returns a structured result for the app to render. | A server-side route or page in `apps/web` reads from the rewrite schema, invokes the billing domain service, and renders or returns a verifiable billing summary from seeded data. | P-019, P-020 | Todo | This is the first real vertical slice from storage through domain logic into app output. |
+
+## Phase 4: Product and UX
+
+| ID | Epic | Title | Objective | Acceptance Criteria | Dependencies | Status | Notes / Discoveries |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| U-001 | UX / Visual Design | Define product information architecture | Organize the new app around user decisions, not legacy dashboards. | Primary navigation and page list are documented. | D-002, P-001 | Todo | Expected top-level areas: Overview, Live, History, Tariffs, Setup, Data Health. |
+| U-002 | UX / Visual Design | Design overview experience | Make bill impact and solar value the primary entry point. | Overview requirements are documented with sections and KPIs. | U-001, F-002, F-003 | Todo | Must answer the main product question quickly. |
+| U-003 | Historical Views | Design historical exploration | Define how day, week, month, year, and custom analysis works. | Historical-view behavior and required charts/tables are documented. | U-001 | Todo | Replace current dense range screens with clearer decision-first views. |
+| U-004 | Live Data | Design live monitoring view | Define the live experience for current import, generation, export, and coverage. | Live view requirements are documented. | U-001 | Todo | Should surface stale data clearly. |
+| U-005 | Tariff Management | Design tariff setup and version history | Define the UX for managing tariff plans over time. | Tariff management flows are documented. | U-001, F-006 | Todo | A critical new feature. |
+| U-006 | UX / Visual Design | Replace date-range UX | Define simple, explicit controls for day/week/month/year/custom selection. | Range-selection behavior is documented and disconnected from a single fragile datepicker. | U-001, U-003 | Todo | Likely use presets plus `react-day-picker`. |
+| U-007 | UX / Visual Design | Rationalize charts | Keep only charts that answer a clear user question. | Chart inventory exists with purpose per chart and removed charts identified. | U-002, U-003, U-004 | Todo | Donut chart is intentionally under review. |
+| U-012 | Live Data | Surface current-day data health warnings | Show users when current-day data appears incomplete, stale, or suspicious. | Live and current-day views display clear warnings when health heuristics fail. | U-004, P-011 | Todo | Important because users may otherwise miss provider/device outages. |
+| U-013 | Tariff Management | Add tariff-validity and contract reminders | Notify users when tariff validity or contract review dates have passed and their setup may be stale. | UX supports reminders, warnings, and easy correction of tariff validity periods. | U-005, F-009 | Todo | The key risk is stale rates after a renewal window passes without a newer tariff version being entered. |
+| U-014 | Auth / Multi-user | Build beta access request form | Let prospective users request beta access with email and provider/setup details. | A request form and admin review workflow are designed and scoped. | P-012 | Todo | Keep initial eligibility limited to supported providers, starting with MyEnergi. |
+| U-015 | Auth / Multi-user | Design signup and common auth flows | Support approval-gated signup via Google and other common auth methods, with required terms acceptance. | Signup and login flows are documented with auth options and terms acceptance points. | P-013 | Todo | Must make privacy/data-use expectations clear during onboarding. |
+| U-008 | Historical Views | Add same-day-last-year comparisons | Preserve the idea of seasonal comparison insights as a later feature. | Use case and future requirements are documented. | U-003 | Deferred | Long-finger item, not needed for initial beta. |
+| U-009 | Historical Views | Add best-day insights | Surface highest-generation or standout-performance days in chosen periods. | Future requirements are documented with candidate metrics. | U-003 | Deferred | Fun and useful, but not launch-critical. |
+| U-010 | UX / Visual Design | Design annual wrap-up | Create a year-end summary concept with stats, highlights, and charts. | Future requirements are documented for later scoping. | U-002, U-003 | Deferred | Engagement feature for later. |
+| U-011 | Live Data | Add forecast-informed outlook | Explore adding weather-informed projection for upcoming days. | Future requirements and data-source assumptions are documented. | U-004 | Deferred | Not part of initial core delivery. |
+| U-016 | UX / Visual Design | Design periodic summary digests | Support end-of-day, week, and month summaries by email, push, or in-app delivery. | Requirements are documented for recurring and on-demand summaries. | U-002, U-003, P-011 | Deferred | Likely premium feature rather than beta launch scope. |
+| U-017 | UX / Visual Design | Design AI insight experiences | Define AI-generated reports, optimization suggestions, and weather-informed reminders. | Future requirements are documented with clear boundaries between insight, prediction, and automation. | U-002, U-003, U-011 | Deferred | Premium feature; keep value proposition strong before implementation. |
+| U-018 | UX / Visual Design | Design admin approvals and gifted access screens | Define admin UX for beta approvals, invites, and gifted pro access. | Admin flows are documented for approval and entitlement management. | U-014, P-014 | Deferred | Needed before broader beta ops and premium experiments. |
+| U-019 | UX / Visual Design | Keep provider-whitelabel UX in mind | Ensure UX foundations could support provider-branded or provider-managed access later. | IA and design notes call out likely extension points for provider-led onboarding. | U-001, P-015 | Deferred | Commercialization path, not immediate product scope. |
+
+## Phase 5: Quality and Delivery
+
+| ID | Epic | Title | Objective | Acceptance Criteria | Dependencies | Status | Notes / Discoveries |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Q-001 | Testing / Quality | Define validation strategy | Decide how bills, fixtures, and UI checks will validate correctness. | Quality strategy is written and tied to backlog items. | F-007, U-001 | Todo | Should combine unit, fixture, and e2e checks. |
+| Q-001a | Testing / Quality | Establish rewrite unit-test harness | Put a lightweight unit-test setup in place for the rewrite so domain logic can be tested as it is introduced. | The rewrite app has a working unit-test runner and at least one passing domain test suite. | P-017 | Done | `apps/web` now uses Vitest and has passing domain tests under `__tests__`. |
+| Q-002 | Testing / Quality | Add billing parity tests | Ensure calculations match expected bill outcomes. | Golden tests exist for multiple billing periods. | F-007 | Todo | Core confidence gate before beta. |
+| Q-003 | Testing / Quality | Add tariff transition tests | Ensure date-ranged tariff changes produce correct outputs. | Regression tests cover periods spanning tariff changes. | F-006, F-007 | Todo | High-risk edge case. |
+| Q-004 | Deployment / Operations | Define beta release workflow | Document how the new app will be tested by you first, then invited beta users. | Release workflow and rollout criteria are documented. | P-001, Q-001 | Todo | Keep scope small and operational overhead low. |
+| Q-005 | Testing / Quality | Define privacy and deletion verification | Ensure deletion and access controls are tested, not just documented. | Test plan includes account deletion, data isolation, and restricted operator access scenarios. | P-007 | Todo | Important for beta trust. |
+| Q-006 | Testing / Quality | Create provider reconciliation analysis tool | Build a repeatable repo-side tool to compare supplier CSV evidence against MyEnergi API data by date, interval, tariff bucket, and billed cost. | A script or tool exists that fetches API data, normalizes it, compares it to supplier CSV and bill data, and outputs useful diagnostics for development and regression testing. | F-008, P-008 | Todo | This is internal validation tooling only, not product functionality. |
+| Q-007 | Testing / Quality | Define beta-access and auth verification | Ensure approval-gated signup, invite flow, terms acceptance, and auth-provider behavior are tested. | Test plan covers request, approval, invite, signup, and entitlement edge cases. | P-012, P-013, U-014, U-015 | Deferred | Important once beta onboarding moves from planning into implementation. |
+| Q-008 | Testing / Quality | Add seed-backed integration coverage for the first billing slice | Verify that seeded tariff, installation, and reading data can be loaded through the rewrite persistence model and produce the expected billing summary. | A test exercises the first server-side billing slice against seeded or fixture-backed data and asserts the returned billing summary shape and key values. | P-020, P-021, Q-001a | Todo | Keep this narrower than e2e; the goal is confidence in the first vertical slice. |
+| Q-009 | Deployment / Operations | Fix GitHub workflows for the `v2` rewrite line | Replace the legacy-root CI assumptions with workflows that validate the rewrite app on `v2`. | PRs targeting `v2` run the rewrite app test/build checks; pushes to `v2` run the same checks; legacy-root build assumptions are removed from `v2` workflows; workflow scope is documented in-repo. | P-017, Q-001a | Todo | Immediate cleanup item now that `v2` is the default branch and `main` is the legacy line. |
+| Q-010 | Deployment / Operations | Define and enforce PR rules for the rewrite branch | Establish the repository rules we want for PR titles, required checks, and merge expectations on `v2`. | PR expectations are documented; workflow or branch-protection-compatible checks reflect those expectations; conventional PR title rules are either retained intentionally or replaced intentionally. | Q-009 | Todo | Keep this lightweight but explicit so contribution flow stays consistent. |
+| Q-011 | Deployment / Operations | Add rewrite preview build workflow | Prepare CI to build a development version of the rewrite app for a dev environment on PRs or selected branch pushes. | A workflow exists that can build the rewrite app artifact for a dev target, with deployment trigger conditions documented even if the environment hookup is initially stubbed. | Q-009 | Todo | Start with build/package behavior before wiring in hosting credentials and deployment. |
+| Q-012 | Deployment / Operations | Add rewrite deployment workflow for the main shipping branch | Ensure pushes to the shipping branch run tests and build the deployable rewrite app artifact for release. | The shipping-branch workflow runs the required tests, builds the rewrite app, and is structured to deploy the resulting artifact to the target environment. | Q-009, Q-010 | Todo | When branch strategy changes again, update this item to match the final shipping branch name. |
+
+## Current Priorities
+
+1. `P-020` Seed the rewrite database with sample user, installation, tariff, and reading data for local development.
+2. `P-021` Build the first server-side read path in `apps/web` that exercises billing domain logic against stored data.
+3. `Q-009` Fix GitHub workflows for the `v2` rewrite line so PRs and pushes run the right checks.
+4. `Q-008` Add seed-backed integration coverage for that first billing slice.
+5. `F-007` Build development fixtures and golden financial test cases from the supplied bills and validation data.
+6. `Q-002` and `Q-003` Add billing-parity and tariff-transition regression tests on top of the new domain layer.
+7. `Q-010`, `Q-011`, and `Q-012` Define PR rules, preview-build behavior, and shipping-branch deployment flow for the rewrite app.
+
+## Active Risks
+
+- Financial logic may drift if billing evidence arrives too late.
+- "No solar" baseline modeling can become hand-wavy without explicit examples.
+- Tariff versioning affects schema, APIs, and reporting, so delays there create downstream churn.
+- Rebuilding the UI before the reporting model is settled would create avoidable rework.
+- Splitting jobs and observability across providers too early may create operational blind spots for beta support.
+- Privacy and deletion requirements touch schema, logs, storage, and support workflows, so delaying them increases rework.
+- Even with one provider at launch, letting MyEnergi schema leak into core logic would make future ingestion sources much harder to add.
