@@ -72,7 +72,9 @@ If implementing a specific story, also read:
 
 - Work on a feature branch
 - Make small, logical commits
-- Do NOT push unless explicitly instructed
+- Commit changes to the feature branch as you go
+- Once a feature is complete, open a PR with a summary of the work done and the backlog item(s) it addresses
+- When opening PRs use the pr naming convetions from https://www.conventionalcommits.org/en/v1.0.0/
 
 ### When Unsure
 
@@ -91,3 +93,6 @@ A task is complete when:
 - Tests pass
 - Changes are minimal and scoped
 - No unintended side effects introduced
+- Changes are committed and a PR opened, reviewed and merged
+- docs/backlog.md has been updated to reflect the state of the completed item(s)
+- Accompanying feature md files have been moved from docs/features/todo to docs/features/complete
