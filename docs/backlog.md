@@ -75,6 +75,7 @@ Epic tracking:
 | P-021 | Rewrite App | Seed database with summary-first development fixture data | Create a lightweight seed path so the rewrite app can be exercised locally with a sample user, installation, tariff setup, representative daily summaries, and the finance metadata needed for day 1 payback reporting. | A repeatable seed command exists in `apps/web`; it inserts a coherent sample dataset spanning tariff windows and daily summary dates; if financed-installation duration is not yet represented cleanly, the story also adds the required schema field(s); documentation notes how to run it locally. | P-020, P-019 | Todo | Keep this development-only, deterministic, and small enough to inspect manually. |
 | P-022 | Rewrite App | Build first server-side estimated billing read path | Expose one server-side path that loads persisted daily summaries and tariff data, runs the billing domain logic, and returns a structured estimate for the app to render. | A server-side route or page in `apps/web` reads from the rewrite schema, invokes the billing domain service, and renders or returns a verifiable billing summary from seeded daily-summary data. | P-019, P-021 | Todo | This is the first summary-backed vertical slice from storage through domain logic into app output. |
 | P-023 | Rewrite App | Build first provider-backed live/day-detail read path | Expose one server-side path that fetches provider data for today or a requested day, normalizes it server-side, and returns a provider-agnostic day-detail payload for the app. | A server-side route or page in `apps/web` can request a day from a provider adapter, keep provider details off the client, and return data suitable for the homepage live view or a single-day detail page. | P-003, P-009, P-017 | Todo | Distill this next; it is now the clearest product-facing slice after the summary-backed billing path. |
+| P-024 | Rewrite App | Set up local Postgres development environment | Make the rewrite app runnable locally by defining and documenting a supported local Postgres setup, including required env vars and a simple path to run Drizzle commands. | A documented local-dev path exists for `apps/web` that covers installing or starting Postgres, creating a local database, setting `DATABASE_URL`, and successfully running `npm run db:push` plus `npm run db:seed`; any helper files such as `.env.example`, Docker Compose, or setup notes are committed and verified. | P-017, P-018 | Todo | Current blocker: local `db:push` fails because no Postgres instance or `DATABASE_URL` is available. |
 
 ## Phase 4: Product and UX
 
@@ -121,12 +122,12 @@ Epic tracking:
 ## Current Priorities
 
 1. `P-020` Align the rewrite schema with the summary-first v1 model so the codebase matches the current product direction.
-2. `P-021` Seed summary-first local development data covering users, installations, tariffs, and daily summaries.
-3. `P-022` Build the first server-side estimated billing read path over persisted daily summaries.
-4. `Q-008` Add seed-backed integration coverage for that first summary-backed billing slice.
-5. `P-023` Distill and implement the first provider-backed live/day-detail read path for today and selected single days.
-6. `Q-010` Define and enforce PR rules for the rewrite branch, including the conventional PR naming expectations we want to keep.
-7. `F-007`, `Q-002`, and `Q-003` Build golden financial fixtures and strengthen regression coverage once the summary-backed slice lands.
+2. `P-024` Set up the local Postgres development environment so Drizzle push/seed commands can run on this machine.
+3. `P-021` Seed summary-first local development data covering users, installations, tariffs, and daily summaries.
+4. `P-022` Build the first server-side estimated billing read path over persisted daily summaries.
+5. `Q-008` Add seed-backed integration coverage for that first summary-backed billing slice.
+6. `P-023` Distill and implement the first provider-backed live/day-detail read path for today and selected single days.
+7. `Q-010` Define and enforce PR rules for the rewrite branch, including the conventional PR naming expectations we want to keep.
 
 ## Active Risks
 
