@@ -77,17 +77,17 @@ Epic tracking:
 | P-023 | Rewrite App | Build first provider-backed live/day-detail read path | Expose one server-side path that fetches provider data for today or a requested day, normalizes it server-side, and returns a provider-agnostic day-detail payload for the app. | A server-side route or page in `apps/web` can request a day from a provider adapter, keep provider details off the client, and return data suitable for the homepage live view or a single-day detail page. | P-003, P-009, P-017 | Todo | Distill this next; it is now the clearest product-facing slice after the summary-backed billing path. |
 | P-024 | Rewrite App | Set up local Postgres development environment | Make the rewrite app runnable locally by defining and documenting a supported local Postgres setup, including required env vars and a simple path to run Drizzle commands. | A documented local-dev path exists for `apps/web` that covers installing or starting Postgres, creating a local database, setting `DATABASE_URL`, and successfully running `npm run db:push` plus `npm run db:seed`; any helper files such as `.env.example`, Docker Compose, or setup notes are committed and verified. | P-017, P-018 | Todo | Current blocker: local `db:push` fails because no Postgres instance or `DATABASE_URL` is available. |
 
-## Phase 4: Product and UX
+## Phase 2a: UI Discovery and Product Flows `In Progress`
 
 | ID | Epic | Title | Objective | Acceptance Criteria | Dependencies | Status | Notes / Discoveries |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| U-001 | UX / Visual Design | Define product information architecture | Organize the new app around user decisions, not legacy dashboards. | Primary navigation and page list are documented. | D-002, P-001 | Todo | Expected top-level areas: Overview, Live, History, Tariffs, Setup, Data Health. |
-| U-002 | UX / Visual Design | Design overview experience | Make bill impact and solar value the primary entry point. | Overview requirements are documented with sections and KPIs. | U-001, F-002, F-003 | Todo | Must answer the main product question quickly. |
-| U-003 | Historical Views | Design historical exploration | Define how day, week, month, year, and custom analysis works. | Historical-view behavior and required charts/tables are documented. | U-001 | Todo | Replace current dense range screens with clearer decision-first views. |
-| U-004 | Live Data | Design live monitoring view | Define the live experience for current import, generation, export, and coverage. | Live view requirements are documented. | U-001 | Todo | Should surface stale data clearly. |
-| U-005 | Tariff Management | Design tariff setup and version history | Define the UX for managing tariff plans over time. | Tariff management flows are documented. | U-001, F-006 | Todo | A critical new feature. |
-| U-006 | UX / Visual Design | Replace date-range UX | Define simple, explicit controls for day/week/month/year/custom selection. | Range-selection behavior is documented and disconnected from a single fragile datepicker. | U-001, U-003 | Todo | Likely use presets plus `react-day-picker`. |
-| U-007 | UX / Visual Design | Rationalize charts | Keep only charts that answer a clear user question. | Chart inventory exists with purpose per chart and removed charts identified. | U-002, U-003, U-004 | Todo | Donut chart is intentionally under review. |
+| U-001 | UX / Visual Design | Define app information architecture and screen inventory | Organize the new app around user decisions, not legacy dashboards, with a canonical screen list and top-level navigation model. | `docs/ui/screen-inventory.md` documents primary navigation, page list, screen ownership, and key edge states. | D-002, P-001 | Todo | Expected top-level areas: Overview, Live, History, Tariffs, Setup, Data Health, Settings. |
+| U-002 | UX / Visual Design | Map primary user journeys | Define the main front-end journeys before backend slices harden around the wrong assumptions. | `docs/ui/user-journeys.md` covers live monitoring, day review, range analysis, first-time setup, tariff maintenance, contract reminders, and trust/error states. | U-001 | Todo | Use journeys to clarify entry points, success states, and fallback paths. |
+| U-003 | Historical Views | Create low-fi wireframes for core monitoring views | Define the structure of the live landing page, single-day historical view, and multi-day/range analysis views. | `docs/ui/wireframes.md` contains low-fi desktop and mobile wireframes for live, daily, and range monitoring experiences. | U-001, U-002, F-002, F-003 | Todo | Replace current dense V1 dashboards with clearer decision-first layouts. |
+| U-004 | UX / Visual Design | Create low-fi wireframes for setup and onboarding | Define the structure of beta access, signup shape, installation setup, provider connection, tariff setup, and finance/payback capture. | `docs/ui/wireframes.md` contains low-fi desktop and mobile wireframes for onboarding and setup flows. | U-001, U-002, P-012, P-013 | Todo | Setup should explain why each input matters and reduce beta-user anxiety. |
+| U-005 | Tariff Management | Create low-fi wireframes for tariff and contract management | Define how users view, add, edit, and review tariff versions, contract dates, reminders, and recalculation actions. | `docs/ui/wireframes.md` documents tariff-plan list, tariff-version editor, contract details, reminder states, and recalculation UX. | U-001, U-002, F-006, F-009 | Todo | This should cover both editing and a readable history/timeline view. |
+| U-006 | UX / Visual Design | Define system states for trust and health | Specify empty, loading, error, stale, and partial-data states across dashboards and setup flows. | `docs/ui/screen-inventory.md` and `docs/ui/data-contracts.md` define required trust/health states per screen. | U-002, P-011 | Todo | Includes last sync, provider issues, backfill progress, and missing-data messaging. |
+| U-007 | UX / Visual Design | Define lightweight design foundations | Establish low-fi design rules for cards, charts, comparison blocks, alerts, forms, date controls, and responsive layout patterns. | `docs/ui/wireframes.md` and `docs/ui/data-contracts.md` define reusable UI patterns and the chart/content rules they imply. | U-001, U-003, U-004, U-005, U-006 | Todo | Includes chart rationalization and date-range control simplification as part of the foundation work. |
 | U-012 | Live Data | Surface current-day data health warnings | Show users when current-day data appears incomplete, stale, or suspicious. | Live and current-day views display clear warnings when health heuristics fail. | U-004, P-011 | Todo | Important because users may otherwise miss provider/device outages. |
 | U-013 | Tariff Management | Add tariff-validity and contract reminders | Notify users when tariff validity or contract review dates have passed and their setup may be stale. | UX supports reminders, warnings, and easy correction of tariff validity periods. | U-005, F-009 | Todo | The key risk is stale rates after a renewal window passes without a newer tariff version being entered. |
 | U-014 | Auth / Multi-user | Build beta access request form | Let prospective users request beta access with email and provider/setup details. | A request form and admin review workflow are designed and scoped. | P-012 | Todo | Keep initial eligibility limited to supported providers, starting with MyEnergi. |
@@ -121,13 +121,18 @@ Epic tracking:
 
 ## Current Priorities
 
-1. `P-020` Align the rewrite schema with the summary-first v1 model so the codebase matches the current product direction.
-2. `P-024` Set up the local Postgres development environment so Drizzle push/seed commands can run on this machine.
-3. `P-021` Seed summary-first local development data covering users, installations, tariffs, and daily summaries.
-4. `P-022` Build the first server-side estimated billing read path over persisted daily summaries.
-5. `Q-008` Add seed-backed integration coverage for that first summary-backed billing slice.
-6. `P-023` Distill and implement the first provider-backed live/day-detail read path for today and selected single days.
-7. `Q-010` Define and enforce PR rules for the rewrite branch, including the conventional PR naming expectations we want to keep.
+1. `U-001` Define app information architecture and screen inventory.
+2. `U-002` Map primary user journeys.
+3. `U-003` Create low-fi wireframes for core monitoring views.
+4. `U-004` Create low-fi wireframes for setup and onboarding.
+5. `U-005` Create low-fi wireframes for tariff and contract management.
+6. `U-006` Define system states for trust and health.
+7. `U-007` Define lightweight design foundations.
+8. `P-024` Set up the local Postgres development environment so Drizzle push/seed commands can run on this machine.
+9. `P-022` Build the first server-side estimated billing read path over persisted daily summaries once the wireframes clarify the first user-facing vertical slice.
+10. `P-023` Distill and implement the first provider-backed live/day-detail read path once the live and day-detail wireframes define the needed payload shape.
+11. `Q-008`, `F-007`, `Q-002`, and `Q-003` Resume summary-backed verification and fixture work after the UI-driven data contracts are documented.
+12. `Q-010` Define and enforce PR rules for the rewrite branch, including the conventional PR naming expectations we want to keep.
 
 ## Active Risks
 
@@ -135,7 +140,7 @@ Epic tracking:
 - "No solar" baseline modeling can become hand-wavy without explicit examples.
 - Tariff versioning affects schema, APIs, and reporting, so delays there create downstream churn.
 - If the executable schema keeps drifting away from the intended v1 data flow, implementation work will build on the wrong persistence model.
-- Rebuilding the UI before the reporting model is settled would create avoidable rework.
+- Letting backend slices harden before the UI and data contracts are defined could lock us into the wrong product shape.
 - Splitting jobs and observability across providers too early may create operational blind spots for beta support.
 - Privacy and deletion requirements touch schema, logs, storage, and support workflows, so delaying them increases rework.
 - Even with one provider at launch, letting MyEnergi schema leak into core logic would make future ingestion sources much harder to add.
