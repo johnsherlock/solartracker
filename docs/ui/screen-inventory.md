@@ -97,6 +97,7 @@ Primary content:
 - actual vs no-solar comparison
 - export value
 - payback progress
+- setup progress / unlock-more card
 - trust/health summary
 - shortcuts into live and history
 
@@ -105,6 +106,7 @@ Key states:
 - fully configured
 - first-run empty state
 - partial setup
+- savings unavailable until tariff details are added
 - stale data warning
 
 #### 5. Live
@@ -118,6 +120,7 @@ Primary content:
 - latest generation / consumption / import / export
 - freshness timestamp
 - current solar coverage
+- efficiency vs theoretical array output when installation capacity is known
 - live trend or recent interval view
 - current-day headline totals
 
@@ -140,6 +143,7 @@ Primary content:
 - interval trend
 - import/export/generation/consumption summary
 - daily savings and no-solar comparison
+- generation efficiency indicator when array capacity is known
 - notable events or warnings
 
 Key states:
@@ -148,6 +152,7 @@ Key states:
 - current day in progress
 - partial day
 - missing day
+- savings unavailable until tariff details are added
 
 #### 7. Range history
 
@@ -161,6 +166,7 @@ Primary content:
 - comparison vs no-solar
 - trend charts
 - best/worst period markers
+- performance vs theoretical output where capacity data exists
 - clear date range controls
 
 Key states:
@@ -169,6 +175,7 @@ Key states:
 - custom range
 - spans tariff change
 - insufficient data
+- savings unavailable until tariff details are added
 
 #### 8. Tariffs overview and history
 
@@ -222,6 +229,7 @@ Primary content:
 - last successful sync
 - stale data indicators
 - missing / partial days
+- installation-date-informed backfill range
 - provider errors
 - backfill or retry status
 
@@ -241,6 +249,8 @@ Purpose:
 Primary content:
 
 - installation profile
+- theoretical array output / capacity
+- installation date
 - locale / timezone
 - provider reconnect
 - notification preferences
@@ -258,33 +268,47 @@ Key states:
 
 Purpose:
 
-- capture home and solar context needed for useful reporting
+- capture home and solar context needed for useful reporting without blocking first use
 
 Primary content:
 
 - installation name
+- theoretical array output / capacity
+- installation date if known
 - timezone
 - locale / currency
 - finance mode and payback inputs
+
+Key states:
+
+- skippable
+- partially complete
+- completed later from Settings
 
 #### 13. Onboarding: provider connection
 
 Purpose:
 
-- connect the supported provider and verify the connection
+- connect the supported provider and verify the connection; this is the only hard requirement for initial product use
 
 Primary content:
 
 - provider choice
-- credential entry
+- provider credentials / API details
 - test connection
 - supported-provider explanation
+
+Key states:
+
+- required to continue
+- credential rejected
+- connected successfully
 
 #### 14. Onboarding: tariff setup
 
 Purpose:
 
-- capture the current tariff accurately enough for meaningful savings reporting
+- capture the current tariff accurately enough for meaningful savings reporting, but allow the user to defer it
 
 Primary content:
 
@@ -292,6 +316,30 @@ Primary content:
 - rate inputs
 - export settings
 - validity and contract dates
+
+Key states:
+
+- skippable
+- savings locked until completed
+
+#### 15. Setup progress / unlock-more surface
+
+Purpose:
+
+- show users how many optional setup steps they have completed and what additional value remains locked
+
+Primary content:
+
+- completed steps count
+- remaining recommended steps
+- unlocked capabilities now
+- locked capabilities until setup is completed
+
+Key states:
+
+- only provider connected
+- partially configured
+- fully configured
 
 ## Screen-State Requirements
 
@@ -301,9 +349,11 @@ Every signed-in screen should explicitly define:
 - empty / first-run state
 - stale or partial-data warning state
 - hard error state
+- setup-incomplete prompt state where relevant
 
 Trust-sensitive screens should also define:
 
 - last updated timestamp
 - source/provider context where relevant
 - what action the user should take when the data is incomplete
+- what additional setup is needed to unlock more value when the view is intentionally limited

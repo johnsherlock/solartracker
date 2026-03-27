@@ -52,6 +52,8 @@ navigation, and trust cues rather than polish.
 +----------------------------------------------------------------------------------+
 | HEADER: Date range / trust badge / last updated                                  |
 +----------------------------------------------------------------------------------+
+| SETUP PROGRESS: 2 of 5 complete | Live unlocked | Add tariff to unlock savings   |
++----------------------------------------------------------------------------------+
 | BILL IMPACT          | NO-SOLAR COST       | EXPORT VALUE       | PAYBACK        |
 +----------------------+---------------------+--------------------+----------------+
 | PRIMARY INSIGHT / EXPLAINER PANEL                                                 |
@@ -70,6 +72,10 @@ navigation, and trust cues rather than polish.
 +----------------------------------+
 | Date range / trust badge         |
 +----------------------------------+
+| Setup progress / unlock-more     |
++----------------------------------+
+| Live snapshot                    |
++----------------------------------+
 | Bill impact card                 |
 +----------------------------------+
 | No-solar comparison card         |
@@ -79,8 +85,6 @@ navigation, and trust cues rather than polish.
 | Payback progress card            |
 +----------------------------------+
 | Explainer panel                  |
-+----------------------------------+
-| Live snapshot                    |
 +----------------------------------+
 | Data health                      |
 +----------------------------------+
@@ -98,6 +102,10 @@ navigation, and trust cues rather than polish.
 +-------------------+-------------------+-------------------+------------------------+
 | SOLAR COVERAGE / GRID RELIANCE BAR                                              |
 +----------------------------------------------------------------------------------+
+| LINE GRAPH OF SOLAR COVERAGE BY MIN/HALF_HOUR/HOUR                               |
++----------------------------------------------------------------------------------+
+| PIE CHART OF ENERGY COST/SAVINGS - OFF PEAK IMPORT/DAY IMPORT/PEAK IMPORT/SOLAR OFF PEAK/SOLAR DAY/SOLAR PEAK |
++----------------------------------------------------------------------------------+
 | RECENT INTERVAL TREND                                                           |
 +------------------------------------------+---------------------------------------+
 | CURRENT-DAY TOTALS                        | WARNINGS / SOURCE NOTES               |
@@ -113,6 +121,10 @@ navigation, and trust cues rather than polish.
 | Now metrics grid                 |
 +----------------------------------+
 | Coverage bar                     |
++----------------------------------+
+| LINE GRAPH OF SOLAR COVERAGE BY MIN/HALF_HOUR/HOUR                               |
++----------------------------------------------------------------------------------+
+| PIE CHART OF ENERGY COST/SAVINGS - OFF PEAK IMPORT/REUGLAR IMPORT/PEAK IMPORT/SOLAR OFF PEAK/SOLAR REGULAR/SOLAR PEAK |
 +----------------------------------+
 | Recent trend chart               |
 +----------------------------------+
@@ -199,28 +211,43 @@ navigation, and trust cues rather than polish.
 ### Flow
 
 ```text
-Welcome -> Installation setup -> Provider connection -> Tariff setup ->
-Finance/payback inputs -> Review -> Overview
+Welcome -> Provider connection (required) -> Installation setup (optional) ->
+Tariff setup (optional) -> Finance/payback inputs (optional) -> Review -> Overview
 ```
+
+Progress rules:
+
+- Provider connection is the only required step.
+- All other setup steps can be skipped and completed later.
+- Overview should show a setup-progress card such as "1 of 4 recommended setup steps completed".
+- If tariff details are missing, savings cards should be replaced with a prompt to finish tariff setup.
 
 ### Installation Setup
 
 ```text
 +----------------------------------+
-| Step 1 of 5                      |
+| Optional step                    |
 +----------------------------------+
 | Installation name                |
+| Approximate installation date    |
+| Theoretical max array output     |
 | Timezone                         |
 | Locale / currency                |
-| [Continue]                       |
+| [Save and continue] [Skip for now] |
 +----------------------------------+
 ```
+
+Notes:
+
+- Installation date may be approximate.
+- If installation date is unknown, backfill can start from a best-effort discovered boundary.
+- Theoretical max array output enables efficiency indicators later.
 
 ### Provider Connection
 
 ```text
 +----------------------------------+
-| Step 2 of 5                      |
+| Required step                    |
 +----------------------------------+
 | Provider type                    |
 | Credential inputs                |
@@ -234,13 +261,14 @@ Finance/payback inputs -> Review -> Overview
 
 ```text
 +----------------------------------+
-| Step 3 of 5                      |
+| Optional step                    |
 +----------------------------------+
 | Supplier / plan                  |
 | Day / night / peak / export      |
 | Valid from / valid to            |
 | Contract end date                |
-| [Continue]                       |
+| If skipped: savings cards stay locked |
+| [Save and continue] [Skip for now] |
 +----------------------------------+
 ```
 
@@ -248,13 +276,31 @@ Finance/payback inputs -> Review -> Overview
 
 ```text
 +----------------------------------+
-| Step 4 of 5                      |
+| Optional step                    |
 +----------------------------------+
 | Finance mode                     |
 | Install cost or monthly payment  |
 | Finance term                     |
 | Short explanation of payback     |
-| [Continue]                       |
+| [Save and continue] [Skip for now] |
++----------------------------------+
+```
+
+### Review / initial product entry
+
+```text
++----------------------------------+
+| Setup complete enough to start   |
++----------------------------------+
+| Required: provider connected     |
+| Completed optional steps: 1 of 4 |
+| Available now: live views        |
+| Locked until tariff setup:       |
+| - savings cards                  |
+| - no-solar comparisons           |
+| Locked until finance setup:      |
+| - payback reporting              |
+| [Go to Overview]                 |
 +----------------------------------+
 ```
 
@@ -301,6 +347,7 @@ Finance/payback inputs -> Review -> Overview
 | Last successful sync             |
 | Current provider state           |
 | Missing / partial days           |
+| Backfill window / discovery note |
 | Backfill / retry progress        |
 | Actions / support guidance       |
 +----------------------------------+
@@ -311,5 +358,7 @@ Finance/payback inputs -> Review -> Overview
 - Overview should be the main signed-in landing page because it answers the core financial question fastest.
 - Live, Daily, and Range views should feel related, but not identical; each needs a different primary question.
 - Every wireframe should include an explicit trust surface: badge, timestamp, warning band, or health card.
+- Every major view should also be able to render an intentional "setup incomplete" card rather than silently showing wrong or misleading financial information.
 - Mobile layouts should stack summaries ahead of charts so users do not have to pan to find the main answer.
 - Date selection should use explicit presets plus custom range, not a single overloaded picker.
+- Onboarding should allow users to skip optional steps and add those details later.

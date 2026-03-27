@@ -22,6 +22,21 @@ Shared trust/health fields:
 - `missingDayCount`
 - `backfillInProgress`
 
+Shared setup/value-unlock fields:
+
+- `setupCompletion.completedStepCount`
+- `setupCompletion.totalRecommendedStepCount`
+- `setupCompletion.completedSteps`
+- `setupCompletion.remainingSteps`
+- `setupCompletion.unlockedCapabilities`
+- `setupCompletion.lockedCapabilities`
+
+Shared installation-profile fields:
+
+- `installationDate` if known
+- `arrayCapacityKw` or equivalent theoretical max output field
+- `installationDateConfidence` such as `exact`, `approximate`, `unknown`, `inferred`
+
 ## Overview
 
 Required summary cards:
@@ -31,6 +46,7 @@ Required summary cards:
 - estimated savings
 - export value
 - payback progress
+- setup progress / unlock-more card
 
 Required chart series:
 
@@ -48,10 +64,17 @@ Required health/status fields:
 - trust badge state
 - last updated
 - current warning summary
+- savings eligibility state
+- payback eligibility state
 
 Editable entities:
 
 - none directly on the page, but it should link to tariffs, setup, and settings
+
+Conditional rendering rules:
+
+- if tariff details are missing, savings-oriented cards should be replaced by a prompt card explaining what to add
+- if finance details are missing, payback should be replaced by a prompt card rather than a fake zero state
 
 ## Live
 
@@ -62,6 +85,7 @@ Required summary cards:
 - current import
 - current export
 - current solar coverage percentage
+- current efficiency vs theoretical output when capacity data exists
 
 Required chart series:
 
@@ -73,12 +97,14 @@ Required chart series:
 Required comparison metrics:
 
 - self-consumption vs grid reliance right now
+- current performance vs theoretical array output when the required inputs exist
 
 Required health/status fields:
 
 - freshness timestamp
 - live feed health
 - provider warning state
+- setup-complete-enough state
 
 Editable entities:
 
@@ -96,6 +122,7 @@ Required summary cards:
 - estimated no-solar cost
 - estimated savings
 - export credit
+- generation efficiency indicator when capacity data exists
 
 Required chart series:
 
@@ -115,10 +142,15 @@ Required health/status fields:
 - day completeness
 - selected date trust state
 - warning summary
+- savings eligibility state
 
 Editable entities:
 
 - none
+
+Conditional rendering rules:
+
+- if tariff details are missing, replace bill-impact cards with a setup prompt card
 
 ## Range History
 
@@ -128,6 +160,7 @@ Required summary cards:
 - range no-solar cost
 - range savings
 - range export value
+- performance vs theoretical output when capacity data exists
 
 Required chart series:
 
@@ -146,10 +179,15 @@ Required health/status fields:
 - data completeness over the range
 - tariff change flag
 - warning summary
+- savings eligibility state
 
 Editable entities:
 
 - none
+
+Conditional rendering rules:
+
+- if tariff details are missing, replace savings-focused summaries with a setup prompt card
 
 ## Tariffs Overview and History
 
@@ -225,6 +263,7 @@ Required summary cards:
 - overall health
 - last successful sync
 - affected periods count
+- backfill scope summary
 
 Required chart series:
 
@@ -240,11 +279,18 @@ Required health/status fields:
 - stale / partial / missing-day indicators
 - backfill state
 - last error summary
+- installation-date-known state
 
 Editable entities:
 
 - reconnect provider action
 - retry or backfill action if supported later
+
+Backfill guidance fields:
+
+- requested backfill start date
+- inferred earliest data date
+- reason the current backfill boundary was chosen
 
 ## Settings and Privacy
 
@@ -269,6 +315,8 @@ Required health/status fields:
 Editable entities:
 
 - installation profile
+- array capacity / theoretical max output
+- installation date
 - locale / timezone
 - notification preferences
 - provider reconnect flow
@@ -283,3 +331,6 @@ These UI contracts imply that the next backend slices should expose:
 - a range-summary payload that includes tariff-change and completeness flags
 - tariff-management payloads that separate validity windows from contract reminders
 - shared trust/status fields that can be rendered consistently across screens
+- setup-completion metadata so the UI can show optional progress and locked capabilities cleanly
+- installation profile fields for array capacity and installation date, including whether the date is exact, approximate, or inferred
+- async backfill status that can explain how far back the system is trying to fetch and why

@@ -109,22 +109,54 @@ Entry points:
 Happy path:
 
 1. User accepts terms and enters the onboarding flow.
-2. User enters installation profile details.
+2. User sees that only provider connection is required, while the remaining setup steps can be skipped and completed later.
 3. User connects the provider.
-4. User adds tariff information.
-5. User adds finance or ownership inputs for payback reporting.
-6. User lands on an Overview that explains what will happen next.
+4. User can optionally enter installation profile, tariff, and finance details, or skip them.
+5. User lands on an Overview that shows setup completion progress and the value still locked behind missing details.
+6. User can immediately use live data views even if tariff or finance details were skipped.
 
 Critical decisions:
 
 - What information is required now versus later?
 - What does each input affect in the reporting?
+- Is it worth skipping this step now and coming back later?
 
 Fallback states:
 
 - provider credentials rejected
 - tariff incomplete
 - user chooses to skip a non-critical field
+- installation date unknown, so backfill defaults to adaptive discovery later
+
+## Journey 4a: Complete setup later to unlock more value
+
+User goal:
+
+- move from "I can see live data" to "I can trust savings, payback, and historical reporting"
+
+Entry points:
+
+- setup progress card on Overview
+- locked savings card
+- Settings or Tariffs area
+
+Happy path:
+
+1. User opens the setup progress surface.
+2. User sees completed steps, remaining steps, and what each missing step unlocks.
+3. User adds tariff details to unlock savings cards and historical comparisons.
+4. User adds finance details to unlock payback reporting.
+5. User adds installation date and array capacity to improve backfill scope and efficiency indicators.
+
+Critical decisions:
+
+- Which missing step matters most to the insight I want next?
+- Should I add an approximate installation date now or let the system infer the backfill boundary?
+
+Fallback states:
+
+- user only wants live monitoring and leaves setup partially complete
+- tariff details still missing, so savings remain intentionally hidden behind a prompt card
 
 ## Journey 5: Update tariff rates or contract details
 
@@ -186,6 +218,7 @@ Fallback states:
 - provider unreachable
 - current-day feed stale
 - historical gaps detected
+- installation date unknown, so the system is still discovering the practical historical boundary
 
 ## Journey 7: Understand the product before signup
 
