@@ -25,15 +25,19 @@ If implementing a specific story, also read:
 
 ## Execution Rules
 
-### Planning
+## Feature Planning Workflow
 
-- ALWAYS start in Plan Mode
-- Do NOT write code until the plan is approved
-- Your plan must include:
-  - Files to create/modify
-  - Data flow
-  - Tests to add
-  - Assumptions and ambiguities
+When asked to plan or pull in a feature story (for example P-021), prefer the `/plan-feature <story-id>` skill.
+
+If a user asks in natural language to "pull in", "plan", or "create a plan for" a feature, interpret that as:
+- read `docs/features/<story-id>.md`
+- remain in plan-only mode
+- do not write code
+- produce:
+  1. likely files to create or modify
+  2. ambiguities and assumptions
+  3. a scoped implementation plan for that feature only
+
 
 ### Scope Control
 

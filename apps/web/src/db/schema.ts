@@ -35,6 +35,7 @@ export const installations = pgTable('installations', {
   financeMode: text('finance_mode'),
   installCostAmount: numeric('install_cost_amount', { precision: 12, scale: 2 }),
   monthlyFinancePaymentAmount: numeric('monthly_finance_payment_amount', { precision: 12, scale: 2 }),
+  financeTermMonths: integer('finance_term_months'),
   providerType: text('provider_type').notNull().default('myenergi'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

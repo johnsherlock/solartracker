@@ -48,7 +48,8 @@ As a user, I want to compare energy-bill reduction against my solar finance or o
 
 Acceptance notes:
 
-- Support monthly finance cost and annualized ownership reporting.
+- Support monthly finance cost plus finance duration for financed systems.
+- Show when the installation is expected to have paid for itself based on the configured ownership or finance inputs.
 - Show savings relative to installation cost over a chosen period.
 - Keep the calculation understandable and traceable.
 
@@ -79,6 +80,7 @@ As a user, I want to configure my installation, provider credentials, locale, an
 Acceptance notes:
 
 - Users can define installation profile and timezone.
+- Users can record the economic inputs needed for day 1 payback reporting, including upfront install cost or monthly finance payment plus term.
 - Credentials are stored securely.
 - Data ingestion validates the setup and reports health.
 

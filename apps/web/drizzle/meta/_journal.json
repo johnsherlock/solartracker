@@ -8,6 +8,13 @@
       "when": 1774553272581,
       "tag": "0000_deep_shinobi_shaw",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1774571461773,
+      "tag": "0001_previous_kang",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "installations" ADD COLUMN "finance_term_months" integer;

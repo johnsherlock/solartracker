@@ -96,7 +96,7 @@ Scheduled Jobs
 
 - timezone
 - locale
-- finance cost settings
+- finance cost and finance-duration settings
 - provider metadata
 - privacy-scoped ownership boundary for all related readings and summaries
 
@@ -177,6 +177,7 @@ Key fields:
 - `finance_mode` text nullable such as `cash` or `finance`
 - `install_cost_amount` numeric nullable
 - `monthly_finance_payment_amount` numeric nullable
+- `finance_term_months` integer nullable
 - `provider_type` text
 - `created_at`, `updated_at`
 

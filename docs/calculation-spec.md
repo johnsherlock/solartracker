@@ -44,7 +44,7 @@ The difference between the no-solar baseline and the actual bill impact for the 
 
 ### Installation payback view
 
-A comparison between solar-attributed savings and the user's installation cost, finance cost, or target payback period.
+A comparison between solar-attributed savings and the user's installation cost, finance cost, or target payback period, including enough finance detail to estimate when the system has paid for itself.
 
 ## Inputs Required
 
@@ -71,6 +71,7 @@ A comparison between solar-attributed savings and the user's installation cost, 
 ### User economic inputs
 
 - monthly finance payment, if financed
+- finance term or duration, if financed
 - upfront install cost, if owned outright
 - optional target payback assumptions
 
@@ -466,7 +467,7 @@ Implication:
 ## Resolved Product Defaults
 
 - The product should expose one primary `total savings` metric, while still showing export value as a separate line item. A narrower `self-consumption savings` metric can be deferred unless user testing proves it is necessary.
-- Installation payback should be shown first as a simple comparison against install or finance cost for the chosen period. Rolling cumulative ROI/payback can remain a later enhancement rather than a Phase 2 dependency.
+- Installation payback should be a day 1 feature, shown first as a simple comparison against install cost or finance obligation for the chosen period, with enough finance detail to estimate when the system has paid for itself. Rolling ROI refinements can remain a later enhancement, but financed installs need payment duration from the start.
 - Incomplete days or partial intervals should be flagged explicitly. They may still appear in operational views, but they should be excluded from validated bill-comparison outputs unless the user deliberately includes them with a warning.
 - Billing-period reconstruction should explicitly model interval usage charges, export credit, VAT, standing charges, PSO, and tariff-version splits. One-off goodwill credits, arrears, or non-energy corrections should stay outside the core savings model unless they recur and can be represented cleanly.
 - Internal validation should support both statement-line comparison and daily reconstructed views. Statement-level totals are the acceptance target, while daily views are for debugging and reconciliation.
