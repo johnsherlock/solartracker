@@ -102,6 +102,7 @@ Epic tracking:
 | U-027 | UX / Visual Design | Build polished clickable prototype for the Tariffs overview screen | Turn the tariff-history and current-rate overview into a polished clickable prototype that makes “what applies now” obvious. | A polished clickable prototype exists for the Tariffs overview on desktop and mobile, including current tariff, historical versions, and reminder-warning states. | U-020, U-013 | Todo | Separate current truth from historical timeline clearly. |
 | U-028 | UX / Visual Design | Build polished clickable prototype for tariff editing and contract reminders | Turn tariff version editing and contract/reminder management into a polished clickable prototype that feels safe and understandable. | A polished clickable prototype exists for the tariff version editor and contract-reminder flow, including overlap/validation, expired-validity, and recalculation-impact states. | U-020, U-013 | Todo | This should feel corrective and confidence-building, not administrative. |
 | U-029 | UX / Visual Design | Build polished clickable prototype for the Data Health screen | Turn Data Health into a polished clickable prototype that makes operational trust actionable rather than abstract. | A polished clickable prototype exists for Data Health on desktop and mobile, including healthy, stale, partial, provider-error, and backfill-discovery states. | U-020, U-012 | Todo | Keep this screen diagnostic and reassuring, not like an internal log viewer. |
+| U-031 | UX / Visual Design | Reframe the Live screen around realtime state, live value, and solar context | Turn the first Live prototype review into a stronger second-pass screen direction that adds financial interpretation, richer controls, and site-aware solar context while preserving the realtime-first hierarchy. | A revised Live-screen story and prototype direction exist covering desktop/mobile, energy/value/context layers, and the key state variants. | U-023 | Todo | Follow-on refinement story created from review of the first Live prototype. |
 | U-030 | Frontend Implementation | Build the first production UI slice in `apps/web` | Implement the first user-facing UI slice using the approved clickable prototypes and the rewrite app architecture. | At least one primary signed-in flow is implemented in `apps/web` with responsive layouts, documented states, and data wired to the corresponding server-side slice. | U-022, U-023, P-022, P-023 | Todo | Start with the screen set that best validates the product direction, likely Overview plus one detail flow. |
 | U-008 | Historical Views | Add same-day-last-year comparisons | Preserve the idea of seasonal comparison insights as a later feature. | Use case and future requirements are documented. | U-003 | Deferred | Long-finger item, not needed for initial beta. |
 | U-009 | Historical Views | Add best-day insights | Surface highest-generation or standout-performance days in chosen periods. | Future requirements are documented with candidate metrics. | U-003 | Deferred | Fun and useful, but not launch-critical. |
@@ -133,23 +134,24 @@ Epic tracking:
 ## Current Priorities
 
 1. `U-023` Build first polished clickable prototype for the Live screen.
-2. `U-022` Build polished clickable prototype for the Overview screen.
-3. `U-024` Build polished clickable prototype for the Daily History screen.
-4. `U-025` Build polished clickable prototype for the Range History screen.
-5. `U-026` Build polished clickable prototype for the onboarding and setup flow.
-6. `U-027` Build polished clickable prototype for the Tariffs overview screen.
-7. `U-028` Build polished clickable prototype for tariff editing and contract reminders.
-8. `U-029` Build polished clickable prototype for the Data Health screen.
-9. `U-012` Surface current-day data health warnings in the planned live and day-detail UX.
-10. `U-013` Add tariff-validity and contract reminder UX on top of the tariff-management wireframes.
-11. `U-014` Build the beta access request form flow from the approved public-entry UX.
-12. `U-015` Design signup and common auth flows that follow the progressive onboarding model.
-13. `P-024` Set up the local Postgres development environment so Drizzle push/seed commands can run on this machine.
-14. `P-022` Build the first server-side estimated billing read path over persisted daily summaries now that the comparison-first wireframes and data contracts exist.
-15. `P-023` Distill and implement the first provider-backed live/day-detail read path to match the provider-only onboarding and live-view data contract.
-16. `U-030` Build the first production UI slice in `apps/web`.
-17. `Q-008`, `F-007`, `Q-002`, and `Q-003` Resume summary-backed verification and fixture work after the UI-driven data contracts are documented.
-18. `Q-010` Define and enforce PR rules for the rewrite branch, including the conventional PR naming expectations we want to keep.
+2. `U-031` Reframe the Live screen around realtime state, live value, and solar context.
+3. `U-022` Build polished clickable prototype for the Overview screen.
+4. `U-024` Build polished clickable prototype for the Daily History screen.
+5. `U-025` Build polished clickable prototype for the Range History screen.
+6. `U-026` Build polished clickable prototype for the onboarding and setup flow.
+7. `U-027` Build polished clickable prototype for the Tariffs overview screen.
+8. `U-028` Build polished clickable prototype for tariff editing and contract reminders.
+9. `U-029` Build polished clickable prototype for the Data Health screen.
+10. `U-012` Surface current-day data health warnings in the planned live and day-detail UX.
+11. `U-013` Add tariff-validity and contract reminder UX on top of the tariff-management wireframes.
+12. `U-014` Build the beta access request form flow from the approved public-entry UX.
+13. `U-015` Design signup and common auth flows that follow the progressive onboarding model.
+14. `P-024` Set up the local Postgres development environment so Drizzle push/seed commands can run on this machine.
+15. `P-022` Build the first server-side estimated billing read path over persisted daily summaries now that the comparison-first wireframes and data contracts exist.
+16. `P-023` Distill and implement the first provider-backed live/day-detail read path to match the provider-only onboarding and live-view data contract.
+17. `U-030` Build the first production UI slice in `apps/web`.
+18. `Q-008`, `F-007`, `Q-002`, and `Q-003` Resume summary-backed verification and fixture work after the UI-driven data contracts are documented.
+19. `Q-010` Define and enforce PR rules for the rewrite branch, including the conventional PR naming expectations we want to keep.
 
 ## Active Risks
 
