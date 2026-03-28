@@ -65,11 +65,10 @@ If a user asks in natural language to "pull in", "plan", or "create a plan for" 
 - **Installation**: 21st.dev magic
 - **Configuration**: "API_KEY": "your-21st-dev-api-key"
 - **Description**: Create crafted UI components inspired by the best 21st.dev design engineers.
-- **Usage in this repo**: Treat generated output as inspiration or a starting point only. Any adopted code MUST be translated into this repository's preferred UI stack and existing app conventions.
 
 ## Preferred UI Stack
 
-For all new UI work in `apps/web`, prefer:
+For all new UI work in `apps/web`, the baseline implementation stack is:
 
 - Next.js App Router
 - Tailwind CSS for styling
@@ -84,9 +83,30 @@ Rules:
 - Keep styling in Tailwind utilities unless there is a strong reason not to
 - Prefer server-side data loading where appropriate for the current app structure
 - Optimise for clean information hierarchy, readability, and simple layouts over decorative design
-- If using external UI skills, generators, or MCP servers, always adapt the result to this stack rather than copying the suggested stack verbatim
-- If using `ui-ux-pro-max-skill`, do NOT rely on its default `html-tailwind` stack for implementation guidance; use `nextjs` or `shadcn` guidance and still conform to the repo structure in `apps/web`
-- 21st.dev Magic and similar tools may be used for component ideas, interaction patterns, and visual direction, but they must not override the project stack choices above
+
+## UI Tooling Modes
+
+There are two valid ways to implement UI work in this repo. Use the one the user asks for.
+
+### 1. Baseline Mode
+
+Use the baseline implementation stack above.
+
+This is the default when the user asks to implement a UI story without naming a specific external UI tool.
+
+### 2. Tool-First Mode
+
+If the user explicitly asks to use external UI tooling such as `ui-ux-pro-max-skill` or 21st.dev Magic, use those tools as the primary source of UI direction during implementation.
+
+Rules for Tool-First Mode:
+- Follow the chosen tool's workflow and recommendations for UI implementation
+- Keep all implementation inside `apps/web` unless instructed otherwise
+- Prefer outputs that still fit the current app structure and routing model
+- If the generated result would introduce a major architectural shift or a second UI component library, pause and confirm before committing to it
+
+Planning rule:
+- If the user asks to "pull in", "plan", or "create a plan for" a feature, remain in plan-only mode first
+- Tool choice mainly affects the implementation phase, not the initial planning phase, unless the user explicitly asks for tool-assisted design exploration during planning
 
 ### Testing
 
