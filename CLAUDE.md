@@ -59,6 +59,24 @@ If a user asks in natural language to "pull in", "plan", or "create a plan for" 
 - Keep provider-specific logic OUT of core domain logic
 - Use canonical data models as defined in architecture docs
 
+## Preferred UI Stack
+
+For all new UI work in `apps/web`, prefer:
+
+- Next.js App Router
+- Tailwind CSS for styling
+- shadcn/ui for UI components
+- lucide-react for icons
+- Recharts for charts
+- React Hook Form + Zod for forms and validation
+
+Rules:
+- Prefer existing shadcn/ui components before building custom primitives
+- Do not introduce a second UI component library unless explicitly requested
+- Keep styling in Tailwind utilities unless there is a strong reason not to
+- Prefer server-side data loading where appropriate for the current app structure
+- Optimise for clean information hierarchy, readability, and simple layouts over decorative design
+
 ### Testing
 
 - All new domain logic must have unit tests (Vitest)
