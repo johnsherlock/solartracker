@@ -59,6 +59,14 @@ If a user asks in natural language to "pull in", "plan", or "create a plan for" 
 - Keep provider-specific logic OUT of core domain logic
 - Use canonical data models as defined in architecture docs
 
+## MCP Servers
+
+### 21st.dev Magic
+- **Installation**: 21st.dev magic
+- **Configuration**: "API_KEY": "your-21st-dev-api-key"
+- **Description**: Create crafted UI components inspired by the best 21st.dev design engineers.
+- **Usage in this repo**: Treat generated output as inspiration or a starting point only. Any adopted code MUST be translated into this repository's preferred UI stack and existing app conventions.
+
 ## Preferred UI Stack
 
 For all new UI work in `apps/web`, prefer:
@@ -76,6 +84,9 @@ Rules:
 - Keep styling in Tailwind utilities unless there is a strong reason not to
 - Prefer server-side data loading where appropriate for the current app structure
 - Optimise for clean information hierarchy, readability, and simple layouts over decorative design
+- If using external UI skills, generators, or MCP servers, always adapt the result to this stack rather than copying the suggested stack verbatim
+- If using `ui-ux-pro-max-skill`, do NOT rely on its default `html-tailwind` stack for implementation guidance; use `nextjs` or `shadcn` guidance and still conform to the repo structure in `apps/web`
+- 21st.dev Magic and similar tools may be used for component ideas, interaction patterns, and visual direction, but they must not override the project stack choices above
 
 ### Testing
 
@@ -92,11 +103,13 @@ Rules:
 
 ### Git Workflow
 
+- The current default branch of the repo is v2, not main. Main still runs the old v1 site.
 - Work on a feature branch
 - Make small, logical commits
 - Commit changes to the feature branch as you go
 - Once a feature is complete, open a PR with a summary of the work done and the backlog item(s) it addresses
 - When opening PRs use the pr naming convetions from https://www.conventionalcommits.org/en/v1.0.0/
+- PRs get opened against v2, NOT MAIN!
 
 ### When Unsure
 
