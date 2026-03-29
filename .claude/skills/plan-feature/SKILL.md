@@ -10,20 +10,20 @@ You are planning a feature only. Do not write code.
 Feature story: $ARGUMENTS
 
 Workflow:
-1. Create a branch for the feature (e.g. `feature/P-021`) and switch to it
+1. Create a branch for the feature (e.g. `stories/P-021`) and switch to it
 2. Read `CLAUDE.md`
 3. Read `docs/backlog.md`
 4. Read `docs/architecture.md`
 5. Read `docs/calculation-spec.md`
-6. Read `$ARGUMENTS` (e.g. `docs/features/P-021.md`)
+6. Read any docs in `docs/decision/`
+7. Read `$ARGUMENTS` (e.g. `docs/stories/P-021.md`)
 
 Then produce:
 
 1. The files likely to be created or modified
 2. Any ambiguities or assumptions
 3. A scoped implementation plan for this feature only
-4. Write the plan to `docs/features/<story-id>.plan.md`
-5. When it comes to executing the plan, re-read the plan.md file and follow the steps precisely, without expanding scope or modifying unrelated code
+4. Follow the steps in the plan precisely, without expanding scope or modifying unrelated code
 
 Rules:
 - Stay in plan-only mode
