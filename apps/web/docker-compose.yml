@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pv_manager
+    ports:
+      - "5432:5432"
+    volumes:
+      - pv_manager_postgres:/var/lib/postgresql/data
+
+volumes:
+  pv_manager_postgres:
