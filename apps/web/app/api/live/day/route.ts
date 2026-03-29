@@ -24,8 +24,9 @@ export async function GET(request: NextRequest) {
   }
 
   const fetchedAt = new Date().toISOString();
-  const minutes = await fetchMinuteData(date);
-  const result = buildDayDetail(date, minutes, fetchedAt);
+  const timezone = 'Europe/Dublin';
+  const minutes = await fetchMinuteData(date, timezone);
+  const result = buildDayDetail(date, minutes, fetchedAt, timezone);
 
   return Response.json(result);
 }

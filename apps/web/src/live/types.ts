@@ -47,6 +47,13 @@ export type DayDetailResponse = {
     isPartialDay: boolean;
     completenessRatio: number;
     hasSuspiciousReadings: boolean;
+    warningDetails: {
+      kind: 'missing-interval';
+      missingMinutes: number;
+      gapStartsAt: string;
+      gapEndsAt: string;
+      message: string;
+    } | null;
     fetchedAt: string;
   };
 };

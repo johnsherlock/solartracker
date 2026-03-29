@@ -1,13 +1,14 @@
 'use client';
 
-import { use, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   Area,
   AreaChart,
   CartesianGrid,
-  Legend,
   ResponsiveContainer,
   Tooltip,
+  Legend,
   XAxis,
   YAxis,
 } from 'recharts';
@@ -16,10 +17,15 @@ import {
   AlertTriangle,
   ArrowDownToLine,
   ArrowUpFromLine,
+  Calendar,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Clock,
+  Eye,
+  EyeOff,
   Home,
   RefreshCw,
   Sun,
@@ -30,111 +36,122 @@ import {
   Wind,
   Zap,
 } from 'lucide-react';
+import type {
+  CostPoint,
+  CurrentMetrics,
+  FinancialEstimate,
+  LivePoint,
+} from '@/src/live/loader';
+
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
 
 type ScreenState = 'healthy' | 'stale' | 'warning' | 'disconnected';
-type Resolution = '5min' | '15min' | 'hour';
+type Resolution = '1min' | '30min' | '1hour';
 type ViewMode = 'line' | 'cumulative';
-type SeriesKey = 'generation' | 'consumption' | 'import' | 'export';
+type SeriesKey = 'generation' | 'consumption' | 'import' | 'export' | 'immersion';
 
-type LivePoint = {
-  time: string;
-  generation: number;
-  consumption: number;
-  import: number;
-  export: number;
+export type LiveScreenProps = {
+  today: string;
+  displayDate: string;
+  initialLiveTime: string;
+  selectedDate: string;
+  isHistoricalDate: boolean;
+  installationContext: { name: string } | null;
+  timezone: string;
+  screenState: ScreenState;
+  health: {
+    minutesStale: number | null;
+    lastReadingLocalTime: string | null;
+    refreshedAtLocalTime: string;
+    warningDetails: {
+      kind: 'missing-interval';
+      missingMinutes: number;
+      gapStartsAt: string;
+      gapEndsAt: string;
+      message: string;
+    } | null;
+  };
+  hasTariff: boolean;
+  hasCoordinates: boolean;
+  hasCapacity: boolean;
+  currentMetrics: CurrentMetrics | null;
+  minuteChartData: LivePoint[];
+  halfHourChartData: LivePoint[];
+  hourChartData: LivePoint[];
+  costChartData: CostPoint[];
+  todayTotals: {
+    generatedKwh: number;
+    consumedKwh: number;
+    importKwh: number;
+    exportKwh: number;
+    immersionDivertedKwh: number;
+  } | null;
+  financialEstimate: FinancialEstimate | null;
 };
 
-const SERIES_ORDER: SeriesKey[] = ['generation', 'consumption', 'import', 'export'];
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const SERIES_ORDER: SeriesKey[] = ['generation', 'consumption', 'import', 'immersion', 'export'];
+const MINUTE_DEFAULT_SERIES: SeriesKey[] = ['generation', 'consumption'];
 const SERIES_COLORS: Record<SeriesKey, string> = {
   generation: '#fbbf24',
-  consumption: '#94a3b8',
+  consumption: '#f97316',
   import: '#64748b',
   export: '#34d399',
+  immersion: '#ef4444',
+};
+const COST_SERIES_ORDER = ['importCost', 'savings', 'exportCredit'] as const;
+type CostSeriesKey = (typeof COST_SERIES_ORDER)[number];
+const COST_SERIES_COLORS: Record<CostSeriesKey, string> = {
+  importCost: '#f472b6',
+  savings: '#4ade80',
+  exportCredit: '#60a5fa',
 };
 
-const FIVE_MINUTE_DATA: LivePoint[] = [
-  { time: '11:00', generation: 1.92, consumption: 1.08, import: 0.22, export: 0.78 },
-  { time: '11:05', generation: 2.08, consumption: 1.02, import: 0.12, export: 0.94 },
-  { time: '11:10', generation: 2.34, consumption: 0.96, import: 0.04, export: 1.28 },
-  { time: '11:15', generation: 2.42, consumption: 1.16, import: 0.14, export: 1.12 },
-  { time: '11:20', generation: 2.24, consumption: 1.28, import: 0.2, export: 0.92 },
-  { time: '11:25', generation: 2.46, consumption: 1.12, import: 0.08, export: 1.26 },
-  { time: '11:30', generation: 2.14, consumption: 0.92, import: 0.1, export: 1.12 },
-];
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
 
-const FIFTEEN_MINUTE_DATA: LivePoint[] = [
-  { time: '10:45', generation: 1.54, consumption: 0.96, import: 0.22, export: 0.44 },
-  { time: '11:00', generation: 1.96, consumption: 1.04, import: 0.14, export: 0.78 },
-  { time: '11:15', generation: 2.42, consumption: 1.16, import: 0.14, export: 1.12 },
-  { time: '11:30', generation: 2.14, consumption: 0.92, import: 0.1, export: 1.12 },
-];
-
-const HOURLY_DATA: LivePoint[] = [
-  { time: '08:00', generation: 0.34, consumption: 0.88, import: 0.62, export: 0 },
-  { time: '09:00', generation: 0.92, consumption: 0.96, import: 0.3, export: 0.16 },
-  { time: '10:00', generation: 1.58, consumption: 1.02, import: 0.14, export: 0.56 },
-  { time: '11:00', generation: 2.14, consumption: 0.92, import: 0.1, export: 1.12 },
-];
-
-const TODAY_TOTALS = [
-  { label: 'Generated', value: '14.2 kWh', tone: 'text-amber-300' },
-  { label: 'Consumed', value: '9.8 kWh', tone: 'text-slate-200' },
-  { label: 'Imported', value: '1.6 kWh', tone: 'text-slate-400' },
-  { label: 'Exported', value: '4.4 kWh', tone: 'text-emerald-300' },
-];
-
-const VALUE_TOTALS = [
-  { label: 'Import cost so far', value: '€0.84', tone: 'text-rose-300' },
-  { label: 'Export value', value: '€0.29', tone: 'text-emerald-300' },
-  { label: 'Solar savings', value: '€1.42', tone: 'text-amber-300' },
-  { label: 'Net bill impact', value: '-€0.58', tone: 'text-cyan-300' },
-];
-
-function getResolutionData(resolution: Resolution) {
-  if (resolution === '15min') return FIFTEEN_MINUTE_DATA;
-  if (resolution === 'hour') return HOURLY_DATA;
-  return FIVE_MINUTE_DATA;
-}
-
-function applyStateToData(data: LivePoint[], screenState: ScreenState) {
-  if (screenState === 'disconnected') return [];
-  if (screenState === 'healthy') return data;
-  if (screenState === 'stale') {
-    return data.slice(0, Math.max(1, data.length - 1));
-  }
-  return data.map((point, index) =>
-    index === Math.max(1, data.length - 2)
-      ? {
-          ...point,
-          generation: point.generation * 1.55,
-          export: point.export * 1.7,
-        }
-      : point,
-  );
-}
-
-function applyViewMode(data: LivePoint[], viewMode: ViewMode) {
+function applyViewMode(data: LivePoint[], viewMode: ViewMode, resolution: Resolution): LivePoint[] {
   if (viewMode === 'line') return data;
 
-  const running = {
-    generation: 0,
-    consumption: 0,
-    import: 0,
-    export: 0,
-  };
-
+  const running = { generation: 0, consumption: 0, import: 0, export: 0, immersion: 0 };
   return data.map((point) => {
-    running.generation += point.generation;
-    running.consumption += point.consumption;
-    running.import += point.import;
-    running.export += point.export;
-
+    const factor = resolution === '1min' ? 1 : point.intervalHours;
+    running.generation += point.generation * factor;
+    running.consumption += point.consumption * factor;
+    running.import += point.import * factor;
+    running.export += point.export * factor;
+    running.immersion += point.immersion * factor;
     return {
       time: point.time,
       generation: Number(running.generation.toFixed(2)),
       consumption: Number(running.consumption.toFixed(2)),
       import: Number(running.import.toFixed(2)),
       export: Number(running.export.toFixed(2)),
+      immersion: Number(running.immersion.toFixed(2)),
+      intervalHours: point.intervalHours,
+    };
+  });
+}
+
+function applyCostViewMode(data: CostPoint[], viewMode: ViewMode): CostPoint[] {
+  if (viewMode === 'line') return data;
+
+  const running = { importCost: 0, savings: 0, exportCredit: 0 };
+  return data.map((point) => {
+    running.importCost += point.importCost;
+    running.savings += point.savings;
+    running.exportCredit += point.exportCredit;
+    return {
+      time: point.time,
+      importCost: Number(running.importCost.toFixed(2)),
+      savings: Number(running.savings.toFixed(2)),
+      exportCredit: Number(running.exportCredit.toFixed(2)),
     };
   });
 }
@@ -143,108 +160,155 @@ function formatSeriesLabel(key: SeriesKey) {
   return key.charAt(0).toUpperCase() + key.slice(1);
 }
 
+function formatCostSeriesLabel(key: CostSeriesKey) {
+  if (key === 'importCost') return 'Import €';
+  if (key === 'exportCredit') return 'Export €';
+  return 'Savings €';
+}
+
+function formatResolutionLabel(value: Resolution) {
+  if (value === '1min') return '1min';
+  if (value === '30min') return '30min';
+  return '1hour';
+}
+
 function formatKw(value: number) {
-  return `${value.toFixed(value >= 1 ? 2 : 2)} kW`;
+  return `${value.toFixed(2)} kW`;
 }
 
-function PrototypeSwitcher({
-  current,
-  onChange,
-}: {
-  current: ScreenState;
-  onChange: (screenState: ScreenState) => void;
-}) {
-  const states: { id: ScreenState; label: string }[] = [
-    { id: 'healthy', label: 'Healthy' },
-    { id: 'stale', label: 'Stale data' },
-    { id: 'warning', label: 'Warning' },
-    { id: 'disconnected', label: 'Disconnected' },
-  ];
-
-  return (
-    <div className="border-b border-slate-800 bg-slate-950 px-4 py-2 text-xs">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2.5">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-          Prototype state
-        </span>
-        {states.map((state) => (
-          <button
-            key={state.id}
-            onClick={() => onChange(state.id)}
-            className={`rounded-full border px-3 py-1 font-medium transition-colors ${
-              current === state.id
-                ? 'border-amber-400/60 bg-amber-400/15 text-amber-200'
-                : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200'
-            }`}
-          >
-            {state.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
+function formatW(kw: number): string {
+  return Math.round(kw * 1000).toLocaleString();
 }
+
+function formatKwh(kwh: number): string {
+  return `${kwh.toFixed(2)} kWh`;
+}
+
+function formatEuro(value: number, preserveSign = false): string {
+  const sign = preserveSign && value < 0 ? '-' : '';
+  return `${sign}€${Math.abs(value).toFixed(2)}`;
+}
+
+function formatEuroTick(value: number): string {
+  if (value === 0) return '€0';
+  return `€${value.toFixed(2)}`;
+}
+
+function formatClockTime(date: Date, timezone: string): string {
+  return new Intl.DateTimeFormat('en-IE', {
+    timeZone: timezone,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(date);
+}
+
+function parseIsoDate(isoDate: string): Date {
+  return new Date(`${isoDate}T12:00:00`);
+}
+
+function addDays(isoDate: string, days: number): string {
+  const date = parseIsoDate(isoDate);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function startOfMonth(isoDate: string): Date {
+  const date = parseIsoDate(isoDate);
+  return new Date(date.getFullYear(), date.getMonth(), 1, 12);
+}
+
+function shiftMonth(isoDate: string, months: number): string {
+  const date = startOfMonth(isoDate);
+  date.setMonth(date.getMonth() + months);
+  return date.toISOString().slice(0, 10);
+}
+
+function formatMonthYear(isoDate: string): string {
+  return new Intl.DateTimeFormat('en-IE', {
+    month: 'long',
+    year: 'numeric',
+  }).format(parseIsoDate(isoDate));
+}
+
+function getMonthName(isoDate: string): string {
+  return new Intl.DateTimeFormat('en-IE', { month: 'long' }).format(parseIsoDate(isoDate));
+}
+
+function getMonthDays(visibleMonth: string) {
+  const monthStart = startOfMonth(visibleMonth);
+  const month = monthStart.getMonth();
+  const gridStart = new Date(monthStart);
+  gridStart.setDate(monthStart.getDate() - monthStart.getDay());
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(gridStart);
+    date.setDate(gridStart.getDate() + index);
+    return {
+      iso: date.toISOString().slice(0, 10),
+      dayNumber: date.getDate(),
+      inMonth: date.getMonth() === month,
+    };
+  });
+}
+
+function buildLiveUrl(pathname: string, date: string, today: string): string {
+  return date === today ? pathname : `${pathname}?date=${date}`;
+}
+
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
 
 function CapabilityBar({
   hasTariff,
   hasCoordinates,
   hasCapacity,
-  onToggle,
 }: {
   hasTariff: boolean;
   hasCoordinates: boolean;
   hasCapacity: boolean;
-  onToggle: (key: 'tariff' | 'coordinates' | 'capacity') => void;
 }) {
   const items = [
-    { key: 'tariff' as const, label: 'Tariff linked', active: hasTariff },
-    { key: 'coordinates' as const, label: 'Coordinates added', active: hasCoordinates },
-    { key: 'capacity' as const, label: 'Array capacity known', active: hasCapacity },
+    { key: 'tariff', label: 'Tariff linked', active: hasTariff },
+    { key: 'coordinates', label: 'Coordinates added', active: hasCoordinates },
+    { key: 'capacity', label: 'Array capacity known', active: hasCapacity },
   ];
 
   return (
     <div className="border-b border-slate-800 bg-[#08111f] px-4 py-2 text-xs">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2.5">
         <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-          Capability toggles
+          Setup
         </span>
         {items.map((item) => (
-          <button
+          <span
             key={item.key}
-            onClick={() => onToggle(item.key)}
-            className={`rounded-full border px-3 py-1 font-medium transition-colors ${
+            className={`rounded-full border px-3 py-1 font-medium ${
               item.active
                 ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200'
+                : 'border-slate-700 text-slate-500'
             }`}
           >
             {item.label}
-          </button>
+          </span>
         ))}
       </div>
     </div>
   );
 }
 
-function NavBar({
-  screenState,
-  onHome,
-}: {
-  screenState: ScreenState;
-  onHome: () => void;
-}) {
+function NavBar({ screenState }: { screenState: ScreenState }) {
   return (
     <header className="border-b border-slate-800 bg-[#101826]">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-3">
-          <button
-            onClick={onHome}
-            className="flex items-center gap-1.5 text-xs text-slate-400 transition-colors hover:text-slate-200"
-          >
+          <div className="flex items-center gap-1.5 text-xs text-slate-400">
             <ChevronLeft size={14} />
             <Home size={13} />
             <span className="hidden sm:inline">Overview</span>
-          </button>
+          </div>
           <span className="text-slate-700">/</span>
           <div className="flex items-center gap-2">
             {screenState === 'healthy' ? (
@@ -272,51 +336,76 @@ function NavBar({
   );
 }
 
-function TrustBadge({ screenState }: { screenState: ScreenState }) {
-  const config: Record<
-    ScreenState,
-    { icon: ReactNode; label: string; className: string }
-  > = {
+function TrustBadge({
+  screenState,
+  health,
+  dismissed,
+  onOpenDetails,
+}: {
+  screenState: ScreenState;
+  health: LiveScreenProps['health'];
+  dismissed?: boolean;
+  onOpenDetails?: () => void;
+}) {
+  function label(): string {
+    switch (screenState) {
+      case 'healthy':
+        return `Updated ${health.refreshedAtLocalTime}`;
+      case 'stale':
+        return health.lastReadingLocalTime
+          ? `Last reading ${health.lastReadingLocalTime}`
+          : 'Data delayed';
+      case 'warning':
+        return dismissed ? 'Data quality note dismissed' : 'Data quality review needed';
+      case 'disconnected':
+        return 'Provider disconnected';
+    }
+  }
+
+  const config: Record<ScreenState, { icon: ReactNode; className: string }> = {
     healthy: {
       icon: <CheckCircle2 size={13} />,
-      label: 'Updated 12 seconds ago',
       className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
     },
     stale: {
       icon: <Clock size={13} />,
-      label: 'Last seen 18 minutes ago',
       className: 'border-orange-500/30 bg-orange-500/10 text-orange-300',
     },
     warning: {
       icon: <TriangleAlert size={13} />,
-      label: 'Suspicious reading 3 minutes ago',
       className: 'border-orange-500/30 bg-orange-500/10 text-orange-300',
     },
     disconnected: {
       icon: <WifiOff size={13} />,
-      label: 'Provider disconnected',
       className: 'border-rose-500/30 bg-rose-500/10 text-rose-300',
     },
   };
 
   const item = config[screenState];
   return (
-    <span
+    <button
+      type="button"
+      onClick={screenState === 'warning' ? onOpenDetails : undefined}
       className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${item.className}`}
     >
       {item.icon}
-      {item.label}
-    </span>
+      {label()}
+    </button>
   );
 }
 
 function WarningBanner({
   screenState,
-  onAction,
+  health,
+  dismissed,
+  onOpenDetails,
 }: {
   screenState: ScreenState;
-  onAction: () => void;
+  health: LiveScreenProps['health'];
+  dismissed?: boolean;
+  onOpenDetails?: () => void;
 }) {
+  if (screenState === 'warning' && dismissed) return null;
   if (screenState === 'healthy') return null;
 
   const config = {
@@ -328,15 +417,17 @@ function WarningBanner({
       icon: <Clock size={15} className="mt-0.5 shrink-0" />,
     },
     warning: {
-      title: 'One reading looks suspicious',
-      body: 'A recent interval spikes above the surrounding pattern. This may be a provider reporting issue rather than a real consumption change.',
-      cta: 'Review Data Health',
+      title: 'A data gap needs review',
+      body:
+        health.warningDetails?.message ??
+        'A recent interval contains an unusual gap or missing live readings.',
+      cta: 'Review details',
       className: 'border-orange-500/20 bg-orange-500/10 text-orange-200',
       icon: <AlertTriangle size={15} className="mt-0.5 shrink-0" />,
     },
     disconnected: {
       title: 'Provider connection needs attention',
-      body: 'Live telemetry has stopped. You can still preserve the screen structure for review, but reconnect is the next real action.',
+      body: 'Live telemetry has stopped. Reconnecting the provider is the next action.',
       cta: 'Reconnect provider',
       className: 'border-rose-500/20 bg-rose-500/10 text-rose-200',
       icon: <WifiOff size={15} className="mt-0.5 shrink-0" />,
@@ -351,9 +442,71 @@ function WarningBanner({
           <p className="text-sm font-semibold">{config.title}</p>
           <p className="mt-0.5 text-sm text-inherit/80">{config.body}</p>
         </div>
-        <button onClick={onAction} className="text-xs font-semibold underline underline-offset-4">
+        <button
+          type="button"
+          onClick={screenState === 'warning' ? onOpenDetails : undefined}
+          className="text-xs font-semibold underline underline-offset-4"
+        >
           {config.cta}
         </button>
+      </div>
+    </div>
+  );
+}
+
+function WarningDetailsModal({
+  health,
+  open,
+  onClose,
+  onDismiss,
+}: {
+  health: LiveScreenProps['health'];
+  open: boolean;
+  onClose: () => void;
+  onDismiss: () => void;
+}) {
+  if (!open || !health.warningDetails) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4">
+      <div className="w-full max-w-md rounded-[28px] border border-slate-800 bg-[#111b2b] p-5 shadow-[0_30px_80px_rgba(2,6,23,0.55)]">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+          Data quality
+        </p>
+        <h3 className="mt-1 text-lg font-semibold text-slate-50">Missing live readings detected</h3>
+        <p className="mt-3 text-sm text-slate-300">{health.warningDetails.message}</p>
+        <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-3 text-sm text-slate-300">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-slate-400">Gap window</span>
+            <span className="font-mono">
+              {health.warningDetails.gapStartsAt} to {health.warningDetails.gapEndsAt}
+            </span>
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <span className="text-slate-400">Missing minutes</span>
+            <span className="font-mono">{health.warningDetails.missingMinutes}</span>
+          </div>
+        </div>
+        <p className="mt-4 text-sm text-slate-400">
+          This note is based on missing minute records in the provider feed. If you trust the data,
+          you can dismiss the warning for this session.
+        </p>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200"
+          >
+            Close
+          </button>
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="rounded-full bg-amber-300 px-4 py-2 text-sm font-semibold text-slate-950"
+          >
+            Dismiss warning
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -384,12 +537,18 @@ function SectionHeader({
   );
 }
 
-function MobileMetricGrid({ stale }: { stale?: boolean }) {
+function MobileMetricGrid({
+  current,
+  stale,
+}: {
+  current: CurrentMetrics;
+  stale?: boolean;
+}) {
   const items = [
-    { label: 'Gen', value: '2.14', unit: 'kW', tone: 'text-amber-300' },
-    { label: 'Use', value: '0.92', unit: 'kW', tone: 'text-slate-100' },
-    { label: 'Imp', value: '0.31', unit: 'kW', tone: 'text-slate-300' },
-    { label: 'Exp', value: '0.81', unit: 'kW', tone: 'text-emerald-300' },
+    { label: 'Gen', value: current.generatedKw.toFixed(2), unit: 'kW', tone: 'text-amber-300' },
+    { label: 'Use', value: current.consumedKw.toFixed(2), unit: 'kW', tone: 'text-slate-100' },
+    { label: 'Imp', value: current.importKw.toFixed(2), unit: 'kW', tone: 'text-slate-300' },
+    { label: 'Exp', value: current.exportKw.toFixed(2), unit: 'kW', tone: 'text-emerald-300' },
   ];
 
   return (
@@ -452,12 +611,21 @@ function MetricCard({
 }
 
 function InsightStrip({
+  current,
   hasCapacity,
   stale,
 }: {
+  current: CurrentMetrics;
   hasCapacity: boolean;
   stale?: boolean;
 }) {
+  const { solarShare, gridShare, importKw, exportKw, generatedKw } = current;
+
+  const netPositionLabel =
+    exportKw > 0 ? 'Surplus' : importKw < generatedKw * 0.1 ? 'Self-sufficient' : 'Grid assisted';
+  const gridPressureLabel =
+    solarShare > 80 ? 'Low' : solarShare > 50 ? 'Moderate' : 'High';
+
   return (
     <div className="grid gap-3 lg:grid-cols-[1.6fr_1fr]">
       <div
@@ -471,17 +639,21 @@ function InsightStrip({
               Right now
             </p>
             <h3 className="mt-1 text-base font-semibold text-slate-100 sm:text-lg">
-              82% of home demand is being covered by solar
+              {solarShare > 0
+                ? `${solarShare}% of home demand is being covered by solar`
+                : 'No solar generation right now'}
             </h3>
           </div>
-          <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold text-emerald-300 sm:text-xs">
-            Covering home + exporting 0.81 kW
-          </span>
+          {exportKw > 0 && (
+            <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold text-emerald-300 sm:text-xs">
+              Covering home + exporting {formatKw(exportKw)}
+            </span>
+          )}
         </div>
         <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-800">
           <div
             className="h-full rounded-full bg-gradient-to-r from-amber-400 via-amber-300 to-emerald-300"
-            style={{ width: '82%' }}
+            style={{ width: `${Math.min(100, solarShare)}%` }}
           />
         </div>
         <div className="mt-2 flex justify-between text-xs text-slate-500">
@@ -497,16 +669,18 @@ function InsightStrip({
         <div className="mt-3 grid gap-2 text-sm text-slate-300 sm:space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-slate-400">Net position</span>
-            <span className="font-semibold text-emerald-300">Surplus</span>
+            <span className={`font-semibold ${exportKw > 0 ? 'text-emerald-300' : 'text-slate-200'}`}>
+              {netPositionLabel}
+            </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-slate-400">Grid draw pressure</span>
-            <span className="font-semibold text-slate-200">Low</span>
+            <span className="font-semibold text-slate-200">{gridPressureLabel}</span>
           </div>
           {hasCapacity && (
             <div className="flex items-center justify-between">
-              <span className="text-slate-400">Array efficiency</span>
-              <span className="font-semibold text-cyan-300">78% of 18 kWp max</span>
+              <span className="text-slate-400">Grid draw</span>
+              <span className="font-semibold text-cyan-300">{gridShare}%</span>
             </div>
           )}
         </div>
@@ -519,10 +693,12 @@ function ToggleGroup<T extends string>({
   value,
   options,
   onChange,
+  renderLabel,
 }: {
   value: T;
   options: readonly T[];
   onChange: (value: T) => void;
+  renderLabel?: (value: T) => string;
 }) {
   return (
     <div className="inline-flex rounded-full border border-slate-700 bg-slate-900/70 p-1">
@@ -536,15 +712,165 @@ function ToggleGroup<T extends string>({
               : 'text-slate-400 hover:text-slate-200'
           }`}
         >
-          {option}
+          {renderLabel ? renderLabel(option) : option}
         </button>
       ))}
     </div>
   );
 }
 
+function DatePickerControl({
+  selectedDate,
+  displayDate,
+  today,
+  isHistoricalDate,
+  onSelectDate,
+}: {
+  selectedDate: string;
+  displayDate: string;
+  today: string;
+  isHistoricalDate: boolean;
+  onSelectDate: (date: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [visibleMonth, setVisibleMonth] = useState(() => `${selectedDate.slice(0, 7)}-01`);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  const days = useMemo(() => getMonthDays(visibleMonth), [visibleMonth]);
+
+  useEffect(() => {
+    setVisibleMonth(`${selectedDate.slice(0, 7)}-01`);
+  }, [selectedDate]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!popoverRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [open]);
+
+  return (
+    <div ref={popoverRef} className="relative flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => onSelectDate(addDays(selectedDate, -1))}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-900/70 text-slate-300 transition-colors hover:border-slate-600 hover:text-slate-100"
+        aria-label="Previous day"
+      >
+        <ChevronsLeft size={14} />
+      </button>
+
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs text-slate-200 transition-colors hover:border-slate-600"
+      >
+        <Calendar size={13} className="text-slate-400" />
+        <span>{displayDate}</span>
+      </button>
+
+      {isHistoricalDate && (
+        <button
+          type="button"
+          onClick={() => onSelectDate(addDays(selectedDate, 1))}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-900/70 text-slate-300 transition-colors hover:border-slate-600 hover:text-slate-100"
+          aria-label="Next day"
+        >
+          <ChevronsRight size={14} />
+        </button>
+      )}
+
+      {open && (
+        <div className="absolute right-0 top-11 z-30 w-[320px] rounded-[24px] border border-slate-700 bg-[#f4f1ea] text-slate-900 shadow-[0_30px_80px_rgba(2,6,23,0.4)]">
+          <div className="border-b border-stone-300 px-4 py-4">
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <button
+                type="button"
+                onClick={() => setVisibleMonth(shiftMonth(visibleMonth, -1))}
+                className="font-medium text-slate-700 transition-colors hover:text-slate-950"
+              >
+                {`<< ${getMonthName(shiftMonth(visibleMonth, -1))}`}
+              </button>
+              <span className="text-2xl font-semibold text-slate-950">{formatMonthYear(visibleMonth)}</span>
+              <button
+                type="button"
+                onClick={() => setVisibleMonth(shiftMonth(visibleMonth, 1))}
+                className="font-medium text-slate-700 transition-colors hover:text-slate-950"
+              >
+                {`${getMonthName(shiftMonth(visibleMonth, 1))} >>`}
+              </button>
+            </div>
+          </div>
+
+          <div className="px-4 py-4">
+            <div className="grid grid-cols-7 gap-y-2 text-center text-sm text-slate-700">
+              {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((day) => (
+                <div key={day} className="pb-1">
+                  {day}
+                </div>
+              ))}
+              {days.map((day) => {
+                const isSelected = day.iso === selectedDate;
+                const isFuture = day.iso > today;
+                return (
+                  <button
+                    key={day.iso}
+                    type="button"
+                    disabled={isFuture}
+                    onClick={() => {
+                      onSelectDate(day.iso);
+                      setOpen(false);
+                    }}
+                    className={`mx-auto flex h-8 w-8 items-center justify-center rounded-md text-sm transition-colors ${
+                      isSelected
+                        ? 'bg-sky-700 font-semibold text-white'
+                        : day.inMonth
+                        ? 'text-slate-900 hover:bg-sky-100'
+                        : 'text-stone-400'
+                    } ${isFuture ? 'cursor-not-allowed text-stone-300 hover:bg-transparent' : ''}`}
+                  >
+                    {day.dayNumber}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="border-t border-stone-300 px-4 py-3">
+            <button
+              type="button"
+              onClick={() => {
+                onSelectDate(today);
+                setOpen(false);
+              }}
+              className="w-full text-center text-base font-semibold text-slate-900 transition-colors hover:text-sky-800"
+            >
+              Back to Today
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LiveTrendChart({
   data,
+  costData,
   screenState,
   resolution,
   onResolutionChange,
@@ -554,6 +880,7 @@ function LiveTrendChart({
   onToggleSeries,
 }: {
   data: LivePoint[];
+  costData: CostPoint[];
   screenState: ScreenState;
   resolution: Resolution;
   onResolutionChange: (resolution: Resolution) => void;
@@ -563,6 +890,17 @@ function LiveTrendChart({
   onToggleSeries: (series: SeriesKey) => void;
 }) {
   const isStale = screenState === 'stale' || screenState === 'warning';
+  const cumulativeUsesEnergyUnits = viewMode === 'cumulative' && resolution !== '1min';
+  const axisUnit = cumulativeUsesEnergyUnits ? 'kWh' : 'kW';
+  const showFilledMinuteView = resolution === '1min' && viewMode === 'line';
+  const visibleData = data.flatMap((point) =>
+    activeSeries.map((series) => point[series]),
+  );
+  const maxVisibleValue = visibleData.reduce((max, value) => Math.max(max, value), 0);
+  const yAxisMax =
+    maxVisibleValue <= 0
+      ? 1
+      : Number((Math.ceil((maxVisibleValue * 1.1) / 0.5) * 0.5).toFixed(2));
 
   return (
     <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5 shadow-[0_30px_70px_rgba(2,6,23,0.34)]">
@@ -573,15 +911,16 @@ function LiveTrendChart({
           </p>
           <h3 className="mt-1 text-xl font-semibold text-slate-50">Live trend</h3>
           <p className="mt-1 text-sm text-slate-400">
-            Switch between raw and cumulative views, and strip back the series when the story gets noisy.
+            Switch between raw and cumulative views, and strip back series when the story gets noisy.
           </p>
         </div>
 
         <div className="flex flex-wrap gap-2">
           <ToggleGroup
             value={resolution}
-            options={['5min', '15min', 'hour'] as const}
+            options={['1min', '30min', '1hour'] as const}
             onChange={onResolutionChange}
+            renderLabel={formatResolutionLabel}
           />
           <ToggleGroup
             value={viewMode}
@@ -619,13 +958,15 @@ function LiveTrendChart({
                 />
                 {formatSeriesLabel(series)}
               </span>
-              <span className="text-[11px]">{active ? 'Visible' : 'Hidden'}</span>
+              <span className="text-[11px] text-slate-400">
+                {active ? <Eye size={13} /> : <EyeOff size={13} />}
+              </span>
             </button>
           );
         })}
       </div>
 
-      <div className="mt-4 h-[280px] rounded-[24px] border border-slate-800 bg-[#0b1321] p-3">
+      <div className="mt-4 h-[400px] rounded-[24px] border border-slate-800 bg-[#0b1321] p-3">
         {data.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-slate-500">
             No live data available
@@ -636,7 +977,8 @@ function LiveTrendChart({
               <defs>
                 {SERIES_ORDER.map((key) => (
                   <linearGradient key={key} id={`fill-${key}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="4%" stopColor={SERIES_COLORS[key]} stopOpacity={0.28} />
+                    <stop offset="0%" stopColor={SERIES_COLORS[key]} stopOpacity={showFilledMinuteView ? 0.34 : 0.12} />
+                    <stop offset="70%" stopColor={SERIES_COLORS[key]} stopOpacity={showFilledMinuteView ? 0.16 : 0.04} />
                     <stop offset="96%" stopColor={SERIES_COLORS[key]} stopOpacity={0} />
                   </linearGradient>
                 ))}
@@ -649,11 +991,12 @@ function LiveTrendChart({
                 axisLine={false}
               />
               <YAxis
+                domain={[0, yAxisMax]}
                 stroke="#475569"
                 tick={{ fill: '#64748b', fontSize: 11 }}
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={(value) => `${value}kW`}
+                tickFormatter={(value) => `${value}${axisUnit}`}
               />
               <Tooltip
                 contentStyle={{
@@ -663,7 +1006,9 @@ function LiveTrendChart({
                   color: '#e2e8f0',
                 }}
                 formatter={(value, name) => [
-                  formatKw(typeof value === 'number' ? value : Number(value ?? 0)),
+                  cumulativeUsesEnergyUnits
+                    ? formatKwh(typeof value === 'number' ? value : Number(value ?? 0))
+                    : formatKw(typeof value === 'number' ? value : Number(value ?? 0)),
                   formatSeriesLabel(name as SeriesKey),
                 ]}
               />
@@ -674,12 +1019,13 @@ function LiveTrendChart({
               {SERIES_ORDER.filter((series) => activeSeries.includes(series)).map((series) => (
                 <Area
                   key={series}
-                  type="monotone"
+                  type="linear"
                   dataKey={series}
                   stroke={SERIES_COLORS[series]}
                   fill={`url(#fill-${series})`}
-                  strokeWidth={series === 'import' ? 1.75 : 2.2}
-                  activeDot={{ r: 4 }}
+                  fillOpacity={showFilledMinuteView ? 0.5 : 0}
+                  strokeWidth={series === 'import' ? 1 : 1.25}
+                  activeDot={{ r: 2.5, strokeWidth: 0 }}
                   dot={false}
                 />
               ))}
@@ -687,20 +1033,94 @@ function LiveTrendChart({
           </ResponsiveContainer>
         )}
       </div>
+
+      <div className="mt-5">
+        <div className="mb-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Energy value
+          </p>
+          <p className="mt-1 text-sm text-slate-400">
+            Half-hour import cost, solar savings, and export value through the day.
+          </p>
+        </div>
+        <div className="h-[240px] rounded-[24px] border border-slate-800 bg-[#0b1321] p-3">
+          {costData.length === 0 ? (
+            <div className="flex h-full items-center justify-center text-sm text-slate-500">
+              No tariff-backed value data available
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={costData} margin={{ top: 10, right: 8, left: -12, bottom: 0 }}>
+                <XAxis
+                  dataKey="time"
+                  stroke="#475569"
+                  tick={{ fill: '#64748b', fontSize: 11 }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis
+                  stroke="#475569"
+                  tick={{ fill: '#64748b', fontSize: 11 }}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(value) => formatEuroTick(Number(value))}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#0f172a',
+                    border: '1px solid rgba(71,85,105,0.55)',
+                    borderRadius: 16,
+                    color: '#e2e8f0',
+                  }}
+                  formatter={(value, name) => [
+                    formatEuro(typeof value === 'number' ? value : Number(value ?? 0)),
+                    formatCostSeriesLabel(name as CostSeriesKey),
+                  ]}
+                />
+                <Legend
+                  wrapperStyle={{ fontSize: 11, color: '#94a3b8', paddingTop: 12 }}
+                  formatter={(value) => formatCostSeriesLabel(value as CostSeriesKey)}
+                />
+                {COST_SERIES_ORDER.map((series) => (
+                  <Area
+                    key={series}
+                    type="linear"
+                    dataKey={series}
+                    stroke={COST_SERIES_COLORS[series]}
+                    fillOpacity={0}
+                    strokeWidth={1.25}
+                    activeDot={{ r: 2.5, strokeWidth: 0 }}
+                    dot={false}
+                  />
+                ))}
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
-function ValuePanel({ hasTariff }: { hasTariff: boolean }) {
-  if (!hasTariff) {
+function ValuePanel({
+  hasTariff,
+  estimate,
+}: {
+  hasTariff: boolean;
+  estimate: FinancialEstimate | null;
+}) {
+  if (!hasTariff || !estimate) {
     return (
       <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
           Today value
         </p>
-        <h3 className="mt-1 text-lg font-semibold text-slate-50">Add tariff details to unlock live value</h3>
+        <h3 className="mt-1 text-lg font-semibold text-slate-50">
+          Add tariff details to unlock live value
+        </h3>
         <p className="mt-2 text-sm text-slate-400">
-          Keep the live energy view useful now, then layer in cost, export value, and savings once the tariff setup is complete.
+          Keep the live energy view useful now, then layer in cost, export value, and savings once
+          the tariff setup is complete.
         </p>
         <button className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-amber-300">
           Add tariff details <ChevronRight size={14} />
@@ -709,28 +1129,81 @@ function ValuePanel({ hasTariff }: { hasTariff: boolean }) {
     );
   }
 
+  const items = [
+    {
+      label: 'Import cost so far',
+      value: formatEuro(estimate.importCost),
+      tone: 'text-rose-300',
+    },
+    {
+      label: 'Export credit',
+      value: formatEuro(estimate.exportCredit),
+      tone: 'text-emerald-300',
+    },
+    {
+      label: 'Solar savings',
+      value: formatEuro(estimate.solarSavings),
+      tone: 'text-amber-300',
+    },
+    {
+      label: 'Net bill impact',
+      value: formatEuro(estimate.netBillImpact, true),
+      tone: estimate.netBillImpact <= 0 ? 'text-emerald-300' : 'text-cyan-300',
+    },
+  ];
+
   return (
     <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
         Today value
       </p>
-      <h3 className="mt-1 text-lg font-semibold text-slate-50">Energy and money are telling the same story</h3>
+      <h3 className="mt-1 text-lg font-semibold text-slate-50">
+        Energy and money are telling the same story
+      </h3>
       <div className="mt-4 space-y-3">
-        {VALUE_TOTALS.map((item) => (
+        {items.map((item) => (
           <div key={item.label} className="flex items-baseline justify-between gap-3">
             <span className="text-sm text-slate-400">{item.label}</span>
             <span className={`font-mono text-sm font-semibold ${item.tone}`}>{item.value}</span>
           </div>
         ))}
       </div>
-      <div className="mt-4 rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-200">
-        Low import during the brightest window is protecting the bill while export is adding a small credit on top.
-      </div>
+      <details className="mt-4 rounded-2xl border border-slate-700/40 bg-slate-900/40 px-3 py-2 text-xs text-slate-400">
+        <summary className="cursor-pointer list-none font-semibold text-amber-300">
+          How these values are calculated
+        </summary>
+        <div className="mt-3 space-y-2 text-slate-300">
+          <p>Import cost = total imported kWh x active tariff rate x VAT.</p>
+          <p>Export credit = total exported kWh x export rate.</p>
+          <p>Solar savings = generated minus exported kWh x active tariff rate x VAT.</p>
+          <p>Net bill impact = import cost - export credit.</p>
+        </div>
+      </details>
     </div>
   );
 }
 
-function TodayPanel({ screenState }: { screenState: ScreenState }) {
+function TodayPanel({
+  totals,
+  screenState,
+}: {
+  totals: LiveScreenProps['todayTotals'];
+  screenState: ScreenState;
+}) {
+  const items = totals
+    ? [
+        { label: 'Generated', value: formatKwh(totals.generatedKwh), tone: 'text-amber-300' },
+        { label: 'Consumed', value: formatKwh(totals.consumedKwh), tone: 'text-slate-200' },
+        { label: 'Imported', value: formatKwh(totals.importKwh), tone: 'text-slate-400' },
+        { label: 'Exported', value: formatKwh(totals.exportKwh), tone: 'text-emerald-300' },
+        {
+          label: 'Immersion',
+          value: formatKwh(totals.immersionDivertedKwh),
+          tone: 'text-rose-300',
+        },
+      ]
+    : [];
+
   return (
     <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -738,7 +1211,7 @@ function TodayPanel({ screenState }: { screenState: ScreenState }) {
       </p>
       <h3 className="mt-1 text-lg font-semibold text-slate-50">The day is still building</h3>
       <div className="mt-4 space-y-3">
-        {TODAY_TOTALS.map((item) => (
+        {items.map((item) => (
           <div key={item.label} className="flex items-baseline justify-between gap-3">
             <span className="text-sm text-slate-400">{item.label}</span>
             <span className={`font-mono text-sm font-semibold ${item.tone}`}>{item.value}</span>
@@ -757,89 +1230,101 @@ function TodayPanel({ screenState }: { screenState: ScreenState }) {
   );
 }
 
-function SolarCoveragePanel() {
-  const coverageData = [
-    { time: '08:00', coverage: 22 },
-    { time: '09:00', coverage: 44 },
-    { time: '10:00', coverage: 67 },
-    { time: '11:00', coverage: 82 },
-    { time: '12:00', coverage: 89 },
-    { time: '13:00', coverage: 85 },
-    { time: '14:00', coverage: 73 },
-    { time: '15:00', coverage: 68 },
-    { time: '16:00', coverage: 57 },
-  ];
-
-  const best = coverageData.reduce((current, point) =>
-    point.coverage > current.coverage ? point : current,
-  );
+function SolarCoveragePanel({
+  chartData,
+  currentSolarShare,
+  overallSolarCoverage,
+  currentGridDraw,
+}: {
+  chartData: LivePoint[];
+  currentSolarShare: number;
+  overallSolarCoverage: number | null;
+  currentGridDraw: number;
+}) {
+  const coverageData = chartData.map((pt) => ({
+    time: pt.time,
+    coverage:
+      pt.consumption > 0
+        ? Math.round(Math.min(100, Math.max(0, ((pt.generation - pt.export) / pt.consumption) * 100)))
+        : pt.generation > 0
+        ? 100
+        : 0,
+  }));
 
   return (
     <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
         Solar coverage
       </p>
-      <h3 className="mt-1 text-lg font-semibold text-slate-50">How much of the home solar has covered today</h3>
+      <h3 className="mt-1 text-lg font-semibold text-slate-50">
+        How much of the home solar has covered today
+      </h3>
       <div className="mt-4 h-44 rounded-[24px] border border-slate-800 bg-[#0b1321] p-3">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={coverageData} margin={{ top: 10, right: 8, left: -18, bottom: 0 }}>
-            <defs>
-              <linearGradient id="coverage-fill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#fbbf24" stopOpacity={0.34} />
-                <stop offset="70%" stopColor="#86efac" stopOpacity={0.18} />
-                <stop offset="100%" stopColor="#86efac" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid stroke="rgba(51,65,85,0.28)" vertical={false} />
-            <XAxis
-              dataKey="time"
-              stroke="#475569"
-              tick={{ fill: '#64748b', fontSize: 11 }}
-              tickLine={false}
-              axisLine={false}
-            />
-            <YAxis
-              domain={[0, 100]}
-              stroke="#475569"
-              tick={{ fill: '#64748b', fontSize: 11 }}
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={(value) => `${value}%`}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: '#0f172a',
-                border: '1px solid rgba(71,85,105,0.55)',
-                borderRadius: 16,
-                color: '#e2e8f0',
-              }}
-              formatter={(value) => [`${Number(value ?? 0)}%`, 'Solar coverage']}
-            />
-            <Area
-              type="monotone"
-              dataKey="coverage"
-              stroke="#facc15"
-              fill="url(#coverage-fill)"
-              strokeWidth={2.4}
-              dot={false}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+        {coverageData.length === 0 ? (
+          <div className="flex h-full items-center justify-center text-sm text-slate-500">
+            No coverage data yet
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={coverageData} margin={{ top: 10, right: 8, left: -18, bottom: 0 }}>
+              <defs>
+                <linearGradient id="coverage-fill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#fbbf24" stopOpacity={0.2} />
+                  <stop offset="70%" stopColor="#86efac" stopOpacity={0.1} />
+                  <stop offset="100%" stopColor="#86efac" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke="rgba(51,65,85,0.28)" vertical={false} />
+              <XAxis
+                dataKey="time"
+                stroke="#475569"
+                tick={{ fill: '#64748b', fontSize: 11 }}
+                tickLine={false}
+                axisLine={false}
+              />
+              <YAxis
+                domain={[0, 100]}
+                stroke="#475569"
+                tick={{ fill: '#64748b', fontSize: 11 }}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(value) => `${value}%`}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: '#0f172a',
+                  border: '1px solid rgba(71,85,105,0.55)',
+                  borderRadius: 16,
+                  color: '#e2e8f0',
+                }}
+                formatter={(value) => [`${Number(value ?? 0)}%`, 'Solar coverage']}
+              />
+              <Area
+                type="linear"
+                dataKey="coverage"
+                stroke="#facc15"
+                fill="url(#coverage-fill)"
+                strokeWidth={1.2}
+                dot={false}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-3">
         <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2">
           <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Current</p>
-          <p className="mt-1 font-mono text-lg font-semibold text-amber-300">82%</p>
+          <p className="mt-1 font-mono text-lg font-semibold text-amber-300">{currentSolarShare}%</p>
         </div>
         <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Best hour</p>
+          <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Today overall</p>
           <p className="mt-1 font-mono text-lg font-semibold text-emerald-300">
-            {best.coverage}% <span className="text-sm text-slate-500">@ {best.time}</span>
+            {overallSolarCoverage !== null ? `${overallSolarCoverage}%` : '—'}
           </p>
         </div>
         <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Grid share</p>
-          <p className="mt-1 font-mono text-lg font-semibold text-slate-300">18%</p>
+          <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Grid draw</p>
+          <p className="mt-1 font-mono text-lg font-semibold text-slate-300">{currentGridDraw}%</p>
         </div>
       </div>
     </div>
@@ -853,9 +1338,12 @@ function SolarContextPanel({ hasCoordinates }: { hasCoordinates: boolean }) {
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
           Next
         </p>
-        <h3 className="mt-1 text-lg font-semibold text-slate-50">Add coordinates to unlock solar context</h3>
+        <h3 className="mt-1 text-lg font-semibold text-slate-50">
+          Add coordinates to unlock solar context
+        </h3>
         <p className="mt-2 text-sm text-slate-400">
-          Sunrise, sunset, daylight remaining, and sun-position cues can all live here without needing full roof modeling.
+          Sunrise, sunset, daylight remaining, and sun-position cues can all live here without
+          needing full roof modeling.
         </p>
       </div>
     );
@@ -879,59 +1367,10 @@ function SolarContextPanel({ hasCoordinates }: { hasCoordinates: boolean }) {
       </div>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <InfoTile icon={<Sunrise size={14} />} label="Sunrise" value="06:08" />
-        <InfoTile icon={<Sunset size={14} />} label="Sunset" value="18:52" />
-        <InfoTile icon={<Sun size={14} />} label="Sun altitude" value="43.4°" />
-        <InfoTile icon={<Activity size={14} />} label="Daylight left" value="6h 33m" />
-      </div>
-
-      <div className="mt-5 rounded-[24px] border border-slate-800 bg-[#0b1321] p-4">
-        <div className="flex items-center justify-between text-xs text-slate-500">
-          <span>Solar window today</span>
-          <span>Peak window around 13:30</span>
-        </div>
-        <div className="mt-4 h-24 rounded-[20px] bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.16),_transparent_38%),linear-gradient(180deg,rgba(15,23,42,0)_0%,rgba(15,23,42,0.3)_100%)] p-4">
-          <div className="relative h-full">
-            <div className="absolute inset-x-0 bottom-4 h-px bg-slate-700" />
-            <div className="absolute bottom-4 left-[8%] h-10 w-px border-l border-dashed border-slate-600" />
-            <div className="absolute bottom-4 left-[50%] h-16 w-px border-l border-dashed border-amber-400/60" />
-            <div className="absolute bottom-4 left-[84%] h-8 w-px border-l border-dashed border-slate-600" />
-            <div className="absolute bottom-14 left-[48%] rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-1 text-[11px] text-amber-200">
-              solar noon
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <HourlyWeatherStrip />
-    </div>
-  );
-}
-
-function HourlyWeatherStrip() {
-  const weather = [
-    { time: '12pm', temp: '11°', icon: <Sun size={16} />, label: 'Clear' },
-    { time: '1pm', temp: '12°', icon: <Sun size={16} />, label: 'Bright' },
-    { time: '2pm', temp: '12°', icon: <Wind size={16} />, label: 'Breezy' },
-    { time: '3pm', temp: '11°', icon: <Sun size={16} />, label: 'Light cloud' },
-    { time: '4pm', temp: '10°', icon: <Sunset size={16} />, label: 'Cooling' },
-  ];
-
-  return (
-    <div className="mt-5 rounded-[24px] border border-slate-800 bg-[#0b1321] p-4">
-      <div className="flex items-center justify-between text-xs text-slate-500">
-        <span>Hourly weather forecast</span>
-        <span>Next 5 hours</span>
-      </div>
-      <div className="mt-4 grid grid-cols-5 gap-2">
-        {weather.map((item) => (
-          <div key={item.time} className="rounded-2xl border border-slate-800 bg-slate-950/70 px-2 py-3 text-center">
-            <p className="text-[11px] font-semibold text-slate-400">{item.time}</p>
-            <div className="mt-2 flex justify-center text-amber-300">{item.icon}</div>
-            <p className="mt-2 text-sm font-semibold text-slate-100">{item.temp}</p>
-            <p className="mt-1 text-[11px] text-slate-500">{item.label}</p>
-          </div>
-        ))}
+        <InfoTile icon={<Sunrise size={14} />} label="Sunrise" value="—" />
+        <InfoTile icon={<Sunset size={14} />} label="Sunset" value="—" />
+        <InfoTile icon={<Sun size={14} />} label="Sun altitude" value="—" />
+        <InfoTile icon={<Activity size={14} />} label="Daylight left" value="—" />
       </div>
     </div>
   );
@@ -944,19 +1383,16 @@ function ForecastPanel({ hasCoordinates }: { hasCoordinates: boolean }) {
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
           Near term
         </p>
-        <h3 className="mt-1 text-lg font-semibold text-slate-50">Forecast held back until site context exists</h3>
+        <h3 className="mt-1 text-lg font-semibold text-slate-50">
+          Forecast held back until site context exists
+        </h3>
         <p className="mt-2 text-sm text-slate-400">
-          Weather alone can be shown later, but the more useful version combines it with daylight timing and expected solar window.
+          Weather alone can be shown later, but the more useful version combines it with daylight
+          timing and expected solar window.
         </p>
       </div>
     );
   }
-
-  const forecast = [
-    { label: 'Expected peak', value: '1pm to 2pm', tone: 'text-amber-300' },
-    { label: 'Cloud risk', value: 'Low', tone: 'text-emerald-300' },
-    { label: 'Export outlook', value: 'Likely until 4pm', tone: 'text-cyan-300' },
-  ];
 
   return (
     <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
@@ -964,17 +1400,9 @@ function ForecastPanel({ hasCoordinates }: { hasCoordinates: boolean }) {
         Near term
       </p>
       <h3 className="mt-1 text-lg font-semibold text-slate-50">Next few hours</h3>
-      <div className="mt-4 space-y-3">
-        {forecast.map((item) => (
-          <div key={item.label} className="flex items-baseline justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2.5">
-            <span className="text-sm text-slate-400">{item.label}</span>
-            <span className={`font-mono text-sm font-semibold ${item.tone}`}>{item.value}</span>
-          </div>
-        ))}
-      </div>
-      <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
-        Short-horizon outlook is strongest when it explains the next solar opportunity window, not just generic weather.
-      </div>
+      <p className="mt-2 text-sm text-slate-400">
+        Forecast data is not yet wired in. Coordinates unlock this module.
+      </p>
     </div>
   );
 }
@@ -1016,31 +1444,26 @@ function NotesPanel({
       <h3 className="mt-1 text-lg font-semibold text-slate-50">Trust and interpretation</h3>
       <div className="mt-4 space-y-3 text-sm text-slate-300">
         <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
-          <p className="font-semibold text-slate-100">Why this feels different</p>
-          <p className="mt-1 text-slate-400">
-            The page now explains the present, the day, and the next solar window instead of stopping at four top cards and one chart.
-          </p>
-        </div>
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
           <p className="font-semibold text-slate-100">Capability gating</p>
           <p className="mt-1 text-slate-400">
             {hasTariff
-              ? 'Tariff data is present, so live value can be shown without pretending it is the primary lens.'
+              ? 'Tariff data is present, so live value is shown as a simplified daily-rate estimate.'
               : 'Tariff data is missing, so value stays as a prompt card while live energy remains fully useful.'}
           </p>
           <p className="mt-1 text-slate-400">
             {hasCoordinates
-              ? 'Coordinates allow daylight and sun-position context, but not house-relative or roof-relative claims.'
-              : 'Coordinates are absent, so the page deliberately withholds solar-context modules instead of filling space with decorative content.'}
+              ? 'Coordinates allow daylight and sun-position context.'
+              : 'Coordinates are absent, so solar-context modules show setup prompts instead.'}
           </p>
         </div>
         {(screenState === 'stale' || screenState === 'warning') && (
           <div className="rounded-2xl border border-orange-500/20 bg-orange-500/10 p-3 text-orange-100">
             <p className="font-semibold">
-              {screenState === 'stale' ? 'Stale state' : 'Suspicious-data state'}
+              {screenState === 'stale' ? 'Stale data' : 'Suspicious data'}
             </p>
             <p className="mt-1 text-orange-100/80">
-              Warnings stay calm and actionable; the page preserves context without quietly hiding uncertainty.
+              Warnings stay calm and actionable; the page preserves context without quietly hiding
+              uncertainty.
             </p>
           </div>
         )}
@@ -1055,9 +1478,10 @@ function DisconnectedState() {
       <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-rose-500/30 bg-rose-500/10 text-rose-300">
         <WifiOff size={22} />
       </div>
-      <h2 className="mt-5 text-2xl font-semibold text-slate-50">Live feed paused</h2>
+      <h2 className="mt-5 text-2xl font-semibold text-slate-50">Live feed unavailable</h2>
       <p className="mx-auto mt-2 max-w-xl text-sm text-slate-300">
-        The provider connection has stopped, so the prototype shifts focus from live interpretation to recovery. In production, this state would preserve the same hierarchy but pin reconnect as the next action.
+        No data was returned from the provider for today. This may be a temporary outage or a
+        configuration issue. The page will show live data once the provider feed resumes.
       </p>
       <div className="mt-6 flex flex-wrap justify-center gap-3">
         <button className="rounded-full bg-rose-400 px-4 py-2 text-sm font-semibold text-slate-950">
@@ -1071,31 +1495,124 @@ function DisconnectedState() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Main export
+// ---------------------------------------------------------------------------
+
 export function LiveScreen({
-  searchParams,
-}: {
-  searchParams: Promise<{ state?: string }>;
-}) {
-  const params = use(searchParams);
-  const initialState = (params.state as ScreenState) ?? 'healthy';
-  const [screenState, setScreenState] = useState<ScreenState>(initialState);
-  const [resolution, setResolution] = useState<Resolution>('5min');
+  today,
+  displayDate,
+  initialLiveTime,
+  selectedDate,
+  isHistoricalDate,
+  timezone,
+  screenState,
+  health,
+  hasTariff,
+  hasCoordinates,
+  hasCapacity,
+  currentMetrics,
+  minuteChartData,
+  halfHourChartData,
+  hourChartData,
+  costChartData,
+  todayTotals,
+  financialEstimate,
+}: LiveScreenProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [resolution, setResolution] = useState<Resolution>('1min');
   const [viewMode, setViewMode] = useState<ViewMode>('line');
-  const [hasTariff, setHasTariff] = useState(true);
-  const [hasCoordinates, setHasCoordinates] = useState(true);
-  const [hasCapacity, setHasCapacity] = useState(true);
-  const [activeSeries, setActiveSeries] = useState<SeriesKey[]>(SERIES_ORDER);
+  const [activeSeries, setActiveSeries] = useState<SeriesKey[]>(MINUTE_DEFAULT_SERIES);
+  const [warningDetailsOpen, setWarningDetailsOpen] = useState(false);
+  const [warningDismissed, setWarningDismissed] = useState(false);
+  const [liveTime, setLiveTime] = useState(initialLiveTime);
 
-  const chartData = useMemo(() => {
-    const base = getResolutionData(resolution);
-    const stateAdjusted = applyStateToData(base, screenState);
-    return applyViewMode(stateAdjusted, viewMode);
-  }, [resolution, screenState, viewMode]);
+  const baseChartData = useMemo(() => {
+    if (resolution === '30min') return halfHourChartData;
+    if (resolution === '1hour') return hourChartData;
+    return minuteChartData;
+  }, [resolution, minuteChartData, halfHourChartData, hourChartData]);
 
-  function toggleCapability(key: 'tariff' | 'coordinates' | 'capacity') {
-    if (key === 'tariff') setHasTariff((current) => !current);
-    if (key === 'coordinates') setHasCoordinates((current) => !current);
-    if (key === 'capacity') setHasCapacity((current) => !current);
+  const chartData = useMemo(
+    () => applyViewMode(baseChartData, viewMode, resolution),
+    [baseChartData, viewMode, resolution],
+  );
+  const valueChartData = useMemo(
+    () => applyCostViewMode(costChartData, viewMode),
+    [costChartData, viewMode],
+  );
+  const overallSolarCoverage =
+    todayTotals && todayTotals.consumedKwh > 0
+      ? Math.round(
+          Math.min(
+            100,
+            Math.max(0, ((todayTotals.consumedKwh - todayTotals.importKwh) / todayTotals.consumedKwh) * 100),
+          ),
+        )
+      : null;
+
+  const displayScreenState: ScreenState =
+    screenState === 'warning' && warningDismissed
+      ? (health.minutesStale ?? 0) > 30
+        ? 'stale'
+        : 'healthy'
+      : screenState;
+
+  useEffect(() => {
+    setActiveSeries(resolution === '1min' ? MINUTE_DEFAULT_SERIES : SERIES_ORDER);
+  }, [resolution]);
+
+  useEffect(() => {
+    if (isHistoricalDate) return;
+
+    let refreshTimeoutId: number | null = null;
+    let clockIntervalId: number | null = null;
+
+    const updateClock = () => {
+      setLiveTime(formatClockTime(new Date(), timezone));
+    };
+
+    const clearRefreshTimer = () => {
+      if (refreshTimeoutId !== null) {
+        window.clearTimeout(refreshTimeoutId);
+        refreshTimeoutId = null;
+      }
+    };
+
+    const scheduleRefresh = () => {
+      clearRefreshTimer();
+      if (document.visibilityState !== 'visible') return;
+      refreshTimeoutId = window.setTimeout(() => {
+        router.refresh();
+        scheduleRefresh();
+      }, 60_000);
+    };
+
+    const handleVisibilityChange = () => {
+      updateClock();
+      if (document.visibilityState === 'visible') {
+        router.refresh();
+        scheduleRefresh();
+      } else {
+        clearRefreshTimer();
+      }
+    };
+
+    updateClock();
+    clockIntervalId = window.setInterval(updateClock, 1_000);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    scheduleRefresh();
+
+    return () => {
+      clearRefreshTimer();
+      if (clockIntervalId !== null) window.clearInterval(clockIntervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [router, timezone, isHistoricalDate]);
+
+  function navigateToDate(date: string) {
+    router.push(buildLiveUrl(pathname, date, today));
   }
 
   function toggleSeries(series: SeriesKey) {
@@ -1107,33 +1624,45 @@ export function LiveScreen({
     });
   }
 
-  const isStale = screenState === 'stale' || screenState === 'warning';
-  const isDisconnected = screenState === 'disconnected';
+  const isStale = displayScreenState === 'stale' || displayScreenState === 'warning';
+  const isDisconnected = displayScreenState === 'disconnected';
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.08),_transparent_28%),linear-gradient(180deg,#050b14_0%,#0b1220_100%)] font-sans text-slate-100">
-      <PrototypeSwitcher current={screenState} onChange={setScreenState} />
       <CapabilityBar
         hasTariff={hasTariff}
         hasCoordinates={hasCoordinates}
         hasCapacity={hasCapacity}
-        onToggle={toggleCapability}
       />
-      <NavBar screenState={screenState} onHome={() => undefined} />
-      <WarningBanner screenState={screenState} onAction={() => undefined} />
+      <NavBar screenState={displayScreenState} />
+      <WarningBanner
+        screenState={displayScreenState}
+        health={health}
+        dismissed={warningDismissed}
+        onOpenDetails={() => setWarningDetailsOpen(true)}
+      />
 
       <div className="border-b border-slate-800 bg-[#0c1422]/80">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <TrustBadge screenState={screenState} />
+          <TrustBadge
+            screenState={displayScreenState}
+            health={health}
+            dismissed={warningDismissed}
+            onOpenDetails={() => setWarningDetailsOpen(true)}
+          />
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-            <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5">
-              Sat 28 Mar 2026
+            <DatePickerControl
+              selectedDate={selectedDate}
+              displayDate={displayDate}
+              today={today}
+              isHistoricalDate={isHistoricalDate}
+              onSelectDate={navigateToDate}
+            />
+            <span className="inline-flex min-w-[92px] justify-center rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5">
+              {liveTime}
             </span>
             <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5">
-              Live now
-            </span>
-            <span className="hidden rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 sm:inline-flex">
-              Healthy window: midday solar surplus
+              {isDisconnected ? 'No feed' : isHistoricalDate ? 'Selected day' : 'Live now'}
             </span>
           </div>
         </div>
@@ -1144,19 +1673,19 @@ export function LiveScreen({
           <SectionHeader
             eyebrow="Now"
             title="What the system is doing right now"
-            description="The first layer stays operational: current power, freshness, and a quick interpretation of whether solar is carrying the home."
+            description="Current power, freshness, and a quick read of whether solar is carrying the home."
           />
 
           {isDisconnected ? (
             <DisconnectedState />
-          ) : (
+          ) : currentMetrics && (
             <>
-              <MobileMetricGrid stale={isStale} />
+              <MobileMetricGrid current={currentMetrics} stale={isStale} />
 
               <div className="hidden gap-3 md:grid md:grid-cols-2 xl:grid-cols-4">
                 <MetricCard
                   label="Generation"
-                  value="2,140"
+                  value={formatW(currentMetrics.generatedKw)}
                   unit="W"
                   caption="from panels"
                   icon={<Zap size={16} />}
@@ -1165,7 +1694,7 @@ export function LiveScreen({
                 />
                 <MetricCard
                   label="Consumption"
-                  value="920"
+                  value={formatW(currentMetrics.consumedKw)}
                   unit="W"
                   caption="home using now"
                   icon={<Home size={16} />}
@@ -1174,7 +1703,7 @@ export function LiveScreen({
                 />
                 <MetricCard
                   label="Import"
-                  value="310"
+                  value={formatW(currentMetrics.importKw)}
                   unit="W"
                   caption="from grid"
                   icon={<ArrowDownToLine size={16} />}
@@ -1183,7 +1712,7 @@ export function LiveScreen({
                 />
                 <MetricCard
                   label="Export"
-                  value="810"
+                  value={formatW(currentMetrics.exportKw)}
                   unit="W"
                   caption="to grid"
                   icon={<ArrowUpFromLine size={16} />}
@@ -1192,7 +1721,7 @@ export function LiveScreen({
                 />
               </div>
 
-              <InsightStrip hasCapacity={hasCapacity} stale={isStale} />
+              <InsightStrip current={currentMetrics} hasCapacity={hasCapacity} stale={isStale} />
             </>
           )}
         </section>
@@ -1203,13 +1732,14 @@ export function LiveScreen({
               <SectionHeader
                 eyebrow="Today"
                 title="What today has meant so far"
-                description="The second layer combines live trend, same-day totals, and financial interpretation without turning the page into a billing dashboard."
+                description="Live trend, same-day totals, and financial interpretation without turning the page into a billing dashboard."
               />
 
               <div className="grid gap-4 xl:grid-cols-[1.7fr_1fr]">
                 <LiveTrendChart
                   data={chartData}
-                  screenState={screenState}
+                  costData={valueChartData}
+                  screenState={displayScreenState}
                   resolution={resolution}
                   onResolutionChange={setResolution}
                   viewMode={viewMode}
@@ -1219,9 +1749,14 @@ export function LiveScreen({
                 />
 
                 <div className="space-y-4">
-                  <ValuePanel hasTariff={hasTariff} />
-                  <TodayPanel screenState={screenState} />
-                  <SolarCoveragePanel />
+                  <ValuePanel hasTariff={hasTariff} estimate={financialEstimate} />
+                  <TodayPanel totals={todayTotals} screenState={displayScreenState} />
+                  <SolarCoveragePanel
+                    chartData={baseChartData}
+                    currentSolarShare={currentMetrics?.solarShare ?? 0}
+                    overallSolarCoverage={overallSolarCoverage}
+                    currentGridDraw={currentMetrics?.gridShare ?? 100}
+                  />
                 </div>
               </div>
             </section>
@@ -1230,7 +1765,7 @@ export function LiveScreen({
               <SectionHeader
                 eyebrow="Next"
                 title="What is likely to happen over the next few hours"
-                description="The final layer adds daylight, weather, and near-term solar context so the Live screen feels like a real energy platform rather than a theme-skinned inverter dashboard."
+                description="Daylight, weather, and near-term solar context — unlocked once coordinates are added."
               />
 
               <div className="grid gap-4 xl:grid-cols-[1.15fr_1fr]">
@@ -1248,6 +1783,15 @@ export function LiveScreen({
           </>
         )}
       </main>
+      <WarningDetailsModal
+        health={health}
+        open={warningDetailsOpen}
+        onClose={() => setWarningDetailsOpen(false)}
+        onDismiss={() => {
+          setWarningDismissed(true);
+          setWarningDetailsOpen(false);
+        }}
+      />
     </div>
   );
 }

@@ -119,9 +119,10 @@ describe('buildSummary', () => {
 
 describe('buildHealth', () => {
   const fetchedAt = '2026-03-29T10:00:00.000Z';
+  const normalDate = '2026-03-28';
 
   it('marks full day correctly', () => {
-    const health = buildHealth(makeFullDay(), fetchedAt);
+    const health = buildHealth(normalDate, makeFullDay(), fetchedAt);
     expect(health.recordCount).toBe(1440);
     expect(health.isPartialDay).toBe(false);
     expect(health.completenessRatio).toBe(1);
@@ -129,13 +130,13 @@ describe('buildHealth', () => {
   });
 
   it('marks partial day when fewer than 1440 records', () => {
-    const health = buildHealth([makeMinute(0, 0)], fetchedAt);
+    const health = buildHealth(normalDate, [makeMinute(0, 0)], fetchedAt);
     expect(health.isPartialDay).toBe(true);
     expect(health.completenessRatio).toBeCloseTo(1 / 1440);
   });
 
   it('returns zero counts for empty input', () => {
-    const health = buildHealth([], fetchedAt);
+    const health = buildHealth(normalDate, [], fetchedAt);
     expect(health.recordCount).toBe(0);
     expect(health.isPartialDay).toBe(true);
     expect(health.hasSuspiciousReadings).toBe(false);
@@ -148,7 +149,7 @@ describe('buildHealth', () => {
       if (m >= 10 && m <= 14) continue; // 5-minute gap at minutes 10-14
       minutes.push(makeMinute(0, m));
     }
-    const health = buildHealth(minutes, fetchedAt);
+    const health = buildHealth(normalDate, minutes, fetchedAt);
     expect(health.hasSuspiciousReadings).toBe(false);
   });
 
@@ -158,15 +159,39 @@ describe('buildHealth', () => {
       if (m >= 10 && m <= 16) continue; // 7-minute gap
       minutes.push(makeMinute(0, m));
     }
-    const health = buildHealth(minutes, fetchedAt);
+    const health = buildHealth(normalDate, minutes, fetchedAt);
     expect(health.hasSuspiciousReadings).toBe(true);
+    expect(health.warningDetails).toEqual({
+      kind: 'missing-interval',
+      missingMinutes: 7,
+      gapStartsAt: '00:10',
+      gapEndsAt: '00:16',
+      message: 'Missing 7 consecutive minute readings between 00:10 and 00:16.',
+    });
+  });
+
+  it('does not flag the spring-forward hour as missing in Europe/Dublin', () => {
+    const minutes: MinuteReading[] = [];
+    for (let h = 0; h < 24; h++) {
+      if (h === 1) continue;
+      for (let m = 0; m < 60; m++) {
+        minutes.push(makeMinute(h, m));
+      }
+    }
+
+    const health = buildHealth('2026-03-29', minutes, fetchedAt, 'Europe/Dublin');
+    expect(health.recordCount).toBe(1380);
+    expect(health.isPartialDay).toBe(false);
+    expect(health.completenessRatio).toBe(1);
+    expect(health.hasSuspiciousReadings).toBe(false);
+    expect(health.warningDetails).toBeNull();
   });
 });
 
 describe('buildDayDetail', () => {
   it('returns correct top-level shape', () => {
     const fetchedAt = '2026-03-29T10:00:00.000Z';
-    const result = buildDayDetail('2026-03-29', [], fetchedAt);
+    const result = buildDayDetail('2026-03-29', [], fetchedAt, 'Europe/Dublin');
 
     expect(result.meta.date).toBe('2026-03-29');
     expect(result.meta.timezone).toBe('Europe/Dublin');

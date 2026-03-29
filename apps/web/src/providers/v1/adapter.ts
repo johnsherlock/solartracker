@@ -9,6 +9,7 @@
 
 import type { V1MinuteRecord } from './types';
 import type { MinuteReading } from '../../live/types';
+import { toInstallationClock } from './clock';
 
 const V1_ENDPOINT = 'https://jmcjm1731b.execute-api.eu-west-1.amazonaws.com/prod/minute-data';
 
@@ -25,7 +26,8 @@ function selfConsumptionRatio(consumedKwh: number, importKwh: number): number {
   return solar / consumedKwh;
 }
 
-function mapRecord(record: V1MinuteRecord): MinuteReading {
+function mapRecord(record: V1MinuteRecord, timezone: string): MinuteReading {
+  const clock = toInstallationClock(record, timezone);
   const importKwh = joulesToKwh(record.imp ?? 0);
   const exportKwh = joulesToKwh(record.exp ?? 0);
   const generatedKwh = joulesToKwh(record.gep ?? 0);
@@ -34,8 +36,8 @@ function mapRecord(record: V1MinuteRecord): MinuteReading {
   const consumedKwh = importKwh + generatedKwh - exportKwh - immersionDivertedKwh;
 
   return {
-    hour: record.hr ?? 0,
-    minute: record.min ?? 0,
+    hour: clock.hour,
+    minute: clock.minute,
     importKwh,
     exportKwh,
     generatedKwh,
@@ -46,7 +48,10 @@ function mapRecord(record: V1MinuteRecord): MinuteReading {
   };
 }
 
-export async function fetchMinuteData(date: string): Promise<MinuteReading[]> {
+export async function fetchMinuteData(
+  date: string,
+  timezone = 'Europe/Dublin',
+): Promise<MinuteReading[]> {
   const url = `${V1_ENDPOINT}?date=${date}`;
   try {
     const response = await fetch(url, { cache: 'no-store' });
@@ -59,7 +64,7 @@ export async function fetchMinuteData(date: string): Promise<MinuteReading[]> {
       console.error(`[v1-adapter] unexpected response shape for date ${date}`);
       return [];
     }
-    return raw.map(mapRecord);
+    return raw.map((record) => mapRecord(record, timezone));
   } catch (err) {
     console.error(`[v1-adapter] fetch failed for date ${date}`, err);
     return [];

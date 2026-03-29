@@ -1,9 +1,54 @@
 import type { MinuteReading, PeriodReading, DayDetailResponse } from './types';
 
-const MINUTES_IN_DAY = 1440;
-
 // Gap threshold: flag suspicious if more than 5 consecutive minutes are missing
 const SUSPICIOUS_GAP_THRESHOLD = 5;
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+function toClock(minutesSinceMidnight: number): string {
+  const hour = Math.floor(minutesSinceMidnight / 60);
+  const minute = minutesSinceMidnight % 60;
+  return `${pad2(hour)}:${pad2(minute)}`;
+}
+
+function getLocalTimeline(date: string, timezone: string): {
+  expectedRecordCount: number;
+  validOffsets: Set<number>;
+} {
+  const [year, month, day] = date.split('-').map(Number);
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+
+  const utcStart = Date.UTC(year, month - 1, day) - (18 * 60 * 60 * 1000);
+  const utcEnd = Date.UTC(year, month - 1, day + 1) + (18 * 60 * 60 * 1000);
+  let expectedRecordCount = 0;
+  const validOffsets = new Set<number>();
+
+  for (let ts = utcStart; ts < utcEnd; ts += 60 * 1000) {
+    const parts = formatter.formatToParts(new Date(ts));
+    const localYear = Number(parts.find((part) => part.type === 'year')?.value ?? '0');
+    const localMonth = Number(parts.find((part) => part.type === 'month')?.value ?? '0');
+    const localDay = Number(parts.find((part) => part.type === 'day')?.value ?? '0');
+
+    if (localYear !== year || localMonth !== month || localDay !== day) continue;
+
+    const localHour = Number(parts.find((part) => part.type === 'hour')?.value ?? '0');
+    const localMinute = Number(parts.find((part) => part.type === 'minute')?.value ?? '0');
+    expectedRecordCount += 1;
+    validOffsets.add(localHour * 60 + localMinute);
+  }
+
+  return { expectedRecordCount, validOffsets };
+}
 
 function selfConsumptionRatio(consumedKwh: number, importKwh: number): number {
   if (consumedKwh <= 0) return 0;
@@ -117,25 +162,63 @@ export function buildSummary(minutes: MinuteReading[]): DayDetailResponse['summa
   };
 }
 
-export function buildHealth(minutes: MinuteReading[], fetchedAt: string): DayDetailResponse['health'] {
+export function buildHealth(
+  date: string,
+  minutes: MinuteReading[],
+  fetchedAt: string,
+  timezone = 'Europe/Dublin',
+): DayDetailResponse['health'] {
+  const { expectedRecordCount, validOffsets } = getLocalTimeline(date, timezone);
   const recordCount = minutes.length;
-  const completenessRatio = recordCount / MINUTES_IN_DAY;
-  const isPartialDay = recordCount < MINUTES_IN_DAY;
+  const completenessRatio = expectedRecordCount > 0 ? recordCount / expectedRecordCount : 0;
+  const isPartialDay = recordCount < expectedRecordCount;
 
   // Build the set of (hour * 60 + minute) values present in the data
-  const presentMinutes = new Set(minutes.map(m => m.hour * 60 + m.minute));
+  const presentMinutes = new Set(
+    minutes
+      .map((m) => m.hour * 60 + m.minute)
+      .filter((offset) => validOffsets.has(offset)),
+  );
 
   // Find the range actually covered: from first to last record
   const allOffsets = Array.from(presentMinutes).sort((a, b) => a - b);
   let hasSuspiciousReadings = false;
+  let warningDetails: DayDetailResponse['health']['warningDetails'] = null;
 
   if (allOffsets.length > 0) {
     let maxGap = 0;
+    let gapStart: number | null = null;
+    let gapEnd: number | null = null;
+
     for (let i = 1; i < allOffsets.length; i++) {
-      const gap = allOffsets[i] - allOffsets[i - 1] - 1;
-      if (gap > maxGap) maxGap = gap;
+      let gap = 0;
+      let firstMissing: number | null = null;
+      let lastMissing: number | null = null;
+
+      for (let offset = allOffsets[i - 1] + 1; offset < allOffsets[i]; offset++) {
+        if (!validOffsets.has(offset)) continue;
+        gap += 1;
+        if (firstMissing === null) firstMissing = offset;
+        lastMissing = offset;
+      }
+
+      if (gap > maxGap && firstMissing !== null && lastMissing !== null) {
+        maxGap = gap;
+        gapStart = firstMissing;
+        gapEnd = lastMissing;
+      }
     }
+
     hasSuspiciousReadings = maxGap > SUSPICIOUS_GAP_THRESHOLD;
+    if (hasSuspiciousReadings && gapStart !== null && gapEnd !== null) {
+      warningDetails = {
+        kind: 'missing-interval',
+        missingMinutes: maxGap,
+        gapStartsAt: toClock(gapStart),
+        gapEndsAt: toClock(gapEnd),
+        message: `Missing ${maxGap} consecutive minute readings between ${toClock(gapStart)} and ${toClock(gapEnd)}.`,
+      };
+    }
   }
 
   return {
@@ -143,6 +226,7 @@ export function buildHealth(minutes: MinuteReading[], fetchedAt: string): DayDet
     isPartialDay,
     completenessRatio,
     hasSuspiciousReadings,
+    warningDetails,
     fetchedAt,
   };
 }
@@ -151,11 +235,12 @@ export function buildDayDetail(
   date: string,
   minutes: MinuteReading[],
   fetchedAt: string,
+  timezone = 'Europe/Dublin',
 ): DayDetailResponse {
   return {
     meta: {
       date,
-      timezone: 'Europe/Dublin',
+      timezone,
       source: 'v1-bridge',
       fetchedAt,
     },
@@ -163,6 +248,6 @@ export function buildDayDetail(
     halfHourData: buildHalfHourData(minutes),
     hourData: buildHourData(minutes),
     summary: buildSummary(minutes),
-    health: buildHealth(minutes, fetchedAt),
+    health: buildHealth(date, minutes, fetchedAt, timezone),
   };
 }
