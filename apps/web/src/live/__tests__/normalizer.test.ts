@@ -186,6 +186,23 @@ describe('buildHealth', () => {
     expect(health.hasSuspiciousReadings).toBe(false);
     expect(health.warningDetails).toBeNull();
   });
+
+  it('does not flag a gap that only exists in future-labelled minutes for the current local day', () => {
+    const minutes: MinuteReading[] = [];
+
+    for (let m = 0; m < 60; m++) {
+      minutes.push(makeMinute(0, m));
+    }
+
+    for (let m = 0; m < 5; m++) {
+      minutes.push(makeMinute(2, m));
+    }
+
+    const health = buildHealth('2026-03-30', minutes, '2026-03-30T00:04:52.000Z', 'Europe/Dublin');
+
+    expect(health.hasSuspiciousReadings).toBe(false);
+    expect(health.warningDetails).toBeNull();
+  });
 });
 
 describe('buildDayDetail', () => {

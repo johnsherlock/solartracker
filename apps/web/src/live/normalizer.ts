@@ -50,6 +50,57 @@ function getLocalTimeline(date: string, timezone: string): {
   return { expectedRecordCount, validOffsets };
 }
 
+function getLocalDateParts(date: Date, timezone: string): {
+  year: number;
+  month: number;
+  day: number;
+  offset: number;
+} {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+
+  const year = Number(parts.find((part) => part.type === 'year')?.value ?? '0');
+  const month = Number(parts.find((part) => part.type === 'month')?.value ?? '0');
+  const day = Number(parts.find((part) => part.type === 'day')?.value ?? '0');
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '0');
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? '0');
+
+  return { year, month, day, offset: hour * 60 + minute };
+}
+
+function getGapScanUpperBound(
+  date: string,
+  timezone: string,
+  fetchedAt: string,
+  validOffsets: Set<number>,
+): number | null {
+  if (validOffsets.size === 0) return null;
+
+  const maxValidOffset = Math.max(...validOffsets);
+  const fetchedAtLocal = getLocalDateParts(new Date(fetchedAt), timezone);
+  const [year, month, day] = date.split('-').map(Number);
+
+  if (
+    fetchedAtLocal.year === year &&
+    fetchedAtLocal.month === month &&
+    fetchedAtLocal.day === day
+  ) {
+    return Math.min(maxValidOffset, fetchedAtLocal.offset);
+  }
+
+  const selectedDateUtc = Date.UTC(year, month - 1, day);
+  const fetchedDateUtc = Date.UTC(fetchedAtLocal.year, fetchedAtLocal.month - 1, fetchedAtLocal.day);
+
+  return selectedDateUtc < fetchedDateUtc ? maxValidOffset : null;
+}
+
 function selfConsumptionRatio(consumedKwh: number, importKwh: number): number {
   if (consumedKwh <= 0) return 0;
   const solar = consumedKwh - importKwh;
@@ -169,15 +220,21 @@ export function buildHealth(
   timezone = 'Europe/Dublin',
 ): DayDetailResponse['health'] {
   const { expectedRecordCount, validOffsets } = getLocalTimeline(date, timezone);
+  const gapScanUpperBound = getGapScanUpperBound(date, timezone, fetchedAt, validOffsets);
   const recordCount = minutes.length;
   const completenessRatio = expectedRecordCount > 0 ? recordCount / expectedRecordCount : 0;
   const isPartialDay = recordCount < expectedRecordCount;
 
-  // Build the set of (hour * 60 + minute) values present in the data
+  // Ignore offsets that do not exist on the selected local day and any provider
+  // records that appear to land after the local fetch time.
   const presentMinutes = new Set(
     minutes
       .map((m) => m.hour * 60 + m.minute)
-      .filter((offset) => validOffsets.has(offset)),
+      .filter(
+        (offset) =>
+          validOffsets.has(offset) &&
+          (gapScanUpperBound === null || offset <= gapScanUpperBound),
+      ),
   );
 
   // Find the range actually covered: from first to last record

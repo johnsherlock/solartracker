@@ -9,7 +9,6 @@
 
 import type { V1MinuteRecord } from './types';
 import type { MinuteReading } from '../../live/types';
-import { toInstallationClock } from './clock';
 
 const V1_ENDPOINT = 'https://jmcjm1731b.execute-api.eu-west-1.amazonaws.com/prod/minute-data';
 
@@ -26,8 +25,12 @@ function selfConsumptionRatio(consumedKwh: number, importKwh: number): number {
   return solar / consumedKwh;
 }
 
-function mapRecord(record: V1MinuteRecord, timezone: string): MinuteReading {
-  const clock = toInstallationClock(record, timezone);
+function isRequestedDate(record: V1MinuteRecord, date: string): boolean {
+  const [year, month, day] = date.split('-').map(Number);
+  return record.yr === year && record.mon === month && record.dom === day;
+}
+
+function mapRecord(record: V1MinuteRecord): MinuteReading {
   const importKwh = joulesToKwh(record.imp ?? 0);
   const exportKwh = joulesToKwh(record.exp ?? 0);
   const generatedKwh = joulesToKwh(record.gep ?? 0);
@@ -36,8 +39,8 @@ function mapRecord(record: V1MinuteRecord, timezone: string): MinuteReading {
   const consumedKwh = importKwh + generatedKwh - exportKwh - immersionDivertedKwh;
 
   return {
-    hour: clock.hour,
-    minute: clock.minute,
+    hour: record.hr ?? 0,
+    minute: record.min ?? 0,
     importKwh,
     exportKwh,
     generatedKwh,
@@ -50,7 +53,7 @@ function mapRecord(record: V1MinuteRecord, timezone: string): MinuteReading {
 
 export async function fetchMinuteData(
   date: string,
-  timezone = 'Europe/Dublin',
+  _timezone = 'Europe/Dublin',
 ): Promise<MinuteReading[]> {
   const url = `${V1_ENDPOINT}?date=${date}`;
   try {
@@ -64,7 +67,9 @@ export async function fetchMinuteData(
       console.error(`[v1-adapter] unexpected response shape for date ${date}`);
       return [];
     }
-    return raw.map((record) => mapRecord(record, timezone));
+    return raw
+      .filter((record) => isRequestedDate(record, date))
+      .map((record) => mapRecord(record));
   } catch (err) {
     console.error(`[v1-adapter] fetch failed for date ${date}`, err);
     return [];
