@@ -16,6 +16,7 @@ export type InstallationContext = {
   id: string;
   name: string;
   timezone: string;
+  arrayCapacityKw: number | null;
   financeMode: string | null;
   monthlyFinancePayment: number | null;
 };
@@ -157,6 +158,7 @@ export async function loadInstallationContext(
     id: row.id,
     name: row.name,
     timezone: row.timezone,
+    arrayCapacityKw: row.arrayCapacityKw != null ? Number(row.arrayCapacityKw) : null,
     financeMode: row.financeMode,
     monthlyFinancePayment: row.monthlyFinancePaymentAmount
       ? Number(row.monthlyFinancePaymentAmount)

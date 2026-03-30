@@ -58,7 +58,7 @@ export type LiveScreenProps = {
   initialLiveTime: string;
   selectedDate: string;
   isHistoricalDate: boolean;
-  installationContext: { name: string } | null;
+  installationContext: { name: string; arrayCapacityKw: number | null } | null;
   timezone: string;
   screenState: ScreenState;
   health: {
@@ -795,14 +795,19 @@ function MetricCard({
 
 function InsightStrip({
   current,
+  arrayCapacityKw,
   hasCapacity,
   stale,
 }: {
   current: CurrentMetrics;
+  arrayCapacityKw: number | null;
   hasCapacity: boolean;
   stale?: boolean;
 }) {
   const { solarShare, gridShare, importKw, exportKw, generatedKw } = current;
+  const generationVsCapacity = arrayCapacityKw && arrayCapacityKw > 0
+    ? Math.min(100, Math.round((generatedKw / arrayCapacityKw) * 100))
+    : null;
 
   const netPositionLabel =
     exportKw > 0 ? 'Surplus' : importKw < generatedKw * 0.1 ? 'Self-sufficient' : 'Grid assisted';
@@ -860,12 +865,12 @@ function InsightStrip({
             <span className="text-slate-400">Grid draw pressure</span>
             <span className="font-semibold text-slate-200">{gridPressureLabel}</span>
           </div>
-          {hasCapacity && (
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400">Grid draw</span>
-              <span className="font-semibold text-cyan-300">{gridShare}%</span>
-            </div>
-          )}
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">Current gen vs capacity</span>
+            <span className="font-semibold text-slate-200">
+              {generationVsCapacity !== null ? `${generationVsCapacity}%` : '—'}
+            </span>
+          </div>
         </div>
       </div>
     </div>
@@ -1241,7 +1246,7 @@ function LiveTrendChart({
             Half-hour import cost, solar savings, and export value through the day.
           </p>
         </div>
-        <div className="h-[240px] rounded-[24px] border border-slate-800 bg-[#0b1321] p-3">
+        <div className="h-[330px] rounded-[24px] border border-slate-800 bg-[#0b1321] p-3">
           {costData.length === 0 ? (
             <div className="flex h-full items-center justify-center text-sm text-slate-500">
               No tariff-backed value data available
@@ -1509,17 +1514,17 @@ function SolarCoveragePanel({
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-3">
         <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Current</p>
+          <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Current Solar Coverage</p>
           <p className="mt-1 font-mono text-lg font-semibold text-amber-300">{currentSolarShare}%</p>
         </div>
         <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Today overall</p>
+          <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Today's Total Coverage</p>
           <p className="mt-1 font-mono text-lg font-semibold text-emerald-300">
             {overallSolarCoverage !== null ? `${overallSolarCoverage}%` : '—'}
           </p>
         </div>
         <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Grid draw</p>
+          <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Current Grid Draw</p>
           <p className="mt-1 font-mono text-lg font-semibold text-slate-300">{currentGridDraw}%</p>
         </div>
       </div>
@@ -1701,6 +1706,7 @@ export function LiveScreen({
   initialLiveTime,
   selectedDate,
   isHistoricalDate,
+  installationContext,
   timezone,
   screenState,
   health,
@@ -2033,7 +2039,13 @@ export function LiveScreen({
                 />
               </div>
 
-              <InsightStrip current={currentMetrics} hasCapacity={hasCapacity} stale={isStale} />
+              <InsightStrip
+                current={currentMetrics}
+                arrayCapacityKw={installationContext?.arrayCapacityKw ?? null}
+                hasCapacity={hasCapacity}
+                stale={isStale}
+              />
+
             </>
           )}
         </section>

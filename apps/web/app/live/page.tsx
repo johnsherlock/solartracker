@@ -129,7 +129,14 @@ export default async function LivePage({
       }).format(now)}
       selectedDate={selectedDate}
       isHistoricalDate={isHistoricalDate}
-      installationContext={installationContext ? { name: installationContext.name } : null}
+      installationContext={
+        installationContext
+          ? {
+              name: installationContext.name,
+              arrayCapacityKw: installationContext.arrayCapacityKw,
+            }
+          : null
+      }
       screenState={screenState}
       health={{
         minutesStale: isHistoricalDate ? null : getMinutesStale(minuteData, now, effectiveTimezone),
@@ -150,7 +157,7 @@ export default async function LivePage({
       timezone={effectiveTimezone}
       hasTariff={tariffContext !== null}
       hasCoordinates={false}
-      hasCapacity={false}
+      hasCapacity={installationContext?.arrayCapacityKw != null}
       currentMetrics={currentMetrics}
       minuteChartData={minuteChartData}
       halfHourChartData={halfHourChartData}
