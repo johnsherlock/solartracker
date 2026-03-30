@@ -91,7 +91,7 @@ Epic tracking:
 | U-005 | Tariff Management | Create low-fi wireframes for tariff and contract management | Define how users view, add, edit, and review tariff versions, contract dates, reminders, and recalculation actions. | `docs/ui/wireframes.md` documents tariff-plan list, tariff-version editor, contract details, reminder states, and recalculation UX. | U-001, U-002, F-006, F-009 | Done | Completed in `docs/ui/wireframes.md`; tariff overview, version editing, reminders, and recalculation messaging are now covered. |
 | U-006 | UX / Visual Design | Define system states for trust and health | Specify empty, loading, error, stale, partial-data, and setup-incomplete states across dashboards and setup flows. | `docs/ui/screen-inventory.md` and `docs/ui/data-contracts.md` define required trust/health and setup-completion states per screen. | U-002, P-011 | Done | Completed across `docs/ui/screen-inventory.md` and `docs/ui/data-contracts.md`, including setup-incomplete prompts, savings gating, and backfill/trust states. |
 | U-007 | UX / Visual Design | Define lightweight design foundations | Establish low-fi design rules for cards, charts, comparison blocks, alerts, forms, date controls, and responsive layout patterns. | `docs/ui/wireframes.md` and `docs/ui/data-contracts.md` define reusable UI patterns and the chart/content rules they imply. | U-001, U-003, U-004, U-005, U-006 | Done | Completed through the shared patterns in `docs/ui/wireframes.md` and the screen-level data contracts in `docs/ui/data-contracts.md`. |
-| U-012 | Live Data | Surface current-day data health warnings | Show users when current-day data appears incomplete, stale, or suspicious. | Live and current-day views display clear warnings when health heuristics fail. | U-004, P-011 | Todo | Important because users may otherwise miss provider/device outages. |
+| U-012 | Live Data | Surface current-day data health warnings | Show users when current-day data appears incomplete, stale, or suspicious. | Live and current-day views display clear warnings when health heuristics fail. | U-004, P-011 | Done | Completed and moved to `docs/stories/complete/U-012.md`. The Live screen now derives current-day health server-side, supports per-incident dismissals, exposes uptime, and keeps data-quality detail reviewable after dismissal. |
 | U-013 | Tariff Management | Add tariff-validity and contract reminders | Notify users when tariff validity or contract review dates have passed and their setup may be stale. | UX supports reminders, warnings, and easy correction of tariff validity periods. | U-005, F-009 | Todo | The key risk is stale rates after a renewal window passes without a newer tariff version being entered. |
 | U-014 | Auth / Multi-user | Build beta access request form | Let prospective users request beta access with email and provider/setup details. | A request form and admin review workflow are designed and scoped. | P-012 | Todo | Keep initial eligibility limited to supported providers, starting with MyEnergi. |
 | U-015 | Auth / Multi-user | Design signup and common auth flows | Support approval-gated signup via Google and other common auth methods, with required terms acceptance. | Signup and login flows are documented with auth options and terms acceptance points. | P-013 | Todo | Must make privacy/data-use expectations clear during onboarding. |
@@ -137,8 +137,7 @@ Epic tracking:
 
 ## Current Priorities
 
-1. `U-012` Surface current-day data health warnings in the production Live experience.
-2. `Q-010` Define and enforce PR rules for the rewrite branch, including the conventional PR naming expectations we want to keep.
+1. `Q-010` Define and enforce PR rules for the rewrite branch, including the conventional PR naming expectations we want to keep.
 
 ## Active Risks
 
@@ -155,7 +154,7 @@ Epic tracking:
 
 | ID | Feature | Goal | Status | Supporting Doc | Notes |
 | --- | --- | --- | --- | --- | --- |
-| FE-001 | Live Single-User Slice | Deliver one end-to-end working Live experience in `apps/web` for a single seeded local user using seeded rewrite DB data plus the temporary V1 minute-data backend. | In Progress | [`docs/features/FE-001.md`](/Users/john/Documents/Projects/pv-manager/docs/features/FE-001.md) | `U-030` is complete; `U-012` remains the main outstanding Live hardening item before this feature can be marked done. |
+| FE-001 | Live Single-User Slice | Deliver one end-to-end working Live experience in `apps/web` for a single seeded local user using seeded rewrite DB data plus the temporary V1 minute-data backend. | Done | [`docs/features/FE-001.md`](/Users/john/Documents/Projects/pv-manager/docs/features/FE-001.md) | Completed. The seeded Live route now runs end-to-end against rewrite DB context plus the temporary V1 provider bridge, including current-day health, uptime, persistent chart preferences, and real-day navigation. |
 | FE-002 | Data Health and Coverage Trust | Persist outage/anomaly signals, backfill historical coverage, and surface uptime/trust impact in product reporting and notifications. | Todo | [`docs/features/FE-002.md`](/Users/john/Documents/Projects/pv-manager/docs/features/FE-002.md) | Existing `P-011` covers health-check jobs only; this feature groups the broader product and data-model work needed for outage reporting, historical trust, and confidence-aware savings/payback. |
 
 ## Current Feature Order
