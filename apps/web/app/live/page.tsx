@@ -141,7 +141,11 @@ export default async function LivePage({
           second: '2-digit',
           hour12: false,
         }).format(now),
-        warningDetails: dayDetail.health.warningDetails,
+        uptimePercent: dayDetail.health.uptimePercent,
+        expectedMinutes: dayDetail.health.expectedMinutes,
+        coveredMinutes: dayDetail.health.coveredMinutes,
+        incidents: dayDetail.health.incidents,
+        primaryIncident: dayDetail.health.primaryIncident,
       }}
       timezone={effectiveTimezone}
       hasTariff={tariffContext !== null}

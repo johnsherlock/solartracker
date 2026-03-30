@@ -25,9 +25,18 @@ function selfConsumptionRatio(consumedKwh: number, importKwh: number): number {
   return solar / consumedKwh;
 }
 
-function isRequestedDate(record: V1MinuteRecord, date: string): boolean {
-  const [year, month, day] = date.split('-').map(Number);
-  return record.yr === year && record.mon === month && record.dom === day;
+function normalizeRequestedDayRecords(raw: V1MinuteRecord[]): V1MinuteRecord[] {
+  const normalized: V1MinuteRecord[] = [];
+  let previousOffset = -1;
+
+  for (const record of raw) {
+    const offset = (record.hr ?? 0) * 60 + (record.min ?? 0);
+    if (previousOffset > offset) break;
+    normalized.push(record);
+    previousOffset = offset;
+  }
+
+  return normalized;
 }
 
 function mapRecord(record: V1MinuteRecord): MinuteReading {
@@ -67,9 +76,13 @@ export async function fetchMinuteData(
       console.error(`[v1-adapter] unexpected response shape for date ${date}`);
       return [];
     }
-    return raw
-      .filter((record) => isRequestedDate(record, date))
-      .map((record) => mapRecord(record));
+
+    // The V1 proxy adjusts hour/minute for timezone and DST, but around BST
+    // boundaries it can leave the calendar date fields on the previous local
+    // day for an initial 00:00-00:59 block. Treat the returned clock-ordered
+    // slice as authoritative for the requested day, and stop at the first wrap
+    // back to an earlier clock minute.
+    return normalizeRequestedDayRecords(raw).map((record) => mapRecord(record));
   } catch (err) {
     console.error(`[v1-adapter] fetch failed for date ${date}`, err);
     return [];

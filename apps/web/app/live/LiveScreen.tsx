@@ -65,7 +65,19 @@ export type LiveScreenProps = {
     minutesStale: number | null;
     lastReadingLocalTime: string | null;
     refreshedAtLocalTime: string;
-    warningDetails: {
+    uptimePercent: number;
+    expectedMinutes: number;
+    coveredMinutes: number;
+    incidents: {
+      id: string;
+      kind: 'missing-interval';
+      missingMinutes: number;
+      gapStartsAt: string;
+      gapEndsAt: string;
+      message: string;
+    }[];
+    primaryIncident: {
+      id: string;
       kind: 'missing-interval';
       missingMinutes: number;
       gapStartsAt: string;
@@ -137,6 +149,80 @@ function applyViewMode(data: LivePoint[], viewMode: ViewMode, resolution: Resolu
       intervalHours: point.intervalHours,
     };
   });
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function mixColor(a: [number, number, number], b: [number, number, number], t: number): string {
+  const ratio = clamp(t, 0, 1);
+  const rgb = a.map((channel, index) => Math.round(channel + (b[index] - channel) * ratio));
+  return `rgb(${rgb[0]} ${rgb[1]} ${rgb[2]})`;
+}
+
+function getUptimeTone(uptimePercent: number): { border: string; background: string; text: string } {
+  const red: [number, number, number] = [239, 68, 68];
+  const orange: [number, number, number] = [249, 115, 22];
+  const green: [number, number, number] = [34, 197, 94];
+
+  let tone = red;
+  if (uptimePercent >= 90) {
+    tone = uptimePercent >= 100 ? green : [
+      Math.round(249 + (34 - 249) * ((uptimePercent - 90) / 10)),
+      Math.round(115 + (197 - 115) * ((uptimePercent - 90) / 10)),
+      Math.round(22 + (94 - 22) * ((uptimePercent - 90) / 10)),
+    ];
+  } else if (uptimePercent >= 80) {
+    tone = [
+      Math.round(239 + (249 - 239) * ((uptimePercent - 80) / 10)),
+      Math.round(68 + (115 - 68) * ((uptimePercent - 80) / 10)),
+      Math.round(68 + (22 - 68) * ((uptimePercent - 80) / 10)),
+    ];
+  }
+
+  return {
+    border: mixColor(tone, [15, 23, 42], 0.25),
+    background: mixColor(tone, [2, 6, 23], 0.12),
+    text: 'rgb(255 255 255)',
+  };
+}
+
+function formatUptimePercent(uptimePercent: number): string {
+  return `${Math.round(uptimePercent)}%`;
+}
+
+function formatMissingMinutesSummary(expectedMinutes: number, coveredMinutes: number): string {
+  const missingMinutes = Math.max(0, expectedMinutes - coveredMinutes);
+  if (missingMinutes === 0) {
+    return 'Provider coverage is complete for the selected period.';
+  }
+
+  return `Provider coverage is slightly below complete: ${missingMinutes} minute${
+    missingMinutes === 1 ? '' : 's'
+  } ${missingMinutes === 1 ? 'is' : 'are'} missing, but ${
+    missingMinutes === 1 ? 'it does' : 'they do'
+  } not cross the outage threshold.`;
+}
+
+function getDismissalStorageKey(date: string, timezone: string): string {
+  return `pv-manager:live-warning-dismissals:${timezone}:${date}`;
+}
+
+function getChartPrefsStorageKey(timezone: string): string {
+  return `pv-manager:live-chart-prefs:${timezone}`;
+}
+
+function isResolution(value: string): value is Resolution {
+  return value === '1min' || value === '30min' || value === '1hour';
+}
+
+function isViewMode(value: string): value is ViewMode {
+  return value === 'line' || value === 'cumulative';
+}
+
+function isSeriesKey(value: string): value is SeriesKey {
+  return SERIES_ORDER.includes(value as SeriesKey);
 }
 
 function applyCostViewMode(data: CostPoint[], viewMode: ViewMode): CostPoint[] {
@@ -339,12 +425,10 @@ function NavBar({ screenState }: { screenState: ScreenState }) {
 function TrustBadge({
   screenState,
   health,
-  dismissed,
   onOpenDetails,
 }: {
   screenState: ScreenState;
   health: LiveScreenProps['health'];
-  dismissed?: boolean;
   onOpenDetails?: () => void;
 }) {
   function label(): string {
@@ -356,7 +440,7 @@ function TrustBadge({
           ? `Last reading ${health.lastReadingLocalTime}`
           : 'Data delayed';
       case 'warning':
-        return dismissed ? 'Data quality note dismissed' : 'Data quality review needed';
+        return 'Data quality review needed';
       case 'disconnected':
         return 'Provider disconnected';
     }
@@ -397,15 +481,12 @@ function TrustBadge({
 function WarningBanner({
   screenState,
   health,
-  dismissed,
   onOpenDetails,
 }: {
   screenState: ScreenState;
   health: LiveScreenProps['health'];
-  dismissed?: boolean;
   onOpenDetails?: () => void;
 }) {
-  if (screenState === 'warning' && dismissed) return null;
   if (screenState === 'healthy') return null;
 
   const config = {
@@ -419,7 +500,7 @@ function WarningBanner({
     warning: {
       title: 'A data gap needs review',
       body:
-        health.warningDetails?.message ??
+        health.primaryIncident?.message ??
         'A recent interval contains an unusual gap or missing live readings.',
       cta: 'Review details',
       className: 'border-orange-500/20 bg-orange-500/10 text-orange-200',
@@ -457,39 +538,108 @@ function WarningBanner({
 function WarningDetailsModal({
   health,
   open,
+  selectedIncidentId,
+  dismissedIncidentIds,
   onClose,
   onDismiss,
 }: {
   health: LiveScreenProps['health'];
   open: boolean;
+  selectedIncidentId: string | null;
+  dismissedIncidentIds: string[];
   onClose: () => void;
-  onDismiss: () => void;
+  onDismiss: (incidentId: string) => void;
 }) {
-  if (!open || !health.warningDetails) return null;
+  if (!open) return null;
+
+  const selectedIncident =
+    health.incidents.find((incident) => incident.id === selectedIncidentId) ??
+    health.primaryIncident ??
+    health.incidents[0] ??
+    null;
+  const selectedIncidentDismissed =
+    selectedIncident !== null && dismissedIncidentIds.includes(selectedIncident.id);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4">
-      <div className="w-full max-w-md rounded-[28px] border border-slate-800 bg-[#111b2b] p-5 shadow-[0_30px_80px_rgba(2,6,23,0.55)]">
+      <div className="w-full max-w-lg rounded-[28px] border border-slate-800 bg-[#111b2b] p-5 shadow-[0_30px_80px_rgba(2,6,23,0.55)]">
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
           Data quality
         </p>
-        <h3 className="mt-1 text-lg font-semibold text-slate-50">Missing live readings detected</h3>
-        <p className="mt-3 text-sm text-slate-300">{health.warningDetails.message}</p>
+        <h3 className="mt-1 text-lg font-semibold text-slate-50">
+          {health.incidents.length > 0
+            ? `${health.incidents.length} outage${health.incidents.length === 1 ? '' : 's'} detected today`
+            : 'Data quality overview'}
+        </h3>
+        <p className="mt-3 text-sm text-slate-300">
+          Based on expected provider minute coverage
+          {health.expectedMinutes > 0 ? ` so far today.` : '.'}
+        </p>
         <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-3 text-sm text-slate-300">
           <div className="flex items-center justify-between gap-3">
-            <span className="text-slate-400">Gap window</span>
+            <span className="text-slate-400">Coverage</span>
             <span className="font-mono">
-              {health.warningDetails.gapStartsAt} to {health.warningDetails.gapEndsAt}
+              {health.coveredMinutes} / {health.expectedMinutes} mins
             </span>
           </div>
           <div className="mt-2 flex items-center justify-between gap-3">
-            <span className="text-slate-400">Missing minutes</span>
-            <span className="font-mono">{health.warningDetails.missingMinutes}</span>
+            <span className="text-slate-400">Uptime today</span>
+            <span className="font-mono">{formatUptimePercent(health.uptimePercent)}</span>
           </div>
         </div>
+        {selectedIncident ? (
+          <>
+            <p className="mt-4 text-sm text-slate-300">{selectedIncident.message}</p>
+            <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-3 text-sm text-slate-300">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-slate-400">Active selection</span>
+                <span className="font-mono">
+                  {selectedIncident.gapStartsAt} to {selectedIncident.gapEndsAt}
+                </span>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <span className="text-slate-400">Missing minutes</span>
+                <span className="font-mono">{selectedIncident.missingMinutes}</span>
+              </div>
+            </div>
+          </>
+        ) : (
+          <p className="mt-4 text-sm text-slate-400">
+            {formatMissingMinutesSummary(health.expectedMinutes, health.coveredMinutes)}
+          </p>
+        )}
+        {health.incidents.length > 0 && (
+          <div className="mt-4 space-y-2 rounded-2xl border border-slate-800 bg-slate-950/50 px-3 py-3">
+            {health.incidents.map((incident) => (
+              <div
+                key={incident.id}
+                className={`rounded-2xl border px-3 py-3 text-sm ${
+                  incident.id === selectedIncident?.id
+                    ? 'border-orange-500/30 bg-orange-500/10'
+                    : 'border-slate-800 bg-slate-950/60'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-medium text-slate-200">
+                    {incident.gapStartsAt} to {incident.gapEndsAt}
+                  </span>
+                  <span className="flex items-center gap-2 font-mono text-slate-400">
+                    <span>{incident.missingMinutes} mins</span>
+                    {dismissedIncidentIds.includes(incident.id) && (
+                      <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-slate-500">
+                        Dismissed
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-slate-400">{incident.message}</p>
+              </div>
+            ))}
+          </div>
+        )}
         <p className="mt-4 text-sm text-slate-400">
-          This note is based on missing minute records in the provider feed. If you trust the data,
-          you can dismiss the warning for this session.
+          This note is based on missing minute records in the provider feed. Dismissal is stored in
+          this browser for the selected day, and dismissed incidents remain visible here for review.
         </p>
         <div className="mt-5 flex flex-wrap justify-end gap-2">
           <button
@@ -499,16 +649,49 @@ function WarningDetailsModal({
           >
             Close
           </button>
-          <button
-            type="button"
-            onClick={onDismiss}
-            className="rounded-full bg-amber-300 px-4 py-2 text-sm font-semibold text-slate-950"
-          >
-            Dismiss warning
-          </button>
+          {selectedIncident && !selectedIncidentDismissed && (
+            <button
+              type="button"
+              onClick={() => onDismiss(selectedIncident.id)}
+              className="rounded-full bg-amber-300 px-4 py-2 text-sm font-semibold text-slate-950"
+            >
+              Dismiss warning
+            </button>
+          )}
         </div>
       </div>
     </div>
+  );
+}
+
+function UptimeBadge({
+  uptimePercent,
+  isDisconnected,
+  isHistoricalDate,
+  onOpenDetails,
+}: {
+  uptimePercent: number;
+  isDisconnected: boolean;
+  isHistoricalDate: boolean;
+  onOpenDetails: () => void;
+}) {
+  const tone = getUptimeTone(uptimePercent);
+  const label = isDisconnected ? 'No feed' : isHistoricalDate ? 'Day uptime' : 'Uptime today';
+
+  return (
+    <button
+      type="button"
+      onClick={onOpenDetails}
+      title={label}
+      className="rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors"
+      style={{
+        borderColor: tone.border,
+        backgroundColor: tone.background,
+        color: tone.text,
+      }}
+    >
+      {label} {formatUptimePercent(uptimePercent)}
+    </button>
   );
 }
 
@@ -889,6 +1072,7 @@ function LiveTrendChart({
   activeSeries: SeriesKey[];
   onToggleSeries: (series: SeriesKey) => void;
 }) {
+  const [hoveredSeries, setHoveredSeries] = useState<SeriesKey | null>(null);
   const isStale = screenState === 'stale' || screenState === 'warning';
   const cumulativeUsesEnergyUnits = viewMode === 'cumulative' && resolution !== '1min';
   const axisUnit = cumulativeUsesEnergyUnits ? 'kWh' : 'kW';
@@ -938,28 +1122,33 @@ function LiveTrendChart({
         </div>
       )}
 
-      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-4 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-5">
         {SERIES_ORDER.map((series) => {
           const active = activeSeries.includes(series);
+          const isHovered = hoveredSeries === series;
           return (
             <button
               key={series}
               onClick={() => onToggleSeries(series)}
-              className={`flex items-center justify-between rounded-2xl border px-3 py-2 text-left text-xs transition-colors ${
+              onMouseEnter={() => setHoveredSeries(series)}
+              onMouseLeave={() => setHoveredSeries(null)}
+              className={`flex min-w-0 items-center gap-1 rounded-xl border px-2 py-1.5 text-left text-[12px] leading-none transition-colors ${
                 active
-                  ? 'border-slate-600 bg-slate-900/70 text-slate-100'
+                  ? isHovered
+                    ? 'border-slate-500 bg-slate-900 text-slate-50'
+                    : 'border-slate-600 bg-slate-900/70 text-slate-100'
                   : 'border-slate-800 bg-slate-950/60 text-slate-500'
               }`}
             >
-              <span className="flex items-center gap-2">
+              <span className="flex min-w-0 items-center gap-1 whitespace-nowrap">
                 <span
-                  className="h-2.5 w-2.5 rounded-full"
+                  className="h-1.5 w-1.5 shrink-0 rounded-full"
                   style={{ backgroundColor: SERIES_COLORS[series] }}
                 />
-                {formatSeriesLabel(series)}
+                <span className="truncate">{formatSeriesLabel(series)}</span>
               </span>
-              <span className="text-[11px] text-slate-400">
-                {active ? <Eye size={13} /> : <EyeOff size={13} />}
+              <span className="ml-auto shrink-0 text-[11px] text-slate-400">
+                {active ? <Eye size={12} /> : <EyeOff size={12} />}
               </span>
             </button>
           );
@@ -1023,8 +1212,17 @@ function LiveTrendChart({
                   dataKey={series}
                   stroke={SERIES_COLORS[series]}
                   fill={`url(#fill-${series})`}
-                  fillOpacity={showFilledMinuteView ? 0.5 : 0}
-                  strokeWidth={series === 'import' ? 1 : 1.25}
+                  fillOpacity={
+                    showFilledMinuteView
+                      ? hoveredSeries && hoveredSeries !== series
+                        ? 0.08
+                        : 0.5
+                      : 0
+                  }
+                  strokeOpacity={hoveredSeries && hoveredSeries !== series ? 0.2 : 1}
+                  strokeWidth={
+                    hoveredSeries === series ? 2 : series === 'import' ? 1 : 1.25
+                  }
                   activeDot={{ r: 2.5, strokeWidth: 0 }}
                   dot={false}
                 />
@@ -1131,7 +1329,7 @@ function ValuePanel({
 
   const items = [
     {
-      label: 'Import cost so far',
+      label: 'Import cost',
       value: formatEuro(estimate.importCost),
       tone: 'text-rose-300',
     },
@@ -1157,9 +1355,7 @@ function ValuePanel({
       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
         Today value
       </p>
-      <h3 className="mt-1 text-lg font-semibold text-slate-50">
-        Energy and money are telling the same story
-      </h3>
+      <h3 className="mt-1 text-lg font-semibold text-slate-50">Cost and savings so far</h3>
       <div className="mt-4 space-y-3">
         {items.map((item) => (
           <div key={item.label} className="flex items-baseline justify-between gap-3">
@@ -1521,11 +1717,46 @@ export function LiveScreen({
 }: LiveScreenProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const [resolution, setResolution] = useState<Resolution>('1min');
-  const [viewMode, setViewMode] = useState<ViewMode>('line');
-  const [activeSeries, setActiveSeries] = useState<SeriesKey[]>(MINUTE_DEFAULT_SERIES);
+  const chartPrefsStorageKey = useMemo(() => getChartPrefsStorageKey(timezone), [timezone]);
+  const [resolution, setResolution] = useState<Resolution>(() => {
+    if (typeof window === 'undefined') return '1min';
+    try {
+      const raw = window.localStorage.getItem(getChartPrefsStorageKey(timezone));
+      if (!raw) return '1min';
+      const parsed = JSON.parse(raw);
+      return isResolution(parsed?.resolution) ? parsed.resolution : '1min';
+    } catch {
+      return '1min';
+    }
+  });
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (typeof window === 'undefined') return 'line';
+    try {
+      const raw = window.localStorage.getItem(getChartPrefsStorageKey(timezone));
+      if (!raw) return 'line';
+      const parsed = JSON.parse(raw);
+      return isViewMode(parsed?.viewMode) ? parsed.viewMode : 'line';
+    } catch {
+      return 'line';
+    }
+  });
+  const [activeSeries, setActiveSeries] = useState<SeriesKey[]>(() => {
+    if (typeof window === 'undefined') return MINUTE_DEFAULT_SERIES;
+    try {
+      const raw = window.localStorage.getItem(getChartPrefsStorageKey(timezone));
+      if (!raw) return MINUTE_DEFAULT_SERIES;
+      const parsed = JSON.parse(raw);
+      const series = Array.isArray(parsed?.activeSeries)
+        ? parsed.activeSeries.filter((value: string) => isSeriesKey(value))
+        : [];
+      return series.length > 0 ? series : MINUTE_DEFAULT_SERIES;
+    } catch {
+      return MINUTE_DEFAULT_SERIES;
+    }
+  });
   const [warningDetailsOpen, setWarningDetailsOpen] = useState(false);
-  const [warningDismissed, setWarningDismissed] = useState(false);
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
+  const [dismissedIncidentIds, setDismissedIncidentIds] = useState<string[]>([]);
   const [liveTime, setLiveTime] = useState(initialLiveTime);
 
   const baseChartData = useMemo(() => {
@@ -1552,16 +1783,87 @@ export function LiveScreen({
         )
       : null;
 
+  const dismissalStorageKey = useMemo(
+    () => getDismissalStorageKey(selectedDate, timezone),
+    [selectedDate, timezone],
+  );
+  const activeIncidents = useMemo(
+    () => health.incidents.filter((incident) => !dismissedIncidentIds.includes(incident.id)),
+    [dismissedIncidentIds, health.incidents],
+  );
+  const primaryActiveIncident = activeIncidents[0] ?? null;
+
   const displayScreenState: ScreenState =
-    screenState === 'warning' && warningDismissed
+    screenState === 'warning' && !primaryActiveIncident
       ? (health.minutesStale ?? 0) > 30
         ? 'stale'
         : 'healthy'
       : screenState;
 
+  const displayHealth = useMemo(
+    () => ({
+      ...health,
+      incidents: health.incidents,
+      primaryIncident: primaryActiveIncident,
+    }),
+    [health, primaryActiveIncident],
+  );
+
   useEffect(() => {
-    setActiveSeries(resolution === '1min' ? MINUTE_DEFAULT_SERIES : SERIES_ORDER);
+    setActiveSeries((current) => {
+      if (current.length === 0) {
+        return resolution === '1min' ? MINUTE_DEFAULT_SERIES : SERIES_ORDER;
+      }
+
+      const next = current.filter((series) => SERIES_ORDER.includes(series));
+      return next.length > 0 ? next : resolution === '1min' ? MINUTE_DEFAULT_SERIES : SERIES_ORDER;
+    });
   }, [resolution]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        chartPrefsStorageKey,
+        JSON.stringify({
+          resolution,
+          viewMode,
+          activeSeries,
+        }),
+      );
+    } catch {
+      // Ignore storage failures and keep the UI functional in-memory.
+    }
+  }, [activeSeries, chartPrefsStorageKey, resolution, viewMode]);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(dismissalStorageKey);
+      if (!raw) {
+        setDismissedIncidentIds([]);
+        return;
+      }
+
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setDismissedIncidentIds(parsed.filter((id): id is string => typeof id === 'string'));
+      } else {
+        setDismissedIncidentIds([]);
+      }
+    } catch {
+      setDismissedIncidentIds([]);
+    }
+  }, [dismissalStorageKey]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        dismissalStorageKey,
+        JSON.stringify(dismissedIncidentIds.filter((id) => health.incidents.some((incident) => incident.id === id))),
+      );
+    } catch {
+      // Ignore storage failures and fall back to in-memory state.
+    }
+  }, [dismissalStorageKey, dismissedIncidentIds, health.incidents]);
 
   useEffect(() => {
     if (isHistoricalDate) return;
@@ -1637,18 +1939,22 @@ export function LiveScreen({
       <NavBar screenState={displayScreenState} />
       <WarningBanner
         screenState={displayScreenState}
-        health={health}
-        dismissed={warningDismissed}
-        onOpenDetails={() => setWarningDetailsOpen(true)}
+        health={displayHealth}
+        onOpenDetails={() => {
+          setSelectedIncidentId(primaryActiveIncident?.id ?? health.primaryIncident?.id ?? null);
+          setWarningDetailsOpen(true);
+        }}
       />
 
       <div className="border-b border-slate-800 bg-[#0c1422]/80">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <TrustBadge
             screenState={displayScreenState}
-            health={health}
-            dismissed={warningDismissed}
-            onOpenDetails={() => setWarningDetailsOpen(true)}
+            health={displayHealth}
+            onOpenDetails={() => {
+              setSelectedIncidentId(primaryActiveIncident?.id ?? health.primaryIncident?.id ?? null);
+              setWarningDetailsOpen(true);
+            }}
           />
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
             <DatePickerControl
@@ -1661,9 +1967,15 @@ export function LiveScreen({
             <span className="inline-flex min-w-[92px] justify-center rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5">
               {liveTime}
             </span>
-            <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5">
-              {isDisconnected ? 'No feed' : isHistoricalDate ? 'Selected day' : 'Live now'}
-            </span>
+            <UptimeBadge
+              uptimePercent={health.uptimePercent}
+              isDisconnected={isDisconnected}
+              isHistoricalDate={isHistoricalDate}
+              onOpenDetails={() => {
+                setSelectedIncidentId(primaryActiveIncident?.id ?? health.primaryIncident?.id ?? null);
+                setWarningDetailsOpen(true);
+              }}
+            />
           </div>
         </div>
       </div>
@@ -1784,12 +2096,20 @@ export function LiveScreen({
         )}
       </main>
       <WarningDetailsModal
-        health={health}
+        health={displayHealth}
         open={warningDetailsOpen}
+        selectedIncidentId={selectedIncidentId}
+        dismissedIncidentIds={dismissedIncidentIds}
         onClose={() => setWarningDetailsOpen(false)}
-        onDismiss={() => {
-          setWarningDismissed(true);
-          setWarningDetailsOpen(false);
+        onDismiss={(incidentId) => {
+          setDismissedIncidentIds((current) =>
+            current.includes(incidentId) ? current : [...current, incidentId],
+          );
+          const nextIncident = activeIncidents.find((incident) => incident.id !== incidentId);
+          setSelectedIncidentId(nextIncident?.id ?? incidentId);
+          if (!nextIncident && activeIncidents.length <= 1) {
+            setWarningDetailsOpen(false);
+          }
         }}
       />
     </div>

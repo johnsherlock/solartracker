@@ -22,6 +22,15 @@ export type PeriodReading = {
   selfConsumptionRatio: number;
 };
 
+export type HealthIncident = {
+  id: string;
+  kind: 'missing-interval';
+  missingMinutes: number;
+  gapStartsAt: string;
+  gapEndsAt: string;
+  message: string;
+};
+
 export type DayDetailResponse = {
   meta: {
     date: string;
@@ -46,14 +55,12 @@ export type DayDetailResponse = {
     recordCount: number;
     isPartialDay: boolean;
     completenessRatio: number;
+    expectedMinutes: number;
+    coveredMinutes: number;
+    uptimePercent: number;
     hasSuspiciousReadings: boolean;
-    warningDetails: {
-      kind: 'missing-interval';
-      missingMinutes: number;
-      gapStartsAt: string;
-      gapEndsAt: string;
-      message: string;
-    } | null;
+    incidents: HealthIncident[];
+    primaryIncident: HealthIncident | null;
     fetchedAt: string;
   };
 };
