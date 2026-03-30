@@ -583,7 +583,7 @@ function WarningDetailsModal({
             </span>
           </div>
           <div className="mt-2 flex items-center justify-between gap-3">
-            <span className="text-slate-400">Uptime today</span>
+            <span className="text-slate-400">Data quality</span>
             <span className="font-mono">{formatUptimePercent(health.uptimePercent)}</span>
           </div>
         </div>
@@ -676,7 +676,7 @@ function UptimeBadge({
   onOpenDetails: () => void;
 }) {
   const tone = getUptimeTone(uptimePercent);
-  const label = isDisconnected ? 'No feed' : isHistoricalDate ? 'Day uptime' : 'Uptime today';
+  const label = isDisconnected ? 'No feed' : isHistoricalDate ? 'Data quality' : 'Data quality';
 
   return (
     <button
