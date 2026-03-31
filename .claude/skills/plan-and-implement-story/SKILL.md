@@ -28,10 +28,6 @@ Then produce:
 7. Implement the story according to the confirmed plan
 8. Once implementation is complete, create a pull request and request review from the team
 9. Address any review feedback and iterate until the PR is approved
-10. Merge the PR into v2, return to the v2 branch and delete the story branch
-11. Update the story status to "DONE" in the feature md in `docs/features/`
-12. Update the story status to "DONE" in the `docs/backlog.md`
-13. Push the changes to the docs files to the v2 branch
 
 Rules:
 - Stay in plan-only mode until the plan is confirmed
