@@ -3,16 +3,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  Legend,
-  XAxis,
-  YAxis,
-} from 'recharts';
-import {
   Activity,
   AlertTriangle,
   ArrowDownToLine,
@@ -24,8 +14,6 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Clock,
-  Eye,
-  EyeOff,
   Home,
   RefreshCw,
   Sun,
@@ -33,24 +21,43 @@ import {
   Sunset,
   TriangleAlert,
   WifiOff,
-  Wind,
   Zap,
 } from 'lucide-react';
-import type {
-  CostPoint,
-  CurrentMetrics,
-  FinancialEstimate,
-  LivePoint,
-} from '@/src/live/loader';
+import type { CurrentMetrics, FinancialEstimate, LivePoint } from '@/src/live/loader';
+import {
+  DayTrendChart,
+  DayValuePanel,
+  DayTotalsPanel,
+  SolarCoveragePanel,
+  ToggleGroup,
+} from './DayAnalysis';
+import {
+  type Resolution,
+  type ViewMode,
+  type SeriesKey,
+  SERIES_ORDER,
+  MINUTE_DEFAULT_SERIES,
+  applyViewMode,
+  applyCostViewMode,
+  formatClockTime,
+  formatKw,
+  formatW,
+  formatEuro,
+  parseIsoDate,
+  addDays,
+  startOfMonth,
+  shiftMonth,
+  formatMonthYear,
+  getMonthName,
+  getMonthDays,
+} from '@/src/live/chartUtils';
+import type { CostPoint } from '@/src/live/loader';
 
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
 type ScreenState = 'healthy' | 'stale' | 'warning' | 'disconnected';
-type Resolution = '1min' | '30min' | '1hour';
-type ViewMode = 'line' | 'cumulative';
-type SeriesKey = 'generation' | 'consumption' | 'import' | 'export' | 'immersion';
 
 export type LiveScreenProps = {
   today: string;
@@ -104,52 +111,8 @@ export type LiveScreenProps = {
 };
 
 // ---------------------------------------------------------------------------
-// Constants
+// Utilities (live-screen-specific, not shared with Historical Day)
 // ---------------------------------------------------------------------------
-
-const SERIES_ORDER: SeriesKey[] = ['generation', 'consumption', 'import', 'immersion', 'export'];
-const MINUTE_DEFAULT_SERIES: SeriesKey[] = ['generation', 'consumption'];
-const SERIES_COLORS: Record<SeriesKey, string> = {
-  generation: '#fbbf24',
-  consumption: '#f97316',
-  import: '#64748b',
-  export: '#34d399',
-  immersion: '#ef4444',
-};
-const COST_SERIES_ORDER = ['importCost', 'savings', 'exportCredit'] as const;
-type CostSeriesKey = (typeof COST_SERIES_ORDER)[number];
-const COST_SERIES_COLORS: Record<CostSeriesKey, string> = {
-  importCost: '#f472b6',
-  savings: '#4ade80',
-  exportCredit: '#60a5fa',
-};
-
-// ---------------------------------------------------------------------------
-// Utilities
-// ---------------------------------------------------------------------------
-
-function applyViewMode(data: LivePoint[], viewMode: ViewMode, resolution: Resolution): LivePoint[] {
-  if (viewMode === 'line') return data;
-
-  const running = { generation: 0, consumption: 0, import: 0, export: 0, immersion: 0 };
-  return data.map((point) => {
-    const factor = resolution === '1min' ? 1 : point.intervalHours;
-    running.generation += point.generation * factor;
-    running.consumption += point.consumption * factor;
-    running.import += point.import * factor;
-    running.export += point.export * factor;
-    running.immersion += point.immersion * factor;
-    return {
-      time: point.time,
-      generation: Number(running.generation.toFixed(2)),
-      consumption: Number(running.consumption.toFixed(2)),
-      import: Number(running.import.toFixed(2)),
-      export: Number(running.export.toFixed(2)),
-      immersion: Number(running.immersion.toFixed(2)),
-      intervalHours: point.intervalHours,
-    };
-  });
-}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -168,11 +131,14 @@ function getUptimeTone(uptimePercent: number): { border: string; background: str
 
   let tone = red;
   if (uptimePercent >= 90) {
-    tone = uptimePercent >= 100 ? green : [
-      Math.round(249 + (34 - 249) * ((uptimePercent - 90) / 10)),
-      Math.round(115 + (197 - 115) * ((uptimePercent - 90) / 10)),
-      Math.round(22 + (94 - 22) * ((uptimePercent - 90) / 10)),
-    ];
+    tone =
+      uptimePercent >= 100
+        ? green
+        : [
+            Math.round(249 + (34 - 249) * ((uptimePercent - 90) / 10)),
+            Math.round(115 + (197 - 115) * ((uptimePercent - 90) / 10)),
+            Math.round(22 + (94 - 22) * ((uptimePercent - 90) / 10)),
+          ];
   } else if (uptimePercent >= 80) {
     tone = [
       Math.round(239 + (249 - 239) * ((uptimePercent - 80) / 10)),
@@ -225,126 +191,12 @@ function isSeriesKey(value: string): value is SeriesKey {
   return SERIES_ORDER.includes(value as SeriesKey);
 }
 
-function applyCostViewMode(data: CostPoint[], viewMode: ViewMode): CostPoint[] {
-  if (viewMode === 'line') return data;
-
-  const running = { importCost: 0, savings: 0, exportCredit: 0 };
-  return data.map((point) => {
-    running.importCost += point.importCost;
-    running.savings += point.savings;
-    running.exportCredit += point.exportCredit;
-    return {
-      time: point.time,
-      importCost: Number(running.importCost.toFixed(2)),
-      savings: Number(running.savings.toFixed(2)),
-      exportCredit: Number(running.exportCredit.toFixed(2)),
-    };
-  });
-}
-
-function formatSeriesLabel(key: SeriesKey) {
-  return key.charAt(0).toUpperCase() + key.slice(1);
-}
-
-function formatCostSeriesLabel(key: CostSeriesKey) {
-  if (key === 'importCost') return 'Import €';
-  if (key === 'exportCredit') return 'Export €';
-  return 'Savings €';
-}
-
-function formatResolutionLabel(value: Resolution) {
-  if (value === '1min') return '1min';
-  if (value === '30min') return '30min';
-  return '1hour';
-}
-
-function formatKw(value: number) {
-  return `${value.toFixed(2)} kW`;
-}
-
-function formatW(kw: number): string {
-  return Math.round(kw * 1000).toLocaleString();
-}
-
-function formatKwh(kwh: number): string {
-  return `${kwh.toFixed(2)} kWh`;
-}
-
-function formatEuro(value: number, preserveSign = false): string {
-  const sign = preserveSign && value < 0 ? '-' : '';
-  return `${sign}€${Math.abs(value).toFixed(2)}`;
-}
-
-function formatEuroTick(value: number): string {
-  if (value === 0) return '€0';
-  return `€${value.toFixed(2)}`;
-}
-
-function formatClockTime(date: Date, timezone: string): string {
-  return new Intl.DateTimeFormat('en-IE', {
-    timeZone: timezone,
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).format(date);
-}
-
-function parseIsoDate(isoDate: string): Date {
-  return new Date(`${isoDate}T12:00:00`);
-}
-
-function addDays(isoDate: string, days: number): string {
-  const date = parseIsoDate(isoDate);
-  date.setDate(date.getDate() + days);
-  return date.toISOString().slice(0, 10);
-}
-
-function startOfMonth(isoDate: string): Date {
-  const date = parseIsoDate(isoDate);
-  return new Date(date.getFullYear(), date.getMonth(), 1, 12);
-}
-
-function shiftMonth(isoDate: string, months: number): string {
-  const date = startOfMonth(isoDate);
-  date.setMonth(date.getMonth() + months);
-  return date.toISOString().slice(0, 10);
-}
-
-function formatMonthYear(isoDate: string): string {
-  return new Intl.DateTimeFormat('en-IE', {
-    month: 'long',
-    year: 'numeric',
-  }).format(parseIsoDate(isoDate));
-}
-
-function getMonthName(isoDate: string): string {
-  return new Intl.DateTimeFormat('en-IE', { month: 'long' }).format(parseIsoDate(isoDate));
-}
-
-function getMonthDays(visibleMonth: string) {
-  const monthStart = startOfMonth(visibleMonth);
-  const month = monthStart.getMonth();
-  const gridStart = new Date(monthStart);
-  gridStart.setDate(monthStart.getDate() - monthStart.getDay());
-
-  return Array.from({ length: 42 }, (_, index) => {
-    const date = new Date(gridStart);
-    date.setDate(gridStart.getDate() + index);
-    return {
-      iso: date.toISOString().slice(0, 10),
-      dayNumber: date.getDate(),
-      inMonth: date.getMonth() === month,
-    };
-  });
-}
-
 function buildLiveUrl(pathname: string, date: string, today: string): string {
   return date === today ? pathname : `${pathname}?date=${date}`;
 }
 
 // ---------------------------------------------------------------------------
-// Sub-components
+// Sub-components (Live-screen-only, not shared with Historical Day)
 // ---------------------------------------------------------------------------
 
 function CapabilityBar({
@@ -737,7 +589,10 @@ function MobileMetricGrid({
   return (
     <div className={`grid grid-cols-2 gap-2 md:hidden ${stale ? 'opacity-90' : ''}`}>
       {items.map((item) => (
-        <div key={item.label} className="rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2.5">
+        <div
+          key={item.label}
+          className="rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2.5"
+        >
           <div className="flex items-end justify-between gap-2">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -783,7 +638,9 @@ function MetricCard({
         <span className={accentClass}>{icon}</span>
       </div>
       <div className="mt-4 flex items-end gap-1.5">
-        <span className={`font-mono text-4xl font-semibold tracking-tight ${stale ? 'text-slate-300' : 'text-slate-50'}`}>
+        <span
+          className={`font-mono text-4xl font-semibold tracking-tight ${stale ? 'text-slate-300' : 'text-slate-50'}`}
+        >
           {value}
         </span>
         <span className="mb-1 text-sm text-slate-500">{unit}</span>
@@ -805,9 +662,10 @@ function InsightStrip({
   stale?: boolean;
 }) {
   const { solarShare, gridShare, importKw, exportKw, generatedKw } = current;
-  const generationVsCapacity = arrayCapacityKw && arrayCapacityKw > 0
-    ? Math.min(100, Math.round((generatedKw / arrayCapacityKw) * 100))
-    : null;
+  const generationVsCapacity =
+    arrayCapacityKw && arrayCapacityKw > 0
+      ? Math.min(100, Math.round((generatedKw / arrayCapacityKw) * 100))
+      : null;
 
   const netPositionLabel =
     exportKw > 0 ? 'Surplus' : importKw < generatedKw * 0.1 ? 'Self-sufficient' : 'Grid assisted';
@@ -857,7 +715,9 @@ function InsightStrip({
         <div className="mt-3 grid gap-2 text-sm text-slate-300 sm:space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-slate-400">Net position</span>
-            <span className={`font-semibold ${exportKw > 0 ? 'text-emerald-300' : 'text-slate-200'}`}>
+            <span
+              className={`font-semibold ${exportKw > 0 ? 'text-emerald-300' : 'text-slate-200'}`}
+            >
               {netPositionLabel}
             </span>
           </div>
@@ -873,36 +733,6 @@ function InsightStrip({
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function ToggleGroup<T extends string>({
-  value,
-  options,
-  onChange,
-  renderLabel,
-}: {
-  value: T;
-  options: readonly T[];
-  onChange: (value: T) => void;
-  renderLabel?: (value: T) => string;
-}) {
-  return (
-    <div className="inline-flex rounded-full border border-slate-700 bg-slate-900/70 p-1">
-      {options.map((option) => (
-        <button
-          key={option}
-          onClick={() => onChange(option)}
-          className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-            value === option
-              ? 'bg-slate-100 text-slate-950'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          {renderLabel ? renderLabel(option) : option}
-        </button>
-      ))}
     </div>
   );
 }
@@ -938,596 +768,151 @@ function DatePickerControl({
       }
     };
 
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleEscape);
-
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleEscape);
-    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
   }, [open]);
 
   return (
-    <div ref={popoverRef} className="relative flex items-center gap-2">
+    <div className="relative" ref={popoverRef}>
       <button
         type="button"
-        onClick={() => onSelectDate(addDays(selectedDate, -1))}
-        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-900/70 text-slate-300 transition-colors hover:border-slate-600 hover:text-slate-100"
-        aria-label="Previous day"
+        onClick={() => setOpen((prev) => !prev)}
+        className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs font-medium text-slate-300"
       >
-        <ChevronsLeft size={14} />
-      </button>
-
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs text-slate-200 transition-colors hover:border-slate-600"
-      >
-        <Calendar size={13} className="text-slate-400" />
+        <Calendar size={12} />
         <span>{displayDate}</span>
       </button>
 
-      {isHistoricalDate && (
-        <button
-          type="button"
-          onClick={() => onSelectDate(addDays(selectedDate, 1))}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-900/70 text-slate-300 transition-colors hover:border-slate-600 hover:text-slate-100"
-          aria-label="Next day"
-        >
-          <ChevronsRight size={14} />
-        </button>
-      )}
-
       {open && (
-        <div className="absolute right-0 top-11 z-30 w-[320px] rounded-[24px] border border-slate-700 bg-[#f4f1ea] text-slate-900 shadow-[0_30px_80px_rgba(2,6,23,0.4)]">
-          <div className="border-b border-stone-300 px-4 py-4">
-            <div className="flex items-center justify-between gap-3 text-sm">
-              <button
-                type="button"
-                onClick={() => setVisibleMonth(shiftMonth(visibleMonth, -1))}
-                className="font-medium text-slate-700 transition-colors hover:text-slate-950"
-              >
-                {`<< ${getMonthName(shiftMonth(visibleMonth, -1))}`}
-              </button>
-              <span className="text-2xl font-semibold text-slate-950">{formatMonthYear(visibleMonth)}</span>
-              <button
-                type="button"
-                onClick={() => setVisibleMonth(shiftMonth(visibleMonth, 1))}
-                className="font-medium text-slate-700 transition-colors hover:text-slate-950"
-              >
-                {`${getMonthName(shiftMonth(visibleMonth, 1))} >>`}
-              </button>
-            </div>
-          </div>
-
-          <div className="px-4 py-4">
-            <div className="grid grid-cols-7 gap-y-2 text-center text-sm text-slate-700">
-              {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((day) => (
-                <div key={day} className="pb-1">
-                  {day}
-                </div>
-              ))}
-              {days.map((day) => {
-                const isSelected = day.iso === selectedDate;
-                const isFuture = day.iso > today;
-                return (
-                  <button
-                    key={day.iso}
-                    type="button"
-                    disabled={isFuture}
-                    onClick={() => {
-                      onSelectDate(day.iso);
-                      setOpen(false);
-                    }}
-                    className={`mx-auto flex h-8 w-8 items-center justify-center rounded-md text-sm transition-colors ${
-                      isSelected
-                        ? 'bg-sky-700 font-semibold text-white'
-                        : day.inMonth
-                        ? 'text-slate-900 hover:bg-sky-100'
-                        : 'text-stone-400'
-                    } ${isFuture ? 'cursor-not-allowed text-stone-300 hover:bg-transparent' : ''}`}
-                  >
-                    {day.dayNumber}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="border-t border-stone-300 px-4 py-3">
+        <div
+          className="absolute left-0 top-full z-40 mt-2 w-[280px] rounded-[20px] border border-slate-800 bg-[#111b2b] p-4 shadow-[0_20px_60px_rgba(2,6,23,0.5)]"
+        >
+          <div className="flex items-center justify-between gap-2">
             <button
               type="button"
-              onClick={() => {
-                onSelectDate(today);
-                setOpen(false);
-              }}
-              className="w-full text-center text-base font-semibold text-slate-900 transition-colors hover:text-sky-800"
+              onClick={() => setVisibleMonth(shiftMonth(visibleMonth, -12))}
+              className="rounded-full p-1 text-slate-400 hover:text-slate-100"
             >
-              Back to Today
+              <ChevronsLeft size={14} />
             </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function LiveTrendChart({
-  data,
-  costData,
-  screenState,
-  resolution,
-  onResolutionChange,
-  viewMode,
-  onViewModeChange,
-  activeSeries,
-  onToggleSeries,
-}: {
-  data: LivePoint[];
-  costData: CostPoint[];
-  screenState: ScreenState;
-  resolution: Resolution;
-  onResolutionChange: (resolution: Resolution) => void;
-  viewMode: ViewMode;
-  onViewModeChange: (viewMode: ViewMode) => void;
-  activeSeries: SeriesKey[];
-  onToggleSeries: (series: SeriesKey) => void;
-}) {
-  const [hoveredSeries, setHoveredSeries] = useState<SeriesKey | null>(null);
-  const isStale = screenState === 'stale' || screenState === 'warning';
-  const cumulativeUsesEnergyUnits = viewMode === 'cumulative' && resolution !== '1min';
-  const axisUnit = cumulativeUsesEnergyUnits ? 'kWh' : 'kW';
-  const showFilledMinuteView = resolution === '1min' && viewMode === 'line';
-  const visibleData = data.flatMap((point) =>
-    activeSeries.map((series) => point[series]),
-  );
-  const maxVisibleValue = visibleData.reduce((max, value) => Math.max(max, value), 0);
-  const yAxisMax =
-    maxVisibleValue <= 0
-      ? 1
-      : Number((Math.ceil((maxVisibleValue * 1.1) / 0.5) * 0.5).toFixed(2));
-
-  return (
-    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5 shadow-[0_30px_70px_rgba(2,6,23,0.34)]">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-            Today
-          </p>
-          <h3 className="mt-1 text-xl font-semibold text-slate-50">Live trend</h3>
-          <p className="mt-1 text-sm text-slate-400">
-            Switch between raw and cumulative views, and strip back series when the story gets noisy.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <ToggleGroup
-            value={resolution}
-            options={['1min', '30min', '1hour'] as const}
-            onChange={onResolutionChange}
-            renderLabel={formatResolutionLabel}
-          />
-          <ToggleGroup
-            value={viewMode}
-            options={['line', 'cumulative'] as const}
-            onChange={onViewModeChange}
-          />
-        </div>
-      </div>
-
-      {isStale && (
-        <div className="mt-4 rounded-2xl border border-orange-500/20 bg-orange-500/10 px-3 py-2 text-xs text-orange-200">
-          {screenState === 'stale'
-            ? 'Data delayed — chart ends at the last known point.'
-            : 'Potential anomaly — one recent interval may be overstated.'}
-        </div>
-      )}
-
-      <div className="mt-4 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-5">
-        {SERIES_ORDER.map((series) => {
-          const active = activeSeries.includes(series);
-          const isHovered = hoveredSeries === series;
-          return (
             <button
-              key={series}
-              onClick={() => onToggleSeries(series)}
-              onMouseEnter={() => setHoveredSeries(series)}
-              onMouseLeave={() => setHoveredSeries(null)}
-              className={`flex min-w-0 items-center gap-1 rounded-xl border px-2 py-1.5 text-left text-[12px] leading-none transition-colors ${
-                active
-                  ? isHovered
-                    ? 'border-slate-500 bg-slate-900 text-slate-50'
-                    : 'border-slate-600 bg-slate-900/70 text-slate-100'
-                  : 'border-slate-800 bg-slate-950/60 text-slate-500'
-              }`}
+              type="button"
+              onClick={() => setVisibleMonth(shiftMonth(visibleMonth, -1))}
+              className="rounded-full p-1 text-slate-400 hover:text-slate-100"
             >
-              <span className="flex min-w-0 items-center gap-1 whitespace-nowrap">
-                <span
-                  className="h-1.5 w-1.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: SERIES_COLORS[series] }}
-                />
-                <span className="truncate">{formatSeriesLabel(series)}</span>
-              </span>
-              <span className="ml-auto shrink-0 text-[11px] text-slate-400">
-                {active ? <Eye size={12} /> : <EyeOff size={12} />}
-              </span>
+              <ChevronLeft size={14} />
             </button>
-          );
-        })}
-      </div>
-
-      <div className="mt-4 h-[400px] rounded-[24px] border border-slate-800 bg-[#0b1321] p-3">
-        {data.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-sm text-slate-500">
-            No live data available
+            <span className="flex-1 text-center text-xs font-semibold text-slate-200">
+              {formatMonthYear(visibleMonth)}
+            </span>
+            <button
+              type="button"
+              onClick={() => setVisibleMonth(shiftMonth(visibleMonth, 1))}
+              disabled={visibleMonth >= `${today.slice(0, 7)}-01`}
+              className="rounded-full p-1 text-slate-400 hover:text-slate-100 disabled:opacity-30"
+            >
+              <ChevronRight size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setVisibleMonth(shiftMonth(visibleMonth, 12))}
+              disabled={visibleMonth >= `${today.slice(0, 7)}-01`}
+              className="rounded-full p-1 text-slate-400 hover:text-slate-100 disabled:opacity-30"
+            >
+              <ChevronsRight size={14} />
+            </button>
           </div>
-        ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} margin={{ top: 10, right: 8, left: -12, bottom: 0 }}>
-              <defs>
-                {SERIES_ORDER.map((key) => (
-                  <linearGradient key={key} id={`fill-${key}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={SERIES_COLORS[key]} stopOpacity={showFilledMinuteView ? 0.34 : 0.12} />
-                    <stop offset="70%" stopColor={SERIES_COLORS[key]} stopOpacity={showFilledMinuteView ? 0.16 : 0.04} />
-                    <stop offset="96%" stopColor={SERIES_COLORS[key]} stopOpacity={0} />
-                  </linearGradient>
-                ))}
-              </defs>
-              <XAxis
-                dataKey="time"
-                stroke="#475569"
-                tick={{ fill: '#64748b', fontSize: 11 }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis
-                domain={[0, yAxisMax]}
-                stroke="#475569"
-                tick={{ fill: '#64748b', fontSize: 11 }}
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={(value) => `${value}${axisUnit}`}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#0f172a',
-                  border: '1px solid rgba(71,85,105,0.55)',
-                  borderRadius: 16,
-                  color: '#e2e8f0',
-                }}
-                formatter={(value, name) => [
-                  cumulativeUsesEnergyUnits
-                    ? formatKwh(typeof value === 'number' ? value : Number(value ?? 0))
-                    : formatKw(typeof value === 'number' ? value : Number(value ?? 0)),
-                  formatSeriesLabel(name as SeriesKey),
-                ]}
-              />
-              <Legend
-                wrapperStyle={{ fontSize: 11, color: '#94a3b8', paddingTop: 12 }}
-                formatter={(value) => formatSeriesLabel(value as SeriesKey)}
-              />
-              {SERIES_ORDER.filter((series) => activeSeries.includes(series)).map((series) => (
-                <Area
-                  key={series}
-                  type="linear"
-                  dataKey={series}
-                  stroke={SERIES_COLORS[series]}
-                  fill={`url(#fill-${series})`}
-                  fillOpacity={
-                    showFilledMinuteView
-                      ? hoveredSeries && hoveredSeries !== series
-                        ? 0.08
-                        : 0.5
-                      : 0
-                  }
-                  strokeOpacity={hoveredSeries && hoveredSeries !== series ? 0.2 : 1}
-                  strokeWidth={
-                    hoveredSeries === series ? 2 : series === 'import' ? 1 : 1.25
-                  }
-                  activeDot={{ r: 2.5, strokeWidth: 0 }}
-                  dot={false}
-                />
-              ))}
-            </AreaChart>
-          </ResponsiveContainer>
-        )}
-      </div>
 
-      <div className="mt-5">
-        <div className="mb-3">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-            Energy value
-          </p>
-          <p className="mt-1 text-sm text-slate-400">
-            Half-hour import cost, solar savings, and export value through the day.
-          </p>
-        </div>
-        <div className="h-[330px] rounded-[24px] border border-slate-800 bg-[#0b1321] p-3">
-          {costData.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-sm text-slate-500">
-              No tariff-backed value data available
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={costData} margin={{ top: 10, right: 8, left: -12, bottom: 0 }}>
-                <XAxis
-                  dataKey="time"
-                  stroke="#475569"
-                  tick={{ fill: '#64748b', fontSize: 11 }}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis
-                  stroke="#475569"
-                  tick={{ fill: '#64748b', fontSize: 11 }}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(value) => formatEuroTick(Number(value))}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#0f172a',
-                    border: '1px solid rgba(71,85,105,0.55)',
-                    borderRadius: 16,
-                    color: '#e2e8f0',
+          <div className="mt-3 grid grid-cols-7 gap-0.5">
+            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
+              <div
+                key={index}
+                className="py-1 text-center text-[10px] font-semibold text-slate-500"
+              >
+                {day}
+              </div>
+            ))}
+            {days.map((day) => {
+              const isFuture = day.iso > today;
+              const isSelected = day.iso === selectedDate;
+              const isToday = day.iso === today;
+
+              return (
+                <button
+                  key={day.iso}
+                  type="button"
+                  disabled={isFuture || !day.inMonth}
+                  onClick={() => {
+                    onSelectDate(day.iso);
+                    setOpen(false);
                   }}
-                  formatter={(value, name) => [
-                    formatEuro(typeof value === 'number' ? value : Number(value ?? 0)),
-                    formatCostSeriesLabel(name as CostSeriesKey),
-                  ]}
-                />
-                <Legend
-                  wrapperStyle={{ fontSize: 11, color: '#94a3b8', paddingTop: 12 }}
-                  formatter={(value) => formatCostSeriesLabel(value as CostSeriesKey)}
-                />
-                {COST_SERIES_ORDER.map((series) => (
-                  <Area
-                    key={series}
-                    type="linear"
-                    dataKey={series}
-                    stroke={COST_SERIES_COLORS[series]}
-                    fillOpacity={0}
-                    strokeWidth={1.25}
-                    activeDot={{ r: 2.5, strokeWidth: 0 }}
-                    dot={false}
-                  />
-                ))}
-              </AreaChart>
-            </ResponsiveContainer>
+                  className={`rounded-full py-1 text-center text-xs transition-colors ${
+                    !day.inMonth
+                      ? 'text-slate-700'
+                      : isFuture
+                        ? 'cursor-not-allowed text-slate-700'
+                        : isSelected
+                          ? 'bg-amber-300 font-semibold text-slate-950'
+                          : isToday
+                            ? 'border border-slate-600 text-slate-200 hover:bg-slate-800'
+                            : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  {day.dayNumber}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 border-t border-slate-800 pt-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                {getMonthName(visibleMonth)}
+              </span>
+              <div className="flex gap-1">
+                {Array.from({ length: 7 }, (_, offset) => addDays(today, -6 + offset)).map(
+                  (date) => (
+                    <button
+                      key={date}
+                      type="button"
+                      onClick={() => {
+                        onSelectDate(date);
+                        setOpen(false);
+                      }}
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                        date === selectedDate
+                          ? 'bg-amber-300 text-slate-950'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {date === today
+                        ? 'Today'
+                        : new Intl.DateTimeFormat('en-IE', { weekday: 'short' }).format(
+                            parseIsoDate(date),
+                          )}
+                    </button>
+                  ),
+                )}
+              </div>
+            </div>
+          </div>
+
+          {isHistoricalDate && (
+            <div className="mt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectDate(today);
+                  setOpen(false);
+                }}
+                className="w-full rounded-full border border-slate-700 py-1.5 text-xs font-semibold text-slate-300 hover:border-slate-500 hover:text-slate-100"
+              >
+                Back to Today
+              </button>
+            </div>
           )}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function ValuePanel({
-  hasTariff,
-  estimate,
-}: {
-  hasTariff: boolean;
-  estimate: FinancialEstimate | null;
-}) {
-  if (!hasTariff || !estimate) {
-    return (
-      <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-          Today value
-        </p>
-        <h3 className="mt-1 text-lg font-semibold text-slate-50">
-          Add tariff details to unlock live value
-        </h3>
-        <p className="mt-2 text-sm text-slate-400">
-          Keep the live energy view useful now, then layer in cost, export value, and savings once
-          the tariff setup is complete.
-        </p>
-        <button className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-amber-300">
-          Add tariff details <ChevronRight size={14} />
-        </button>
-      </div>
-    );
-  }
-
-  const items = [
-    {
-      label: 'Import cost',
-      value: formatEuro(estimate.importCost),
-      tone: 'text-rose-300',
-    },
-    {
-      label: 'Export credit',
-      value: formatEuro(estimate.exportCredit),
-      tone: 'text-emerald-300',
-    },
-    {
-      label: 'Solar savings',
-      value: formatEuro(estimate.solarSavings),
-      tone: 'text-amber-300',
-    },
-    {
-      label: 'Net bill impact',
-      value: formatEuro(estimate.netBillImpact, true),
-      tone: estimate.netBillImpact <= 0 ? 'text-emerald-300' : 'text-cyan-300',
-    },
-  ];
-
-  return (
-    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-        Today value
-      </p>
-      <h3 className="mt-1 text-lg font-semibold text-slate-50">Cost and savings so far</h3>
-      <div className="mt-4 space-y-3">
-        {items.map((item) => (
-          <div key={item.label} className="flex items-baseline justify-between gap-3">
-            <span className="text-sm text-slate-400">{item.label}</span>
-            <span className={`font-mono text-sm font-semibold ${item.tone}`}>{item.value}</span>
-          </div>
-        ))}
-      </div>
-      <details className="mt-4 rounded-2xl border border-slate-700/40 bg-slate-900/40 px-3 py-2 text-xs text-slate-400">
-        <summary className="cursor-pointer list-none font-semibold text-amber-300">
-          How these values are calculated
-        </summary>
-        <div className="mt-3 space-y-2 text-slate-300">
-          <p>Import cost = total imported kWh x active tariff rate x VAT.</p>
-          <p>Export credit = total exported kWh x export rate.</p>
-          <p>Solar savings = generated minus exported kWh x active tariff rate x VAT.</p>
-          <p>Net bill impact = import cost - export credit.</p>
-        </div>
-      </details>
-    </div>
-  );
-}
-
-function TodayPanel({
-  totals,
-  screenState,
-}: {
-  totals: LiveScreenProps['todayTotals'];
-  screenState: ScreenState;
-}) {
-  const items = totals
-    ? [
-        { label: 'Generated', value: formatKwh(totals.generatedKwh), tone: 'text-amber-300' },
-        { label: 'Consumed', value: formatKwh(totals.consumedKwh), tone: 'text-slate-200' },
-        { label: 'Imported', value: formatKwh(totals.importKwh), tone: 'text-slate-400' },
-        { label: 'Exported', value: formatKwh(totals.exportKwh), tone: 'text-emerald-300' },
-        {
-          label: 'Immersion',
-          value: formatKwh(totals.immersionDivertedKwh),
-          tone: 'text-rose-300',
-        },
-      ]
-    : [];
-
-  return (
-    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-        Today so far
-      </p>
-      <h3 className="mt-1 text-lg font-semibold text-slate-50">The day is still building</h3>
-      <div className="mt-4 space-y-3">
-        {items.map((item) => (
-          <div key={item.label} className="flex items-baseline justify-between gap-3">
-            <span className="text-sm text-slate-400">{item.label}</span>
-            <span className={`font-mono text-sm font-semibold ${item.tone}`}>{item.value}</span>
-          </div>
-        ))}
-      </div>
-      {(screenState === 'stale' || screenState === 'warning') && (
-        <div className="mt-4 rounded-2xl border border-orange-500/20 bg-orange-500/10 px-3 py-2 text-xs text-orange-200">
-          Current-day totals may still change once the live feed stabilizes again.
-        </div>
       )}
-      <button className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-amber-300">
-        View full day <ChevronRight size={14} />
-      </button>
-    </div>
-  );
-}
-
-function SolarCoveragePanel({
-  chartData,
-  currentSolarShare,
-  overallSolarCoverage,
-  currentGridDraw,
-}: {
-  chartData: LivePoint[];
-  currentSolarShare: number;
-  overallSolarCoverage: number | null;
-  currentGridDraw: number;
-}) {
-  const coverageData = chartData.map((pt) => ({
-    time: pt.time,
-    coverage:
-      pt.consumption > 0
-        ? Math.round(Math.min(100, Math.max(0, ((pt.generation - pt.export) / pt.consumption) * 100)))
-        : pt.generation > 0
-        ? 100
-        : 0,
-  }));
-
-  return (
-    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-        Solar coverage
-      </p>
-      <h3 className="mt-1 text-lg font-semibold text-slate-50">
-        How much of the home solar has covered today
-      </h3>
-      <div className="mt-4 h-44 rounded-[24px] border border-slate-800 bg-[#0b1321] p-3">
-        {coverageData.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-sm text-slate-500">
-            No coverage data yet
-          </div>
-        ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={coverageData} margin={{ top: 10, right: 8, left: -18, bottom: 0 }}>
-              <defs>
-                <linearGradient id="coverage-fill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#fbbf24" stopOpacity={0.2} />
-                  <stop offset="70%" stopColor="#86efac" stopOpacity={0.1} />
-                  <stop offset="100%" stopColor="#86efac" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid stroke="rgba(51,65,85,0.28)" vertical={false} />
-              <XAxis
-                dataKey="time"
-                stroke="#475569"
-                tick={{ fill: '#64748b', fontSize: 11 }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis
-                domain={[0, 100]}
-                stroke="#475569"
-                tick={{ fill: '#64748b', fontSize: 11 }}
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={(value) => `${value}%`}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#0f172a',
-                  border: '1px solid rgba(71,85,105,0.55)',
-                  borderRadius: 16,
-                  color: '#e2e8f0',
-                }}
-                formatter={(value) => [`${Number(value ?? 0)}%`, 'Solar coverage']}
-              />
-              <Area
-                type="linear"
-                dataKey="coverage"
-                stroke="#facc15"
-                fill="url(#coverage-fill)"
-                strokeWidth={1.2}
-                dot={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        )}
-      </div>
-      <div className="mt-4 grid gap-2 sm:grid-cols-3">
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Current Solar Coverage</p>
-          <p className="mt-1 font-mono text-lg font-semibold text-amber-300">{currentSolarShare}%</p>
-        </div>
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Today's Total Coverage</p>
-          <p className="mt-1 font-mono text-lg font-semibold text-emerald-300">
-            {overallSolarCoverage !== null ? `${overallSolarCoverage}%` : '—'}
-          </p>
-        </div>
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Current Grid Draw</p>
-          <p className="mt-1 font-mono text-lg font-semibold text-slate-300">{currentGridDraw}%</p>
-        </div>
-      </div>
     </div>
   );
 }
@@ -1784,7 +1169,10 @@ export function LiveScreen({
       ? Math.round(
           Math.min(
             100,
-            Math.max(0, ((todayTotals.consumedKwh - todayTotals.importKwh) / todayTotals.consumedKwh) * 100),
+            Math.max(
+              0,
+              ((todayTotals.consumedKwh - todayTotals.importKwh) / todayTotals.consumedKwh) * 100,
+            ),
           ),
         )
       : null;
@@ -1864,22 +1252,30 @@ export function LiveScreen({
     try {
       window.localStorage.setItem(
         dismissalStorageKey,
-        JSON.stringify(dismissedIncidentIds.filter((id) => health.incidents.some((incident) => incident.id === id))),
+        JSON.stringify(
+          dismissedIncidentIds.filter((id) =>
+            health.incidents.some((incident) => incident.id === id),
+          ),
+        ),
       );
     } catch {
       // Ignore storage failures and fall back to in-memory state.
     }
   }, [dismissalStorageKey, dismissedIncidentIds, health.incidents]);
 
+  // Clock ticks independently of whether the user is on Live or Historical Day.
+  useEffect(() => {
+    const updateClock = () => setLiveTime(formatClockTime(new Date(), timezone));
+    updateClock();
+    const clockIntervalId = window.setInterval(updateClock, 1_000);
+    return () => window.clearInterval(clockIntervalId);
+  }, [timezone]);
+
+  // Auto-refresh is Live-only; historical dates do not trigger page refreshes.
   useEffect(() => {
     if (isHistoricalDate) return;
 
     let refreshTimeoutId: number | null = null;
-    let clockIntervalId: number | null = null;
-
-    const updateClock = () => {
-      setLiveTime(formatClockTime(new Date(), timezone));
-    };
 
     const clearRefreshTimer = () => {
       if (refreshTimeoutId !== null) {
@@ -1898,7 +1294,6 @@ export function LiveScreen({
     };
 
     const handleVisibilityChange = () => {
-      updateClock();
       if (document.visibilityState === 'visible') {
         router.refresh();
         scheduleRefresh();
@@ -1907,14 +1302,11 @@ export function LiveScreen({
       }
     };
 
-    updateClock();
-    clockIntervalId = window.setInterval(updateClock, 1_000);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     scheduleRefresh();
 
     return () => {
       clearRefreshTimer();
-      if (clockIntervalId !== null) window.clearInterval(clockIntervalId);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [router, timezone, isHistoricalDate]);
@@ -1978,7 +1370,9 @@ export function LiveScreen({
               isDisconnected={isDisconnected}
               isHistoricalDate={isHistoricalDate}
               onOpenDetails={() => {
-                setSelectedIncidentId(primaryActiveIncident?.id ?? health.primaryIncident?.id ?? null);
+                setSelectedIncidentId(
+                  primaryActiveIncident?.id ?? health.primaryIncident?.id ?? null,
+                );
                 setWarningDetailsOpen(true);
               }}
             />
@@ -1996,57 +1390,58 @@ export function LiveScreen({
 
           {isDisconnected ? (
             <DisconnectedState />
-          ) : currentMetrics && (
-            <>
-              <MobileMetricGrid current={currentMetrics} stale={isStale} />
+          ) : (
+            currentMetrics && (
+              <>
+                <MobileMetricGrid current={currentMetrics} stale={isStale} />
 
-              <div className="hidden gap-3 md:grid md:grid-cols-2 xl:grid-cols-4">
-                <MetricCard
-                  label="Generation"
-                  value={formatW(currentMetrics.generatedKw)}
-                  unit="W"
-                  caption="from panels"
-                  icon={<Zap size={16} />}
-                  accentClass="text-amber-300"
-                  stale={isStale}
-                />
-                <MetricCard
-                  label="Consumption"
-                  value={formatW(currentMetrics.consumedKw)}
-                  unit="W"
-                  caption="home using now"
-                  icon={<Home size={16} />}
-                  accentClass="text-slate-300"
-                  stale={isStale}
-                />
-                <MetricCard
-                  label="Import"
-                  value={formatW(currentMetrics.importKw)}
-                  unit="W"
-                  caption="from grid"
-                  icon={<ArrowDownToLine size={16} />}
-                  accentClass="text-slate-400"
-                  stale={isStale}
-                />
-                <MetricCard
-                  label="Export"
-                  value={formatW(currentMetrics.exportKw)}
-                  unit="W"
-                  caption="to grid"
-                  icon={<ArrowUpFromLine size={16} />}
-                  accentClass="text-emerald-300"
-                  stale={isStale}
-                />
-              </div>
+                <div className="hidden gap-3 md:grid md:grid-cols-2 xl:grid-cols-4">
+                  <MetricCard
+                    label="Generation"
+                    value={formatW(currentMetrics.generatedKw)}
+                    unit="W"
+                    caption="from panels"
+                    icon={<Zap size={16} />}
+                    accentClass="text-amber-300"
+                    stale={isStale}
+                  />
+                  <MetricCard
+                    label="Consumption"
+                    value={formatW(currentMetrics.consumedKw)}
+                    unit="W"
+                    caption="home using now"
+                    icon={<Home size={16} />}
+                    accentClass="text-slate-300"
+                    stale={isStale}
+                  />
+                  <MetricCard
+                    label="Import"
+                    value={formatW(currentMetrics.importKw)}
+                    unit="W"
+                    caption="from grid"
+                    icon={<ArrowDownToLine size={16} />}
+                    accentClass="text-slate-400"
+                    stale={isStale}
+                  />
+                  <MetricCard
+                    label="Export"
+                    value={formatW(currentMetrics.exportKw)}
+                    unit="W"
+                    caption="to grid"
+                    icon={<ArrowUpFromLine size={16} />}
+                    accentClass="text-emerald-300"
+                    stale={isStale}
+                  />
+                </div>
 
-              <InsightStrip
-                current={currentMetrics}
-                arrayCapacityKw={installationContext?.arrayCapacityKw ?? null}
-                hasCapacity={hasCapacity}
-                stale={isStale}
-              />
-
-            </>
+                <InsightStrip
+                  current={currentMetrics}
+                  arrayCapacityKw={installationContext?.arrayCapacityKw ?? null}
+                  hasCapacity={hasCapacity}
+                  stale={isStale}
+                />
+              </>
+            )
           )}
         </section>
 
@@ -2060,7 +1455,8 @@ export function LiveScreen({
               />
 
               <div className="grid gap-4 xl:grid-cols-[1.7fr_1fr]">
-                <LiveTrendChart
+                <DayTrendChart
+                  mode="live"
                   data={chartData}
                   costData={valueChartData}
                   screenState={displayScreenState}
@@ -2073,9 +1469,18 @@ export function LiveScreen({
                 />
 
                 <div className="space-y-4">
-                  <ValuePanel hasTariff={hasTariff} estimate={financialEstimate} />
-                  <TodayPanel totals={todayTotals} screenState={displayScreenState} />
+                  <DayValuePanel
+                    mode="live"
+                    hasTariff={hasTariff}
+                    estimate={financialEstimate}
+                  />
+                  <DayTotalsPanel
+                    mode="live"
+                    totals={todayTotals}
+                    screenState={displayScreenState}
+                  />
                   <SolarCoveragePanel
+                    mode="live"
                     chartData={baseChartData}
                     currentSolarShare={currentMetrics?.solarShare ?? 0}
                     overallSolarCoverage={overallSolarCoverage}
