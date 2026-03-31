@@ -1,12 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import {
-  Activity,
   AlertTriangle,
-  ArrowDownToLine,
-  ArrowUpFromLine,
   Calendar,
   CheckCircle2,
   ChevronLeft,
@@ -14,23 +11,16 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Clock,
-  Home,
-  RefreshCw,
-  Sun,
-  Sunrise,
-  Sunset,
   TriangleAlert,
   WifiOff,
-  Zap,
 } from 'lucide-react';
-import type { CurrentMetrics, FinancialEstimate, LivePoint } from '@/src/live/loader';
+import type { FinancialEstimate, LivePoint } from '@/src/live/loader';
 import {
   DayTrendChart,
   DayValuePanel,
   DayTotalsPanel,
   SolarCoveragePanel,
-  ToggleGroup,
-} from './DayAnalysis';
+} from '@/app/live/DayAnalysis';
 import {
   type Resolution,
   type ViewMode,
@@ -40,9 +30,6 @@ import {
   applyViewMode,
   applyCostViewMode,
   formatClockTime,
-  formatKw,
-  formatW,
-  formatEuro,
   parseIsoDate,
   addDays,
   startOfMonth,
@@ -54,17 +41,16 @@ import {
 import type { CostPoint } from '@/src/live/loader';
 
 // ---------------------------------------------------------------------------
-// Props
+// Types
 // ---------------------------------------------------------------------------
 
 type ScreenState = 'healthy' | 'stale' | 'warning' | 'disconnected';
 
-export type LiveScreenProps = {
+export type HistoricalDayScreenProps = {
   today: string;
   displayDate: string;
   initialLiveTime: string;
   selectedDate: string;
-  isHistoricalDate: boolean;
   installationContext: { name: string; arrayCapacityKw: number | null } | null;
   timezone: string;
   screenState: ScreenState;
@@ -93,14 +79,11 @@ export type LiveScreenProps = {
     } | null;
   };
   hasTariff: boolean;
-  hasCoordinates: boolean;
-  hasCapacity: boolean;
-  currentMetrics: CurrentMetrics | null;
   minuteChartData: LivePoint[];
   halfHourChartData: LivePoint[];
   hourChartData: LivePoint[];
   costChartData: CostPoint[];
-  todayTotals: {
+  dayTotals: {
     generatedKwh: number;
     consumedKwh: number;
     importKwh: number;
@@ -111,7 +94,7 @@ export type LiveScreenProps = {
 };
 
 // ---------------------------------------------------------------------------
-// Utilities (live-screen-specific, not shared with Historical Day)
+// Utilities
 // ---------------------------------------------------------------------------
 
 function clamp(value: number, min: number, max: number): number {
@@ -124,7 +107,9 @@ function mixColor(a: [number, number, number], b: [number, number, number], t: n
   return `rgb(${rgb[0]} ${rgb[1]} ${rgb[2]})`;
 }
 
-function getUptimeTone(uptimePercent: number): { border: string; background: string; text: string } {
+function getUptimeTone(
+  uptimePercent: number,
+): { border: string; background: string; text: string } {
   const red: [number, number, number] = [239, 68, 68];
   const orange: [number, number, number] = [249, 115, 22];
   const green: [number, number, number] = [34, 197, 94];
@@ -163,7 +148,6 @@ function formatMissingMinutesSummary(expectedMinutes: number, coveredMinutes: nu
   if (missingMinutes === 0) {
     return 'Provider coverage is complete for the selected period.';
   }
-
   return `Provider coverage is slightly below complete: ${missingMinutes} minute${
     missingMinutes === 1 ? '' : 's'
   } ${missingMinutes === 1 ? 'is' : 'are'} missing, but ${
@@ -191,88 +175,19 @@ function isSeriesKey(value: string): value is SeriesKey {
   return SERIES_ORDER.includes(value as SeriesKey);
 }
 
-function buildLiveUrl(pathname: string, date: string, today: string): string {
-  return date === today ? pathname : `${pathname}?date=${date}`;
-}
+// Minimum date we allow navigation back to (2 years ago from now)
+const MIN_HISTORY_DATE = addDays(
+  new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date()),
+  -730,
+);
 
 // ---------------------------------------------------------------------------
-// Sub-components (Live-screen-only, not shared with Historical Day)
+// Sub-components
 // ---------------------------------------------------------------------------
-
-function CapabilityBar({
-  hasTariff,
-  hasCoordinates,
-  hasCapacity,
-}: {
-  hasTariff: boolean;
-  hasCoordinates: boolean;
-  hasCapacity: boolean;
-}) {
-  const items = [
-    { key: 'tariff', label: 'Tariff linked', active: hasTariff },
-    { key: 'coordinates', label: 'Coordinates added', active: hasCoordinates },
-    { key: 'capacity', label: 'Array capacity known', active: hasCapacity },
-  ];
-
-  return (
-    <div className="border-b border-slate-800 bg-[#08111f] px-4 py-2 text-xs">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2.5">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-          Setup
-        </span>
-        {items.map((item) => (
-          <span
-            key={item.key}
-            className={`rounded-full border px-3 py-1 font-medium ${
-              item.active
-                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                : 'border-slate-700 text-slate-500'
-            }`}
-          >
-            {item.label}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function NavBar({ screenState }: { screenState: ScreenState }) {
-  return (
-    <header className="border-b border-slate-800 bg-[#101826]">
-      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 text-xs text-slate-400">
-            <ChevronLeft size={14} />
-            <Home size={13} />
-            <span className="hidden sm:inline">Overview</span>
-          </div>
-          <span className="text-slate-700">/</span>
-          <div className="flex items-center gap-2">
-            {screenState === 'healthy' ? (
-              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-live-pulse" />
-            ) : (
-              <span className="h-2 w-2 rounded-full bg-orange-400" />
-            )}
-            <span className="text-sm font-semibold text-slate-100">Live</span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4">
-          {screenState === 'healthy' && (
-            <span className="hidden items-center gap-1.5 text-xs text-slate-400 sm:flex">
-              <RefreshCw size={11} className="text-emerald-400" />
-              Auto-refreshing
-            </span>
-          )}
-          <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-xs font-bold text-slate-200">
-            J
-          </div>
-        </div>
-      </div>
-    </header>
-  );
-}
 
 function TrustBadge({
   screenState,
@@ -280,21 +195,21 @@ function TrustBadge({
   onOpenDetails,
 }: {
   screenState: ScreenState;
-  health: LiveScreenProps['health'];
+  health: HistoricalDayScreenProps['health'];
   onOpenDetails?: () => void;
 }) {
   function label(): string {
     switch (screenState) {
       case 'healthy':
-        return `Updated ${health.refreshedAtLocalTime}`;
+        return `Data for ${health.refreshedAtLocalTime}`;
       case 'stale':
         return health.lastReadingLocalTime
           ? `Last reading ${health.lastReadingLocalTime}`
-          : 'Data delayed';
+          : 'Partial data';
       case 'warning':
         return 'Data quality review needed';
       case 'disconnected':
-        return 'Provider disconnected';
+        return 'No data for this day';
     }
   }
 
@@ -336,32 +251,32 @@ function WarningBanner({
   onOpenDetails,
 }: {
   screenState: ScreenState;
-  health: LiveScreenProps['health'];
+  health: HistoricalDayScreenProps['health'];
   onOpenDetails?: () => void;
 }) {
   if (screenState === 'healthy') return null;
 
   const config = {
     stale: {
-      title: 'Live data is delayed',
-      body: 'Last-known values are still useful for context, but they may no longer reflect the current home state.',
+      title: 'Partial data for this day',
+      body: 'Not all minute readings were available for this historical date. Totals may be incomplete.',
       cta: 'Review Data Health',
       className: 'border-orange-500/20 bg-orange-500/10 text-orange-200',
       icon: <Clock size={15} className="mt-0.5 shrink-0" />,
     },
     warning: {
-      title: 'A data gap needs review',
+      title: 'A data gap was detected for this day',
       body:
         health.primaryIncident?.message ??
-        'A recent interval contains an unusual gap or missing live readings.',
+        'A gap in coverage exists for this historical date.',
       cta: 'Review details',
       className: 'border-orange-500/20 bg-orange-500/10 text-orange-200',
       icon: <AlertTriangle size={15} className="mt-0.5 shrink-0" />,
     },
     disconnected: {
-      title: 'Provider connection needs attention',
-      body: 'Live telemetry has stopped. Reconnecting the provider is the next action.',
-      cta: 'Reconnect provider',
+      title: 'No data available for this day',
+      body: 'No readings were found for this date in the provider feed.',
+      cta: 'Review Data Health',
       className: 'border-rose-500/20 bg-rose-500/10 text-rose-200',
       icon: <WifiOff size={15} className="mt-0.5 shrink-0" />,
     },
@@ -395,7 +310,7 @@ function WarningDetailsModal({
   onClose,
   onDismiss,
 }: {
-  health: LiveScreenProps['health'];
+  health: HistoricalDayScreenProps['health'];
   open: boolean;
   selectedIncidentId: string | null;
   dismissedIncidentIds: string[];
@@ -420,12 +335,11 @@ function WarningDetailsModal({
         </p>
         <h3 className="mt-1 text-lg font-semibold text-slate-50">
           {health.incidents.length > 0
-            ? `${health.incidents.length} outage${health.incidents.length === 1 ? '' : 's'} detected today`
+            ? `${health.incidents.length} outage${health.incidents.length === 1 ? '' : 's'} detected for this day`
             : 'Data quality overview'}
         </h3>
         <p className="mt-3 text-sm text-slate-300">
-          Based on expected provider minute coverage
-          {health.expectedMinutes > 0 ? ` so far today.` : '.'}
+          Based on expected provider minute coverage for this historical date.
         </p>
         <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-3 text-sm text-slate-300">
           <div className="flex items-center justify-between gap-3">
@@ -519,16 +433,14 @@ function WarningDetailsModal({
 function UptimeBadge({
   uptimePercent,
   isDisconnected,
-  isHistoricalDate,
   onOpenDetails,
 }: {
   uptimePercent: number;
   isDisconnected: boolean;
-  isHistoricalDate: boolean;
   onOpenDetails: () => void;
 }) {
   const tone = getUptimeTone(uptimePercent);
-  const label = isDisconnected ? 'No feed' : isHistoricalDate ? 'Data quality' : 'Data quality';
+  const label = isDisconnected ? 'No feed' : 'Data quality';
 
   return (
     <button
@@ -547,207 +459,15 @@ function UptimeBadge({
   );
 }
 
-function SectionHeader({
-  eyebrow,
-  title,
-  description,
-  action,
-}: {
-  eyebrow: string;
-  title: string;
-  description: string;
-  action?: ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-          {eyebrow}
-        </p>
-        <h2 className="mt-1 text-xl font-semibold text-slate-50">{title}</h2>
-        <p className="mt-1 text-sm text-slate-400">{description}</p>
-      </div>
-      {action}
-    </div>
-  );
-}
-
-function MobileMetricGrid({
-  current,
-  stale,
-}: {
-  current: CurrentMetrics;
-  stale?: boolean;
-}) {
-  const items = [
-    { label: 'Gen', value: current.generatedKw.toFixed(2), unit: 'kW', tone: 'text-amber-300' },
-    { label: 'Use', value: current.consumedKw.toFixed(2), unit: 'kW', tone: 'text-slate-100' },
-    { label: 'Imp', value: current.importKw.toFixed(2), unit: 'kW', tone: 'text-slate-300' },
-    { label: 'Exp', value: current.exportKw.toFixed(2), unit: 'kW', tone: 'text-emerald-300' },
-  ];
-
-  return (
-    <div className={`grid grid-cols-2 gap-2 md:hidden ${stale ? 'opacity-90' : ''}`}>
-      {items.map((item) => (
-        <div
-          key={item.label}
-          className="rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2.5"
-        >
-          <div className="flex items-end justify-between gap-2">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                {item.label}
-              </p>
-              <p className={`mt-1 font-mono text-2xl font-semibold ${item.tone}`}>{item.value}</p>
-            </div>
-            <span className="pb-1 text-[11px] text-slate-500">{item.unit}</span>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  unit,
-  caption,
-  icon,
-  accentClass,
-  stale,
-}: {
-  label: string;
-  value: string;
-  unit: string;
-  caption: string;
-  icon: ReactNode;
-  accentClass: string;
-  stale?: boolean;
-}) {
-  return (
-    <div
-      className={`rounded-2xl border bg-slate-900/75 p-4 shadow-[0_24px_50px_rgba(2,6,23,0.28)] transition-colors ${
-        stale ? 'border-orange-500/25' : 'border-slate-800'
-      }`}
-    >
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-          {label}
-        </span>
-        <span className={accentClass}>{icon}</span>
-      </div>
-      <div className="mt-4 flex items-end gap-1.5">
-        <span
-          className={`font-mono text-4xl font-semibold tracking-tight ${stale ? 'text-slate-300' : 'text-slate-50'}`}
-        >
-          {value}
-        </span>
-        <span className="mb-1 text-sm text-slate-500">{unit}</span>
-      </div>
-      <p className="mt-2 text-xs text-slate-400">{caption}</p>
-    </div>
-  );
-}
-
-function InsightStrip({
-  current,
-  arrayCapacityKw,
-  hasCapacity,
-  stale,
-}: {
-  current: CurrentMetrics;
-  arrayCapacityKw: number | null;
-  hasCapacity: boolean;
-  stale?: boolean;
-}) {
-  const { solarShare, gridShare, importKw, exportKw, generatedKw } = current;
-  const generationVsCapacity =
-    arrayCapacityKw && arrayCapacityKw > 0
-      ? Math.min(100, Math.round((generatedKw / arrayCapacityKw) * 100))
-      : null;
-
-  const netPositionLabel =
-    exportKw > 0 ? 'Surplus' : importKw < generatedKw * 0.1 ? 'Self-sufficient' : 'Grid assisted';
-  const gridPressureLabel =
-    solarShare > 80 ? 'Low' : solarShare > 50 ? 'Moderate' : 'High';
-
-  return (
-    <div className="grid gap-3 lg:grid-cols-[1.6fr_1fr]">
-      <div
-        className={`rounded-2xl border bg-[#101826] p-4 ${
-          stale ? 'border-orange-500/25' : 'border-slate-800'
-        }`}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Right now
-            </p>
-            <h3 className="mt-1 text-base font-semibold text-slate-100 sm:text-lg">
-              {solarShare > 0
-                ? `${solarShare}% of home demand is being covered by solar`
-                : 'No solar generation right now'}
-            </h3>
-          </div>
-          {exportKw > 0 && (
-            <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold text-emerald-300 sm:text-xs">
-              Covering home + exporting {formatKw(exportKw)}
-            </span>
-          )}
-        </div>
-        <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-800">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-amber-400 via-amber-300 to-emerald-300"
-            style={{ width: `${Math.min(100, solarShare)}%` }}
-          />
-        </div>
-        <div className="mt-2 flex justify-between text-xs text-slate-500">
-          <span>Solar share</span>
-          <span>Grid reliance</span>
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-slate-800 bg-[#101826] p-4">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-          Live interpretation
-        </p>
-        <div className="mt-3 grid gap-2 text-sm text-slate-300 sm:space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-slate-400">Net position</span>
-            <span
-              className={`font-semibold ${exportKw > 0 ? 'text-emerald-300' : 'text-slate-200'}`}
-            >
-              {netPositionLabel}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-slate-400">Grid draw pressure</span>
-            <span className="font-semibold text-slate-200">{gridPressureLabel}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-slate-400">Current gen vs capacity</span>
-            <span className="font-semibold text-slate-200">
-              {generationVsCapacity !== null ? `${generationVsCapacity}%` : '—'}
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function DatePickerControl({
   selectedDate,
   displayDate,
   today,
-  isHistoricalDate,
   onSelectDate,
 }: {
   selectedDate: string;
   displayDate: string;
   today: string;
-  isHistoricalDate: boolean;
   onSelectDate: (date: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -784,9 +504,7 @@ function DatePickerControl({
       </button>
 
       {open && (
-        <div
-          className="absolute left-0 top-full z-40 mt-2 w-[280px] rounded-[20px] border border-slate-800 bg-[#111b2b] p-4 shadow-[0_20px_60px_rgba(2,6,23,0.5)]"
-        >
+        <div className="absolute left-0 top-full z-40 mt-2 w-[280px] rounded-[20px] border border-slate-800 bg-[#111b2b] p-4 shadow-[0_20px_60px_rgba(2,6,23,0.5)]">
           <div className="flex items-center justify-between gap-2">
             <button
               type="button"
@@ -897,186 +615,20 @@ function DatePickerControl({
             </div>
           </div>
 
-          {isHistoricalDate && (
-            <div className="mt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  onSelectDate(today);
-                  setOpen(false);
-                }}
-                className="w-full rounded-full border border-slate-700 py-1.5 text-xs font-semibold text-slate-300 hover:border-slate-500 hover:text-slate-100"
-              >
-                Back to Today
-              </button>
-            </div>
-          )}
+          <div className="mt-1">
+            <button
+              type="button"
+              onClick={() => {
+                onSelectDate(today);
+                setOpen(false);
+              }}
+              className="w-full rounded-full border border-slate-700 py-1.5 text-xs font-semibold text-slate-300 hover:border-slate-500 hover:text-slate-100"
+            >
+              Back to Today
+            </button>
+          </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function SolarContextPanel({ hasCoordinates }: { hasCoordinates: boolean }) {
-  if (!hasCoordinates) {
-    return (
-      <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-          Next
-        </p>
-        <h3 className="mt-1 text-lg font-semibold text-slate-50">
-          Add coordinates to unlock solar context
-        </h3>
-        <p className="mt-2 text-sm text-slate-400">
-          Sunrise, sunset, daylight remaining, and sun-position cues can all live here without
-          needing full roof modeling.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-            Next
-          </p>
-          <h3 className="mt-1 text-lg font-semibold text-slate-50">Solar context</h3>
-          <p className="mt-1 text-sm text-slate-400">
-            Coordinates-only context: useful, calm, and still honest about what we do not know.
-          </p>
-        </div>
-        <div className="rounded-full border border-amber-400/20 bg-amber-400/10 p-2 text-amber-300">
-          <Sun size={18} />
-        </div>
-      </div>
-
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <InfoTile icon={<Sunrise size={14} />} label="Sunrise" value="—" />
-        <InfoTile icon={<Sunset size={14} />} label="Sunset" value="—" />
-        <InfoTile icon={<Sun size={14} />} label="Sun altitude" value="—" />
-        <InfoTile icon={<Activity size={14} />} label="Daylight left" value="—" />
-      </div>
-    </div>
-  );
-}
-
-function ForecastPanel({ hasCoordinates }: { hasCoordinates: boolean }) {
-  if (!hasCoordinates) {
-    return (
-      <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-          Near term
-        </p>
-        <h3 className="mt-1 text-lg font-semibold text-slate-50">
-          Forecast held back until site context exists
-        </h3>
-        <p className="mt-2 text-sm text-slate-400">
-          Weather alone can be shown later, but the more useful version combines it with daylight
-          timing and expected solar window.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-        Near term
-      </p>
-      <h3 className="mt-1 text-lg font-semibold text-slate-50">Next few hours</h3>
-      <p className="mt-2 text-sm text-slate-400">
-        Forecast data is not yet wired in. Coordinates unlock this module.
-      </p>
-    </div>
-  );
-}
-
-function InfoTile({
-  icon,
-  label,
-  value,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
-      <div className="flex items-center gap-2 text-xs text-slate-500">
-        <span className="text-amber-300">{icon}</span>
-        {label}
-      </div>
-      <p className="mt-2 font-mono text-base font-semibold text-slate-100">{value}</p>
-    </div>
-  );
-}
-
-function NotesPanel({
-  screenState,
-  hasTariff,
-  hasCoordinates,
-}: {
-  screenState: ScreenState;
-  hasTariff: boolean;
-  hasCoordinates: boolean;
-}) {
-  return (
-    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-        Notes
-      </p>
-      <h3 className="mt-1 text-lg font-semibold text-slate-50">Trust and interpretation</h3>
-      <div className="mt-4 space-y-3 text-sm text-slate-300">
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
-          <p className="font-semibold text-slate-100">Capability gating</p>
-          <p className="mt-1 text-slate-400">
-            {hasTariff
-              ? 'Tariff data is present, so live value is shown as a simplified daily-rate estimate.'
-              : 'Tariff data is missing, so value stays as a prompt card while live energy remains fully useful.'}
-          </p>
-          <p className="mt-1 text-slate-400">
-            {hasCoordinates
-              ? 'Coordinates allow daylight and sun-position context.'
-              : 'Coordinates are absent, so solar-context modules show setup prompts instead.'}
-          </p>
-        </div>
-        {(screenState === 'stale' || screenState === 'warning') && (
-          <div className="rounded-2xl border border-orange-500/20 bg-orange-500/10 p-3 text-orange-100">
-            <p className="font-semibold">
-              {screenState === 'stale' ? 'Stale data' : 'Suspicious data'}
-            </p>
-            <p className="mt-1 text-orange-100/80">
-              Warnings stay calm and actionable; the page preserves context without quietly hiding
-              uncertainty.
-            </p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function DisconnectedState() {
-  return (
-    <div className="rounded-[32px] border border-rose-500/20 bg-rose-500/10 p-8 text-center">
-      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-rose-500/30 bg-rose-500/10 text-rose-300">
-        <WifiOff size={22} />
-      </div>
-      <h2 className="mt-5 text-2xl font-semibold text-slate-50">Live feed unavailable</h2>
-      <p className="mx-auto mt-2 max-w-xl text-sm text-slate-300">
-        No data was returned from the provider for today. This may be a temporary outage or a
-        configuration issue. The page will show live data once the provider feed resumes.
-      </p>
-      <div className="mt-6 flex flex-wrap justify-center gap-3">
-        <button className="rounded-full bg-rose-400 px-4 py-2 text-sm font-semibold text-slate-950">
-          Reconnect provider
-        </button>
-        <button className="rounded-full border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200">
-          Review Data Health
-        </button>
-      </div>
     </div>
   );
 }
@@ -1085,30 +637,25 @@ function DisconnectedState() {
 // Main export
 // ---------------------------------------------------------------------------
 
-export function LiveScreen({
+export function HistoricalDayScreen({
   today,
   displayDate,
   initialLiveTime,
   selectedDate,
-  isHistoricalDate,
-  installationContext,
   timezone,
   screenState,
   health,
   hasTariff,
-  hasCoordinates,
-  hasCapacity,
-  currentMetrics,
   minuteChartData,
   halfHourChartData,
   hourChartData,
   costChartData,
-  todayTotals,
+  dayTotals,
   financialEstimate,
-}: LiveScreenProps) {
+}: HistoricalDayScreenProps) {
   const router = useRouter();
-  const pathname = usePathname();
   const chartPrefsStorageKey = useMemo(() => getChartPrefsStorageKey(timezone), [timezone]);
+
   const [resolution, setResolution] = useState<Resolution>(() => {
     if (typeof window === 'undefined') return '1min';
     try {
@@ -1120,6 +667,7 @@ export function LiveScreen({
       return '1min';
     }
   });
+
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     if (typeof window === 'undefined') return 'line';
     try {
@@ -1131,6 +679,7 @@ export function LiveScreen({
       return 'line';
     }
   });
+
   const [activeSeries, setActiveSeries] = useState<SeriesKey[]>(() => {
     if (typeof window === 'undefined') return MINUTE_DEFAULT_SERIES;
     try {
@@ -1145,6 +694,7 @@ export function LiveScreen({
       return MINUTE_DEFAULT_SERIES;
     }
   });
+
   const [warningDetailsOpen, setWarningDetailsOpen] = useState(false);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
   const [dismissedIncidentIds, setDismissedIncidentIds] = useState<string[]>([]);
@@ -1164,18 +714,20 @@ export function LiveScreen({
     () => applyViewMode(baseChartData, viewMode, resolution),
     [baseChartData, viewMode, resolution],
   );
+
   const valueChartData = useMemo(
     () => applyCostViewMode(costChartData, viewMode),
     [costChartData, viewMode],
   );
+
   const overallSolarCoverage =
-    todayTotals && todayTotals.consumedKwh > 0
+    dayTotals && dayTotals.consumedKwh > 0
       ? Math.round(
           Math.min(
             100,
             Math.max(
               0,
-              ((todayTotals.consumedKwh - todayTotals.importKwh) / todayTotals.consumedKwh) * 100,
+              ((dayTotals.consumedKwh - dayTotals.importKwh) / dayTotals.consumedKwh) * 100,
             ),
           ),
         )
@@ -1185,18 +737,16 @@ export function LiveScreen({
     () => getDismissalStorageKey(selectedDate, timezone),
     [selectedDate, timezone],
   );
+
   const activeIncidents = useMemo(
     () => health.incidents.filter((incident) => !dismissedIncidentIds.includes(incident.id)),
     [dismissedIncidentIds, health.incidents],
   );
+
   const primaryActiveIncident = activeIncidents[0] ?? null;
 
   const displayScreenState: ScreenState =
-    screenState === 'warning' && !primaryActiveIncident
-      ? (health.minutesStale ?? 0) > 30
-        ? 'stale'
-        : 'healthy'
-      : screenState;
+    screenState === 'warning' && !primaryActiveIncident ? 'healthy' : screenState;
 
   const displayHealth = useMemo(
     () => ({
@@ -1207,12 +757,12 @@ export function LiveScreen({
     [health, primaryActiveIncident],
   );
 
+  // Chart prefs persistence
   useEffect(() => {
     setActiveSeries((current) => {
       if (current.length === 0) {
         return resolution === '1min' ? MINUTE_DEFAULT_SERIES : SERIES_ORDER;
       }
-
       const next = current.filter((series) => SERIES_ORDER.includes(series));
       return next.length > 0 ? next : resolution === '1min' ? MINUTE_DEFAULT_SERIES : SERIES_ORDER;
     });
@@ -1222,17 +772,14 @@ export function LiveScreen({
     try {
       window.localStorage.setItem(
         chartPrefsStorageKey,
-        JSON.stringify({
-          resolution,
-          viewMode,
-          activeSeries,
-        }),
+        JSON.stringify({ resolution, viewMode, activeSeries }),
       );
     } catch {
-      // Ignore storage failures and keep the UI functional in-memory.
+      // Ignore storage failures.
     }
   }, [activeSeries, chartPrefsStorageKey, resolution, viewMode]);
 
+  // Dismissal persistence
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(dismissalStorageKey);
@@ -1240,7 +787,6 @@ export function LiveScreen({
         setDismissedIncidentIds([]);
         return;
       }
-
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
         setDismissedIncidentIds(parsed.filter((id): id is string => typeof id === 'string'));
@@ -1263,11 +809,11 @@ export function LiveScreen({
         ),
       );
     } catch {
-      // Ignore storage failures and fall back to in-memory state.
+      // Ignore storage failures.
     }
   }, [dismissalStorageKey, dismissedIncidentIds, health.incidents]);
 
-  // Clock ticks independently of whether the user is on Live or Historical Day.
+  // Clock tick
   useEffect(() => {
     const updateClock = () => setLiveTime(formatClockTime(new Date(), timezone));
     updateClock();
@@ -1275,51 +821,11 @@ export function LiveScreen({
     return () => window.clearInterval(clockIntervalId);
   }, [timezone]);
 
-  // Auto-refresh is Live-only; historical dates do not trigger page refreshes.
-  useEffect(() => {
-    if (isHistoricalDate) return;
-
-    let refreshTimeoutId: number | null = null;
-
-    const clearRefreshTimer = () => {
-      if (refreshTimeoutId !== null) {
-        window.clearTimeout(refreshTimeoutId);
-        refreshTimeoutId = null;
-      }
-    };
-
-    const scheduleRefresh = () => {
-      clearRefreshTimer();
-      if (document.visibilityState !== 'visible') return;
-      refreshTimeoutId = window.setTimeout(() => {
-        router.refresh();
-        scheduleRefresh();
-      }, 60_000);
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        router.refresh();
-        scheduleRefresh();
-      } else {
-        clearRefreshTimer();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    scheduleRefresh();
-
-    return () => {
-      clearRefreshTimer();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [router, timezone, isHistoricalDate]);
-
   function navigateToDate(date: string) {
-    if (date < today) {
-      router.push(`/history/${date}`);
-    } else {
+    if (date >= today) {
       router.push('/live');
+    } else {
+      router.push(`/history/${date}`);
     }
   }
 
@@ -1332,9 +838,22 @@ export function LiveScreen({
     });
   }
 
-  const yesterday = addDays(today, -1);
+  // Prev/next day navigation
+  const prevDay = addDays(selectedDate, -1);
+  const nextDay = addDays(selectedDate, 1);
+  const canGoPrev = prevDay >= MIN_HISTORY_DATE;
+  const isNextToday = nextDay >= today;
 
-  // Touch swipe handlers — swipe right navigates to yesterday
+  function handlePrevDay() {
+    if (!canGoPrev) return;
+    navigateToDate(prevDay);
+  }
+
+  function handleNextDay() {
+    navigateToDate(nextDay);
+  }
+
+  // Touch swipe handlers
   function handleTouchStart(e: React.TouchEvent<HTMLDivElement>) {
     const target = e.target as Element;
     if (target.closest('.recharts-responsive-container')) return;
@@ -1355,14 +874,27 @@ export function LiveScreen({
     if (Math.abs(deltaX) < 50) return;
 
     if (deltaX > 0) {
-      // Swipe right = previous day (yesterday)
-      navigateToDate(yesterday);
+      // Swipe right = previous day
+      handlePrevDay();
+    } else {
+      // Swipe left = next day
+      handleNextDay();
     }
-    // Swipe left = can't go to future, do nothing
   }
 
-  const isStale = displayScreenState === 'stale' || displayScreenState === 'warning';
   const isDisconnected = displayScreenState === 'disconnected';
+
+  // Last chart point for current solar share / grid draw (use last minute point)
+  const lastPoint = baseChartData[baseChartData.length - 1];
+  const currentSolarShare =
+    lastPoint && lastPoint.consumption > 0
+      ? Math.round(
+          Math.min(100, Math.max(0, ((lastPoint.generation - lastPoint.export) / lastPoint.consumption) * 100)),
+        )
+      : lastPoint && lastPoint.generation > 0
+        ? 100
+        : 0;
+  const currentGridDraw = 100 - currentSolarShare;
 
   return (
     <div
@@ -1370,12 +902,30 @@ export function LiveScreen({
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      <CapabilityBar
-        hasTariff={hasTariff}
-        hasCoordinates={hasCoordinates}
-        hasCapacity={hasCapacity}
-      />
-      <NavBar screenState={displayScreenState} />
+      {/* Nav bar */}
+      <header className="border-b border-slate-800 bg-[#101826]">
+        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => router.push('/live')}
+              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              <ChevronLeft size={14} />
+              <span className="hidden sm:inline">Live</span>
+            </button>
+            <span className="text-slate-700">/</span>
+            <span className="text-sm font-semibold text-slate-100">Historical Day</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-xs font-bold text-slate-200">
+              J
+            </div>
+          </div>
+        </div>
+      </header>
+
       <WarningBanner
         screenState={displayScreenState}
         health={displayHealth}
@@ -1385,6 +935,7 @@ export function LiveScreen({
         }}
       />
 
+      {/* Control bar */}
       <div className="border-b border-slate-800 bg-[#0c1422]/80">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <TrustBadge
@@ -1396,12 +947,13 @@ export function LiveScreen({
             }}
           />
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-            {/* Prev day — navigates to yesterday's history */}
+            {/* Prev day button */}
             <button
               type="button"
-              onClick={() => navigateToDate(yesterday)}
+              onClick={handlePrevDay}
+              disabled={!canGoPrev}
               title="Previous day"
-              className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-700 bg-slate-900/70 text-slate-300 hover:text-slate-100 transition-colors"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-700 bg-slate-900/70 text-slate-300 hover:text-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronLeft size={14} />
             </button>
@@ -1410,16 +962,15 @@ export function LiveScreen({
               selectedDate={selectedDate}
               displayDate={displayDate}
               today={today}
-              isHistoricalDate={isHistoricalDate}
               onSelectDate={navigateToDate}
             />
 
-            {/* Next day — disabled on Live (already on today) */}
+            {/* Next day button */}
             <button
               type="button"
-              disabled
-              title="Already on today"
-              className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-700 bg-slate-900/70 text-slate-300 opacity-30 cursor-not-allowed"
+              onClick={handleNextDay}
+              title={isNextToday ? 'Go to live' : 'Next day'}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-700 bg-slate-900/70 text-slate-300 hover:text-slate-100 transition-colors"
             >
               <ChevronRight size={14} />
             </button>
@@ -1430,7 +981,6 @@ export function LiveScreen({
             <UptimeBadge
               uptimePercent={health.uptimePercent}
               isDisconnected={isDisconnected}
-              isHistoricalDate={isHistoricalDate}
               onOpenDetails={() => {
                 setSelectedIncidentId(
                   primaryActiveIncident?.id ?? health.primaryIncident?.id ?? null,
@@ -1444,136 +994,64 @@ export function LiveScreen({
 
       <main className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6">
         <section className="space-y-4">
-          <SectionHeader
-            eyebrow="Now"
-            title="What the system is doing right now"
-            description="Current power, freshness, and a quick read of whether solar is carrying the home."
-          />
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+              Historical
+            </p>
+            <h2 className="mt-1 text-xl font-semibold text-slate-50">{displayDate}</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              Full-day energy breakdown and financial interpretation for this date.
+            </p>
+          </div>
 
-          {isDisconnected ? (
-            <DisconnectedState />
-          ) : (
-            currentMetrics && (
-              <>
-                <MobileMetricGrid current={currentMetrics} stale={isStale} />
+          <div className="grid gap-4 xl:grid-cols-[1.7fr_1fr]">
+            <DayTrendChart
+              mode="historical"
+              data={chartData}
+              costData={valueChartData}
+              screenState={displayScreenState}
+              resolution={resolution}
+              onResolutionChange={setResolution}
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+              activeSeries={activeSeries}
+              onToggleSeries={toggleSeries}
+            />
 
-                <div className="hidden gap-3 md:grid md:grid-cols-2 xl:grid-cols-4">
-                  <MetricCard
-                    label="Generation"
-                    value={formatW(currentMetrics.generatedKw)}
-                    unit="W"
-                    caption="from panels"
-                    icon={<Zap size={16} />}
-                    accentClass="text-amber-300"
-                    stale={isStale}
-                  />
-                  <MetricCard
-                    label="Consumption"
-                    value={formatW(currentMetrics.consumedKw)}
-                    unit="W"
-                    caption="home using now"
-                    icon={<Home size={16} />}
-                    accentClass="text-slate-300"
-                    stale={isStale}
-                  />
-                  <MetricCard
-                    label="Import"
-                    value={formatW(currentMetrics.importKw)}
-                    unit="W"
-                    caption="from grid"
-                    icon={<ArrowDownToLine size={16} />}
-                    accentClass="text-slate-400"
-                    stale={isStale}
-                  />
-                  <MetricCard
-                    label="Export"
-                    value={formatW(currentMetrics.exportKw)}
-                    unit="W"
-                    caption="to grid"
-                    icon={<ArrowUpFromLine size={16} />}
-                    accentClass="text-emerald-300"
-                    stale={isStale}
-                  />
-                </div>
+            <div className="space-y-4">
+              <DayValuePanel
+                mode="historical"
+                hasTariff={hasTariff}
+                estimate={financialEstimate}
+              />
+              <DayTotalsPanel
+                mode="historical"
+                totals={dayTotals}
+                screenState={displayScreenState}
+              />
+              <SolarCoveragePanel
+                mode="historical"
+                chartData={baseChartData}
+                currentSolarShare={currentSolarShare}
+                overallSolarCoverage={overallSolarCoverage}
+                currentGridDraw={currentGridDraw}
+              />
 
-                <InsightStrip
-                  current={currentMetrics}
-                  arrayCapacityKw={installationContext?.arrayCapacityKw ?? null}
-                  hasCapacity={hasCapacity}
-                  stale={isStale}
-                />
-              </>
-            )
-          )}
+              {/* Historical notes placeholder — mount point for U-035 */}
+              <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Notes
+                </p>
+                <h3 className="mt-1 text-lg font-semibold text-slate-50">Day story</h3>
+                <p className="mt-2 text-sm text-slate-400">
+                  Historical interpretation is coming soon.
+                </p>
+              </div>
+            </div>
+          </div>
         </section>
-
-        {!isDisconnected && (
-          <>
-            <section className="space-y-4">
-              <SectionHeader
-                eyebrow="Today"
-                title="What today has meant so far"
-                description="Live trend, same-day totals, and financial interpretation without turning the page into a billing dashboard."
-              />
-
-              <div className="grid gap-4 xl:grid-cols-[1.7fr_1fr]">
-                <DayTrendChart
-                  mode="live"
-                  data={chartData}
-                  costData={valueChartData}
-                  screenState={displayScreenState}
-                  resolution={resolution}
-                  onResolutionChange={setResolution}
-                  viewMode={viewMode}
-                  onViewModeChange={setViewMode}
-                  activeSeries={activeSeries}
-                  onToggleSeries={toggleSeries}
-                />
-
-                <div className="space-y-4">
-                  <DayValuePanel
-                    mode="live"
-                    hasTariff={hasTariff}
-                    estimate={financialEstimate}
-                  />
-                  <DayTotalsPanel
-                    mode="live"
-                    totals={todayTotals}
-                    screenState={displayScreenState}
-                  />
-                  <SolarCoveragePanel
-                    mode="live"
-                    chartData={baseChartData}
-                    currentSolarShare={currentMetrics?.solarShare ?? 0}
-                    overallSolarCoverage={overallSolarCoverage}
-                    currentGridDraw={currentMetrics?.gridShare ?? 100}
-                  />
-                </div>
-              </div>
-            </section>
-
-            <section className="space-y-4">
-              <SectionHeader
-                eyebrow="Next"
-                title="What is likely to happen over the next few hours"
-                description="Daylight, weather, and near-term solar context — unlocked once coordinates are added."
-              />
-
-              <div className="grid gap-4 xl:grid-cols-[1.15fr_1fr]">
-                <SolarContextPanel hasCoordinates={hasCoordinates} />
-                <div className="space-y-4">
-                  <ForecastPanel hasCoordinates={hasCoordinates} />
-                  <NotesPanel
-                    screenState={screenState}
-                    hasTariff={hasTariff}
-                    hasCoordinates={hasCoordinates}
-                  />
-                </div>
-              </div>
-            </section>
-          </>
-        )}
       </main>
+
       <WarningDetailsModal
         health={displayHealth}
         open={warningDetailsOpen}

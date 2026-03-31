@@ -5,15 +5,12 @@ import {
   loadInstallationContext,
   loadTariffContext,
   computeFinancialEstimate,
-  deriveScreenState,
-  getMinutesStale,
   getLastReadingLocalTime,
-  getCurrentMetrics,
   minuteDataToChartPoints,
   periodDataToChartPoints,
   periodDataToCostPoints,
 } from '@/src/live/loader';
-import { LiveScreen } from './LiveScreen';
+import { HistoricalDayScreen } from './HistoricalDayScreen';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,8 +19,9 @@ export const dynamic = 'force-dynamic';
 // ---------------------------------------------------------------------------
 const SEED_INSTALLATION_ID = '00000000-0000-0000-0000-000000000002';
 
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
 function getTodayLocalDate(timezone: string): string {
-  // Returns "YYYY-MM-DD" in the installation timezone.
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: timezone,
     year: 'numeric',
@@ -42,77 +40,71 @@ function formatDisplayDate(isoDate: string, timezone: string): string {
   }).format(new Date(`${isoDate}T12:00:00`));
 }
 
-export const metadata = {
-  title: 'Live — PV Manager',
-  description: 'Real-time solar system status',
-};
-
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
-function resolveSelectedDate(candidate: string | undefined, today: string): string {
-  if (!candidate || !DATE_PATTERN.test(candidate)) return today;
-  return candidate > today ? today : candidate;
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ date: string }>;
+}) {
+  const { date } = await params;
+  return {
+    title: `${date} — PV Manager`,
+    description: `Historical solar system data for ${date}`,
+  };
 }
 
-export default async function LivePage({
-  searchParams,
+export default async function HistoricalDayPage({
+  params,
 }: {
-  searchParams?: Promise<{ date?: string }>;
+  params: Promise<{ date: string }>;
 }) {
   const now = new Date();
+  const { date } = await params;
+
+  // Validate format and calendar legitimacy (e.g. reject 2024-13-01 or 2024-00-10)
+  if (!DATE_PATTERN.test(date) || isNaN(new Date(`${date}T12:00:00`).getTime())) {
+    redirect('/live');
+  }
+
   const installationContext = await loadInstallationContext(SEED_INSTALLATION_ID);
   const effectiveTimezone = installationContext?.timezone ?? 'Europe/Dublin';
   const today = getTodayLocalDate(effectiveTimezone);
-  const params = await searchParams;
 
-  // Redirect historical ?date= params to the dedicated history route.
-  if (params?.date && DATE_PATTERN.test(params.date) && params.date < today) {
-    redirect(`/history/${params.date}`);
+  // Redirect today or future to live
+  if (date >= today) {
+    redirect('/live');
   }
 
-  const selectedDate = resolveSelectedDate(params?.date, today);
-  const isHistoricalDate = selectedDate < today;
   const fetchedAt = now.toISOString();
 
-  // Load tariff and provider data once the installation timezone is known.
   const [tariffContext, minuteData] = await Promise.all([
-    loadTariffContext(SEED_INSTALLATION_ID, selectedDate),
-    fetchMinuteData(selectedDate, effectiveTimezone),
+    loadTariffContext(SEED_INSTALLATION_ID, date),
+    fetchMinuteData(date, effectiveTimezone),
   ]);
 
-  // Build the normalised day-detail from raw minute readings.
-  const dayDetail = buildDayDetail(selectedDate, minuteData, fetchedAt, effectiveTimezone);
+  const dayDetail = buildDayDetail(date, minuteData, fetchedAt, effectiveTimezone);
 
-  // Derive screen state from health signals and freshness.
-  const screenState = isHistoricalDate
-    ? minuteData.length === 0
+  // For historical dates: never 'stale' — only healthy/warning/disconnected
+  const screenState: 'healthy' | 'warning' | 'disconnected' =
+    minuteData.length === 0
       ? 'disconnected'
       : dayDetail.health.hasSuspiciousReadings
-      ? 'warning'
-      : 'healthy'
-    : deriveScreenState(dayDetail.health, minuteData, now, effectiveTimezone);
+        ? 'warning'
+        : 'healthy';
 
-  // Current instantaneous metrics from the most recent reading.
-  const currentMetrics = getCurrentMetrics(minuteData);
-
-  // Financial estimate is only meaningful when tariff context is present
-  // and we have some data to compute against.
   const financialEstimate =
     tariffContext && screenState !== 'disconnected'
       ? computeFinancialEstimate(dayDetail.summary, tariffContext)
       : null;
 
-  // Pre-compute chart data at all three resolutions so the client can
-  // switch resolution without a server round-trip.
   const minuteChartData = minuteDataToChartPoints(minuteData);
   const halfHourChartData = periodDataToChartPoints(dayDetail.halfHourData, 30);
   const hourChartData = periodDataToChartPoints(dayDetail.hourData, 60);
   const costChartData =
     tariffContext && screenState !== 'disconnected'
-      ? periodDataToCostPoints(dayDetail.halfHourData, selectedDate, tariffContext)
+      ? periodDataToCostPoints(dayDetail.halfHourData, date, tariffContext)
       : [];
 
-  const todayTotals =
+  const dayTotals =
     screenState !== 'disconnected'
       ? {
           generatedKwh: dayDetail.summary.totalGeneratedKwh,
@@ -124,9 +116,9 @@ export default async function LivePage({
       : null;
 
   return (
-    <LiveScreen
+    <HistoricalDayScreen
       today={today}
-      displayDate={formatDisplayDate(selectedDate, effectiveTimezone)}
+      displayDate={formatDisplayDate(date, effectiveTimezone)}
       initialLiveTime={new Intl.DateTimeFormat('en-IE', {
         timeZone: effectiveTimezone,
         hour: '2-digit',
@@ -134,8 +126,7 @@ export default async function LivePage({
         second: '2-digit',
         hour12: false,
       }).format(now)}
-      selectedDate={selectedDate}
-      isHistoricalDate={isHistoricalDate}
+      selectedDate={date}
       installationContext={
         installationContext
           ? {
@@ -146,7 +137,7 @@ export default async function LivePage({
       }
       screenState={screenState}
       health={{
-        minutesStale: isHistoricalDate ? null : getMinutesStale(minuteData, now, effectiveTimezone),
+        minutesStale: null,
         lastReadingLocalTime: getLastReadingLocalTime(minuteData),
         refreshedAtLocalTime: new Intl.DateTimeFormat('en-IE', {
           timeZone: effectiveTimezone,
@@ -163,14 +154,11 @@ export default async function LivePage({
       }}
       timezone={effectiveTimezone}
       hasTariff={tariffContext !== null}
-      hasCoordinates={false}
-      hasCapacity={installationContext?.arrayCapacityKw != null}
-      currentMetrics={currentMetrics}
       minuteChartData={minuteChartData}
       halfHourChartData={halfHourChartData}
       hourChartData={hourChartData}
       costChartData={costChartData}
-      todayTotals={todayTotals}
+      dayTotals={dayTotals}
       financialEstimate={financialEstimate}
     />
   );
