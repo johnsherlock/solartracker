@@ -71,7 +71,6 @@ export default async function LivePage({
   }
 
   const selectedDate = resolveSelectedDate(params?.date, today);
-  const isHistoricalDate = selectedDate < today;
   const fetchedAt = now.toISOString();
 
   // Load tariff and provider data once the installation timezone is known.
@@ -84,13 +83,8 @@ export default async function LivePage({
   const dayDetail = buildDayDetail(selectedDate, minuteData, fetchedAt, effectiveTimezone);
 
   // Derive screen state from health signals and freshness.
-  const screenState = isHistoricalDate
-    ? minuteData.length === 0
-      ? 'disconnected'
-      : dayDetail.health.hasSuspiciousReadings
-      ? 'warning'
-      : 'healthy'
-    : deriveScreenState(dayDetail.health, minuteData, now, effectiveTimezone);
+  // Historical dates are redirected above, so selectedDate is always today here.
+  const screenState = deriveScreenState(dayDetail.health, minuteData, now, effectiveTimezone);
 
   // Current instantaneous metrics from the most recent reading.
   const currentMetrics = getCurrentMetrics(minuteData);
@@ -135,7 +129,6 @@ export default async function LivePage({
         hour12: false,
       }).format(now)}
       selectedDate={selectedDate}
-      isHistoricalDate={isHistoricalDate}
       installationContext={
         installationContext
           ? {
@@ -146,7 +139,7 @@ export default async function LivePage({
       }
       screenState={screenState}
       health={{
-        minutesStale: isHistoricalDate ? null : getMinutesStale(minuteData, now, effectiveTimezone),
+        minutesStale: getMinutesStale(minuteData, now, effectiveTimezone),
         lastReadingLocalTime: getLastReadingLocalTime(minuteData),
         refreshedAtLocalTime: new Intl.DateTimeFormat('en-IE', {
           timeZone: effectiveTimezone,

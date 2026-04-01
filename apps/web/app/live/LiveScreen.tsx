@@ -69,7 +69,6 @@ export type LiveScreenProps = {
   displayDate: string;
   initialLiveTime: string;
   selectedDate: string;
-  isHistoricalDate: boolean;
   installationContext: { name: string; arrayCapacityKw: number | null } | null;
   timezone: string;
   screenState: ScreenState;
@@ -524,16 +523,14 @@ function WarningDetailsModal({
 function UptimeBadge({
   uptimePercent,
   isDisconnected,
-  isHistoricalDate,
   onOpenDetails,
 }: {
   uptimePercent: number;
   isDisconnected: boolean;
-  isHistoricalDate: boolean;
   onOpenDetails: () => void;
 }) {
   const tone = getUptimeTone(uptimePercent);
-  const label = isDisconnected ? 'No feed' : isHistoricalDate ? 'Data quality' : 'Data quality';
+  const label = isDisconnected ? 'No feed' : 'Data quality';
 
   return (
     <button
@@ -746,13 +743,11 @@ function DatePickerControl({
   selectedDate,
   displayDate,
   today,
-  isHistoricalDate,
   onSelectDate,
 }: {
   selectedDate: string;
   displayDate: string;
   today: string;
-  isHistoricalDate: boolean;
   onSelectDate: (date: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -903,20 +898,6 @@ function DatePickerControl({
             </div>
           </div>
 
-          {isHistoricalDate && (
-            <div className="mt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  onSelectDate(today);
-                  setOpen(false);
-                }}
-                className="w-full rounded-full border border-slate-700 py-1.5 text-xs font-semibold text-slate-300 hover:border-slate-500 hover:text-slate-100"
-              >
-                Back to Today
-              </button>
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -1096,7 +1077,6 @@ export function LiveScreen({
   displayDate,
   initialLiveTime,
   selectedDate,
-  isHistoricalDate,
   installationContext,
   timezone,
   screenState,
@@ -1270,9 +1250,8 @@ export function LiveScreen({
     return () => window.clearInterval(clockIntervalId);
   }, [timezone]);
 
-  // Auto-refresh is Live-only; historical dates do not trigger page refreshes.
+  // Auto-refresh every few minutes to keep the live view current.
   useEffect(() => {
-    if (isHistoricalDate) return;
 
     let refreshTimeoutId: number | null = null;
 
@@ -1308,7 +1287,7 @@ export function LiveScreen({
       clearRefreshTimer();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [router, timezone, isHistoricalDate]);
+  }, [router, timezone]);
 
   function navigateToDate(date: string) {
     startTransition(() => {
@@ -1419,7 +1398,6 @@ export function LiveScreen({
               selectedDate={selectedDate}
               displayDate={displayDate}
               today={today}
-              isHistoricalDate={isHistoricalDate}
               onSelectDate={navigateToDate}
             />
 
@@ -1439,7 +1417,6 @@ export function LiveScreen({
             <UptimeBadge
               uptimePercent={health.uptimePercent}
               isDisconnected={isDisconnected}
-              isHistoricalDate={isHistoricalDate}
               onOpenDetails={() => {
                 setSelectedIncidentId(
                   primaryActiveIncident?.id ?? health.primaryIncident?.id ?? null,
