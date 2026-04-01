@@ -26,7 +26,7 @@ Then produce:
 5. Promt for confirmation before writing any code, and only proceed once the plan is confirmed
 6. After confirmation create a branch for the story (e.g. `stories/P-021`) and switch to it
 7. Implement the story according to the confirmed plan
-8. Once implementation is complete, create a pull request and request review from the team
+8. Once implementation is complete, create a pull request using the pr naming convetions from https://www.conventionalcommits.org/en/v1.0.0/
 9. Address any review feedback and iterate until the PR is approved
 
 Rules:

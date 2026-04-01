@@ -39,6 +39,12 @@ import {
   getMonthDays,
 } from '@/src/live/chartUtils';
 import type { CostPoint } from '@/src/live/loader';
+import { buildHistoricalNotesModel, type HistoricalNotesModel } from '@/src/live/historicalNotes';
+import {
+  resolveHistoricalSwipeTarget,
+  resolveNavigationTarget,
+  shouldIgnoreSwipeTarget,
+} from '@/src/live/swipeNavigation';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -504,7 +510,10 @@ function DatePickerControl({
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-40 mt-2 w-[280px] rounded-[20px] border border-slate-800 bg-[#111b2b] p-4 shadow-[0_20px_60px_rgba(2,6,23,0.5)]">
+        <div
+          data-swipe-ignore="true"
+          className="absolute left-0 top-full z-40 mt-2 w-[280px] rounded-[20px] border border-slate-800 bg-[#111b2b] p-4 shadow-[0_20px_60px_rgba(2,6,23,0.5)]"
+        >
           <div className="flex items-center justify-between gap-2">
             <button
               type="button"
@@ -655,45 +664,10 @@ export function HistoricalDayScreen({
 }: HistoricalDayScreenProps) {
   const router = useRouter();
   const chartPrefsStorageKey = useMemo(() => getChartPrefsStorageKey(timezone), [timezone]);
-
-  const [resolution, setResolution] = useState<Resolution>(() => {
-    if (typeof window === 'undefined') return '1min';
-    try {
-      const raw = window.localStorage.getItem(getChartPrefsStorageKey(timezone));
-      if (!raw) return '1min';
-      const parsed = JSON.parse(raw);
-      return isResolution(parsed?.resolution) ? parsed.resolution : '1min';
-    } catch {
-      return '1min';
-    }
-  });
-
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    if (typeof window === 'undefined') return 'line';
-    try {
-      const raw = window.localStorage.getItem(getChartPrefsStorageKey(timezone));
-      if (!raw) return 'line';
-      const parsed = JSON.parse(raw);
-      return isViewMode(parsed?.viewMode) ? parsed.viewMode : 'line';
-    } catch {
-      return 'line';
-    }
-  });
-
-  const [activeSeries, setActiveSeries] = useState<SeriesKey[]>(() => {
-    if (typeof window === 'undefined') return MINUTE_DEFAULT_SERIES;
-    try {
-      const raw = window.localStorage.getItem(getChartPrefsStorageKey(timezone));
-      if (!raw) return MINUTE_DEFAULT_SERIES;
-      const parsed = JSON.parse(raw);
-      const series = Array.isArray(parsed?.activeSeries)
-        ? parsed.activeSeries.filter((value: string) => isSeriesKey(value))
-        : [];
-      return series.length > 0 ? series : MINUTE_DEFAULT_SERIES;
-    } catch {
-      return MINUTE_DEFAULT_SERIES;
-    }
-  });
+  const [resolution, setResolution] = useState<Resolution>('1min');
+  const [viewMode, setViewMode] = useState<ViewMode>('line');
+  const [activeSeries, setActiveSeries] = useState<SeriesKey[]>(MINUTE_DEFAULT_SERIES);
+  const [chartPrefsReady, setChartPrefsReady] = useState(false);
 
   const [warningDetailsOpen, setWarningDetailsOpen] = useState(false);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
@@ -759,6 +733,25 @@ export function HistoricalDayScreen({
 
   // Chart prefs persistence
   useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(chartPrefsStorageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setResolution(isResolution(parsed?.resolution) ? parsed.resolution : '1min');
+        setViewMode(isViewMode(parsed?.viewMode) ? parsed.viewMode : 'line');
+        const series = Array.isArray(parsed?.activeSeries)
+          ? parsed.activeSeries.filter((value: string) => isSeriesKey(value))
+          : [];
+        setActiveSeries(series.length > 0 ? series : MINUTE_DEFAULT_SERIES);
+      }
+    } catch {
+      // Storage read failed — leave state at defaults already set by useState.
+    } finally {
+      setChartPrefsReady(true);
+    }
+  }, [chartPrefsStorageKey]);
+
+  useEffect(() => {
     setActiveSeries((current) => {
       if (current.length === 0) {
         return resolution === '1min' ? MINUTE_DEFAULT_SERIES : SERIES_ORDER;
@@ -769,6 +762,7 @@ export function HistoricalDayScreen({
   }, [resolution]);
 
   useEffect(() => {
+    if (!chartPrefsReady) return;
     try {
       window.localStorage.setItem(
         chartPrefsStorageKey,
@@ -777,7 +771,7 @@ export function HistoricalDayScreen({
     } catch {
       // Ignore storage failures.
     }
-  }, [activeSeries, chartPrefsStorageKey, resolution, viewMode]);
+  }, [activeSeries, chartPrefsReady, chartPrefsStorageKey, resolution, viewMode]);
 
   // Dismissal persistence
   useEffect(() => {
@@ -822,11 +816,7 @@ export function HistoricalDayScreen({
   }, [timezone]);
 
   function navigateToDate(date: string) {
-    if (date >= today) {
-      router.push('/live');
-    } else {
-      router.push(`/history/${date}`);
-    }
+    router.push(resolveNavigationTarget(date, today));
   }
 
   function toggleSeries(series: SeriesKey) {
@@ -856,7 +846,11 @@ export function HistoricalDayScreen({
   // Touch swipe handlers
   function handleTouchStart(e: React.TouchEvent<HTMLDivElement>) {
     const target = e.target as Element;
-    if (target.closest('.recharts-responsive-container')) return;
+    if (e.touches.length !== 1 || shouldIgnoreSwipeTarget(target)) {
+      touchStartX.current = null;
+      touchStartY.current = null;
+      return;
+    }
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
   }
@@ -867,22 +861,37 @@ export function HistoricalDayScreen({
     const deltaY = e.changedTouches[0].clientY - touchStartY.current;
     touchStartX.current = null;
     touchStartY.current = null;
-
-    // Guard: horizontal movement must dominate
-    if (Math.abs(deltaX) <= Math.abs(deltaY)) return;
-    // Guard: minimum swipe threshold
-    if (Math.abs(deltaX) < 50) return;
-
-    if (deltaX > 0) {
-      // Swipe right = previous day
-      handlePrevDay();
-    } else {
-      // Swipe left = next day
-      handleNextDay();
-    }
+    const target = resolveHistoricalSwipeTarget(deltaX, deltaY, selectedDate, today);
+    if (!target) return;
+    router.push(target);
   }
 
   const isDisconnected = displayScreenState === 'disconnected';
+  const historicalNotes = useMemo(
+    () =>
+      buildHistoricalNotesModel({
+        screenState: displayScreenState,
+        dayTotals,
+        health: {
+          expectedMinutes: health.expectedMinutes,
+          coveredMinutes: health.coveredMinutes,
+          uptimePercent: health.uptimePercent,
+          incidents: activeIncidents,
+        },
+        hasTariff,
+        financialEstimate,
+      }),
+    [
+      activeIncidents,
+      dayTotals,
+      displayScreenState,
+      financialEstimate,
+      hasTariff,
+      health.coveredMinutes,
+      health.expectedMinutes,
+      health.uptimePercent,
+    ],
+  );
 
   // Last chart point for current solar share / grid draw (use last minute point)
   const lastPoint = baseChartData[baseChartData.length - 1];
@@ -899,6 +908,7 @@ export function HistoricalDayScreen({
   return (
     <div
       className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.08),_transparent_28%),linear-gradient(180deg,#050b14_0%,#0b1220_100%)] font-sans text-slate-100"
+      style={{ touchAction: 'pan-y' }}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
@@ -1037,16 +1047,7 @@ export function HistoricalDayScreen({
                 currentGridDraw={currentGridDraw}
               />
 
-              {/* Historical notes placeholder — mount point for U-035 */}
-              <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Notes
-                </p>
-                <h3 className="mt-1 text-lg font-semibold text-slate-50">Day story</h3>
-                <p className="mt-2 text-sm text-slate-400">
-                  Historical interpretation is coming soon.
-                </p>
-              </div>
+              <HistoricalNotesPanel model={historicalNotes} />
             </div>
           </div>
         </section>
@@ -1069,6 +1070,39 @@ export function HistoricalDayScreen({
           }
         }}
       />
+    </div>
+  );
+}
+
+function HistoricalNotesPanel({
+  model,
+}: {
+  model: HistoricalNotesModel;
+}) {
+  return (
+    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+        Notes
+      </p>
+      <h3 className="mt-1 text-lg font-semibold text-slate-50">{model.heading}</h3>
+      <p className="mt-2 text-sm text-slate-400">{model.summary}</p>
+      <div className="mt-4 space-y-3">
+        {model.notes.map((note) => {
+          const toneClasses =
+            note.tone === 'good'
+              ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-50'
+              : note.tone === 'caution'
+                ? 'border-amber-500/20 bg-amber-500/10 text-amber-50'
+                : 'border-slate-800 bg-slate-950/70 text-slate-100';
+
+          return (
+            <div key={note.title} className={`rounded-2xl border p-3 ${toneClasses}`}>
+              <p className="font-semibold">{note.title}</p>
+              <p className="mt-1 text-sm leading-6 opacity-80">{note.body}</p>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

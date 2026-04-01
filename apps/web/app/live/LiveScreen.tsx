@@ -51,6 +51,11 @@ import {
   getMonthName,
   getMonthDays,
 } from '@/src/live/chartUtils';
+import {
+  resolveLiveSwipeTarget,
+  resolveNavigationTarget,
+  shouldIgnoreSwipeTarget,
+} from '@/src/live/swipeNavigation';
 import type { CostPoint } from '@/src/live/loader';
 
 // ---------------------------------------------------------------------------
@@ -785,6 +790,7 @@ function DatePickerControl({
 
       {open && (
         <div
+          data-swipe-ignore="true"
           className="absolute left-0 top-full z-40 mt-2 w-[280px] rounded-[20px] border border-slate-800 bg-[#111b2b] p-4 shadow-[0_20px_60px_rgba(2,6,23,0.5)]"
         >
           <div className="flex items-center justify-between gap-2">
@@ -1109,42 +1115,10 @@ export function LiveScreen({
   const router = useRouter();
   const pathname = usePathname();
   const chartPrefsStorageKey = useMemo(() => getChartPrefsStorageKey(timezone), [timezone]);
-  const [resolution, setResolution] = useState<Resolution>(() => {
-    if (typeof window === 'undefined') return '1min';
-    try {
-      const raw = window.localStorage.getItem(getChartPrefsStorageKey(timezone));
-      if (!raw) return '1min';
-      const parsed = JSON.parse(raw);
-      return isResolution(parsed?.resolution) ? parsed.resolution : '1min';
-    } catch {
-      return '1min';
-    }
-  });
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    if (typeof window === 'undefined') return 'line';
-    try {
-      const raw = window.localStorage.getItem(getChartPrefsStorageKey(timezone));
-      if (!raw) return 'line';
-      const parsed = JSON.parse(raw);
-      return isViewMode(parsed?.viewMode) ? parsed.viewMode : 'line';
-    } catch {
-      return 'line';
-    }
-  });
-  const [activeSeries, setActiveSeries] = useState<SeriesKey[]>(() => {
-    if (typeof window === 'undefined') return MINUTE_DEFAULT_SERIES;
-    try {
-      const raw = window.localStorage.getItem(getChartPrefsStorageKey(timezone));
-      if (!raw) return MINUTE_DEFAULT_SERIES;
-      const parsed = JSON.parse(raw);
-      const series = Array.isArray(parsed?.activeSeries)
-        ? parsed.activeSeries.filter((value: string) => isSeriesKey(value))
-        : [];
-      return series.length > 0 ? series : MINUTE_DEFAULT_SERIES;
-    } catch {
-      return MINUTE_DEFAULT_SERIES;
-    }
-  });
+  const [resolution, setResolution] = useState<Resolution>('1min');
+  const [viewMode, setViewMode] = useState<ViewMode>('line');
+  const [activeSeries, setActiveSeries] = useState<SeriesKey[]>(MINUTE_DEFAULT_SERIES);
+  const [chartPrefsReady, setChartPrefsReady] = useState(false);
   const [warningDetailsOpen, setWarningDetailsOpen] = useState(false);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
   const [dismissedIncidentIds, setDismissedIncidentIds] = useState<string[]>([]);
@@ -1208,6 +1182,25 @@ export function LiveScreen({
   );
 
   useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(chartPrefsStorageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setResolution(isResolution(parsed?.resolution) ? parsed.resolution : '1min');
+        setViewMode(isViewMode(parsed?.viewMode) ? parsed.viewMode : 'line');
+        const series = Array.isArray(parsed?.activeSeries)
+          ? parsed.activeSeries.filter((value: string) => isSeriesKey(value))
+          : [];
+        setActiveSeries(series.length > 0 ? series : MINUTE_DEFAULT_SERIES);
+      }
+    } catch {
+      // Storage read failed — leave state at defaults already set by useState.
+    } finally {
+      setChartPrefsReady(true);
+    }
+  }, [chartPrefsStorageKey]);
+
+  useEffect(() => {
     setActiveSeries((current) => {
       if (current.length === 0) {
         return resolution === '1min' ? MINUTE_DEFAULT_SERIES : SERIES_ORDER;
@@ -1219,6 +1212,7 @@ export function LiveScreen({
   }, [resolution]);
 
   useEffect(() => {
+    if (!chartPrefsReady) return;
     try {
       window.localStorage.setItem(
         chartPrefsStorageKey,
@@ -1231,7 +1225,7 @@ export function LiveScreen({
     } catch {
       // Ignore storage failures and keep the UI functional in-memory.
     }
-  }, [activeSeries, chartPrefsStorageKey, resolution, viewMode]);
+  }, [activeSeries, chartPrefsReady, chartPrefsStorageKey, resolution, viewMode]);
 
   useEffect(() => {
     try {
@@ -1316,11 +1310,7 @@ export function LiveScreen({
   }, [router, timezone, isHistoricalDate]);
 
   function navigateToDate(date: string) {
-    if (date < today) {
-      router.push(`/history/${date}`);
-    } else {
-      router.push('/live');
-    }
+    router.push(resolveNavigationTarget(date, today));
   }
 
   function toggleSeries(series: SeriesKey) {
@@ -1337,7 +1327,11 @@ export function LiveScreen({
   // Touch swipe handlers — swipe right navigates to yesterday
   function handleTouchStart(e: React.TouchEvent<HTMLDivElement>) {
     const target = e.target as Element;
-    if (target.closest('.recharts-responsive-container')) return;
+    if (e.touches.length !== 1 || shouldIgnoreSwipeTarget(target)) {
+      touchStartX.current = null;
+      touchStartY.current = null;
+      return;
+    }
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
   }
@@ -1348,17 +1342,9 @@ export function LiveScreen({
     const deltaY = e.changedTouches[0].clientY - touchStartY.current;
     touchStartX.current = null;
     touchStartY.current = null;
-
-    // Guard: horizontal movement must dominate
-    if (Math.abs(deltaX) <= Math.abs(deltaY)) return;
-    // Guard: minimum swipe threshold
-    if (Math.abs(deltaX) < 50) return;
-
-    if (deltaX > 0) {
-      // Swipe right = previous day (yesterday)
-      navigateToDate(yesterday);
-    }
-    // Swipe left = can't go to future, do nothing
+    const target = resolveLiveSwipeTarget(deltaX, deltaY, today);
+    if (!target) return;
+    router.push(target);
   }
 
   const isStale = displayScreenState === 'stale' || displayScreenState === 'warning';
@@ -1367,6 +1353,7 @@ export function LiveScreen({
   return (
     <div
       className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.08),_transparent_28%),linear-gradient(180deg,#050b14_0%,#0b1220_100%)] font-sans text-slate-100"
+      style={{ touchAction: 'pan-y' }}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
