@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   Activity,
@@ -1113,6 +1113,7 @@ export function LiveScreen({
   financialEstimate,
 }: LiveScreenProps) {
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const pathname = usePathname();
   const chartPrefsStorageKey = useMemo(() => getChartPrefsStorageKey(timezone), [timezone]);
   const [resolution, setResolution] = useState<Resolution>('1min');
@@ -1310,7 +1311,9 @@ export function LiveScreen({
   }, [router, timezone, isHistoricalDate]);
 
   function navigateToDate(date: string) {
-    router.push(resolveNavigationTarget(date, today));
+    startTransition(() => {
+      router.push(resolveNavigationTarget(date, today));
+    });
   }
 
   function toggleSeries(series: SeriesKey) {
@@ -1344,7 +1347,14 @@ export function LiveScreen({
     touchStartY.current = null;
     const target = resolveLiveSwipeTarget(deltaX, deltaY, today);
     if (!target) return;
-    router.push(target);
+    startTransition(() => {
+      router.push(target);
+    });
+  }
+
+  function handleTouchCancel() {
+    touchStartX.current = null;
+    touchStartY.current = null;
   }
 
   const isStale = displayScreenState === 'stale' || displayScreenState === 'warning';
@@ -1356,7 +1366,19 @@ export function LiveScreen({
       style={{ touchAction: 'pan-y' }}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchCancel}
     >
+      {isPending && (
+        <div className="fixed top-0 left-0 right-0 z-50 h-0.5 overflow-hidden">
+          <div
+            className="h-full w-full animate-shimmer"
+            style={{
+              background: 'linear-gradient(90deg, transparent 0%, #38bdf8 50%, transparent 100%)',
+              backgroundSize: '200% 100%',
+            }}
+          />
+        </div>
+      )}
       <CapabilityBar
         hasTariff={hasTariff}
         hasCoordinates={hasCoordinates}
