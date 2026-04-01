@@ -42,10 +42,11 @@ import type { CostPoint } from '@/src/live/loader';
 import { buildHistoricalNotesModel, type HistoricalNotesModel } from '@/src/live/historicalNotes';
 import {
   resolveHistoricalSwipeTarget,
-  resolveNavigationTarget,
   shouldIgnoreSwipeTarget,
 } from '@/src/live/swipeNavigation';
-import { getAdjacentPrefetchTargets } from '@/src/live/prefetch';
+import * as dayCache from '@/src/live/dayCache';
+import { extractHistoricalDate, resolveClientNavigation } from '@/src/live/clientNavigation';
+import type { HistoricalDayPayload } from '@/app/api/history/[date]/route';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -180,6 +181,25 @@ function isViewMode(value: string): value is ViewMode {
 
 function isSeriesKey(value: string): value is SeriesKey {
   return SERIES_ORDER.includes(value as SeriesKey);
+}
+
+function propsToPayload(props: HistoricalDayScreenProps): HistoricalDayPayload {
+  return {
+    today: props.today,
+    displayDate: props.displayDate,
+    selectedDate: props.selectedDate,
+    installationContext: props.installationContext,
+    timezone: props.timezone,
+    screenState: props.screenState as 'healthy' | 'warning' | 'disconnected',
+    health: { ...props.health, minutesStale: null },
+    hasTariff: props.hasTariff,
+    minuteChartData: props.minuteChartData,
+    halfHourChartData: props.halfHourChartData,
+    hourChartData: props.hourChartData,
+    costChartData: props.costChartData,
+    dayTotals: props.dayTotals,
+    financialEstimate: props.financialEstimate,
+  };
 }
 
 // Minimum date we allow navigation back to (2 years ago from now)
@@ -647,24 +667,38 @@ function DatePickerControl({
 // Main export
 // ---------------------------------------------------------------------------
 
-export function HistoricalDayScreen({
-  today,
-  displayDate,
-  initialLiveTime,
-  selectedDate,
-  timezone,
-  screenState,
-  health,
-  hasTariff,
-  minuteChartData,
-  halfHourChartData,
-  hourChartData,
-  costChartData,
-  dayTotals,
-  financialEstimate,
-}: HistoricalDayScreenProps) {
+export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
+  const { initialLiveTime } = props;
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+
+  // ---------------------------------------------------------------------------
+  // Per-day display state — initialized from SSR props, updated on cache hits.
+  // ---------------------------------------------------------------------------
+  const [dayData, setDayData] = useState<HistoricalDayPayload>(() => propsToPayload(props));
+
+  // Re-sync from SSR props when the server provides a fresh date after a
+  // cache-miss router.push() navigates to a new /history/[date] page.
+  useEffect(() => {
+    setDayData(propsToPayload(props));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.selectedDate]);
+
+  const {
+    today,
+    displayDate,
+    selectedDate,
+    timezone,
+    screenState,
+    health,
+    hasTariff,
+    minuteChartData,
+    halfHourChartData,
+    hourChartData,
+    costChartData,
+    dayTotals,
+    financialEstimate,
+  } = dayData;
   const chartPrefsStorageKey = useMemo(() => getChartPrefsStorageKey(timezone), [timezone]);
   const [resolution, setResolution] = useState<Resolution>('1min');
   const [viewMode, setViewMode] = useState<ViewMode>('line');
@@ -809,12 +843,15 @@ export function HistoricalDayScreen({
     }
   }, [dismissalStorageKey, dismissedIncidentIds, health.incidents]);
 
-  // Prefetch adjacent historical day routes so navigation feels instant.
+  // Prefetch adjacent day payloads into the client-side cache.
   useEffect(() => {
-    for (const target of getAdjacentPrefetchTargets(selectedDate, today)) {
-      router.prefetch(target);
+    const prevDate = addDays(selectedDate, -1);
+    const nextDate = addDays(selectedDate, 1);
+    dayCache.prefetch(prevDate, today);
+    if (nextDate < today) {
+      dayCache.prefetch(nextDate, today);
     }
-  }, [selectedDate, today, router]);
+  }, [selectedDate, today]);
 
   // Clock tick
   useEffect(() => {
@@ -824,11 +861,60 @@ export function HistoricalDayScreen({
     return () => window.clearInterval(clockIntervalId);
   }, [timezone]);
 
-  function navigateToDate(date: string) {
-    startTransition(() => {
-      router.push(resolveNavigationTarget(date, today));
-    });
+  async function navigateToDate(date: string) {
+    // Today or future → go to Live (not a historical-day cache concern).
+    if (date >= today) {
+      startTransition(() => router.push('/live'));
+      return;
+    }
+
+    const result = await resolveClientNavigation(date, today, dayCache.get);
+
+    if (result.type === 'cache-hit') {
+      // Instant client-side swap — no server round-trip.
+      setDayData(result.payload);
+      window.history.pushState({}, '', `/history/${date}`);
+      // Slide the prefetch window forward from the new date.
+      const prevDate = addDays(date, -1);
+      const nextDate = addDays(date, 1);
+      dayCache.prefetch(prevDate, result.payload.today);
+      if (nextDate < result.payload.today) {
+        dayCache.prefetch(nextDate, result.payload.today);
+      }
+      return;
+    }
+
+    // Cache miss — fall back to server render.
+    startTransition(() => router.push(`/history/${date}`));
   }
+
+  // Handle browser back/forward so the URL stack remains consistent with
+  // client-managed pushState history entries.
+  useEffect(() => {
+    async function handlePopstate() {
+      const date = extractHistoricalDate(window.location.pathname);
+      if (!date) return;
+
+      const result = await resolveClientNavigation(date, today, dayCache.get);
+
+      if (result.type === 'cache-hit') {
+        setDayData(result.payload);
+        const prevDate = addDays(date, -1);
+        const nextDate = addDays(date, 1);
+        dayCache.prefetch(prevDate, result.payload.today);
+        if (nextDate < result.payload.today) {
+          dayCache.prefetch(nextDate, result.payload.today);
+        }
+        return;
+      }
+
+      // Cache miss — let Next.js server-render the popped URL.
+      router.push(window.location.pathname);
+    }
+
+    window.addEventListener('popstate', handlePopstate);
+    return () => window.removeEventListener('popstate', handlePopstate);
+  }, [today, router]);
 
   function toggleSeries(series: SeriesKey) {
     setActiveSeries((current) => {
@@ -847,11 +933,11 @@ export function HistoricalDayScreen({
 
   function handlePrevDay() {
     if (!canGoPrev) return;
-    navigateToDate(prevDay);
+    void navigateToDate(prevDay);
   }
 
   function handleNextDay() {
-    navigateToDate(nextDay);
+    void navigateToDate(nextDay);
   }
 
   // Touch swipe handlers
@@ -872,11 +958,14 @@ export function HistoricalDayScreen({
     const deltaY = e.changedTouches[0].clientY - touchStartY.current;
     touchStartX.current = null;
     touchStartY.current = null;
-    const target = resolveHistoricalSwipeTarget(deltaX, deltaY, selectedDate, today);
-    if (!target) return;
-    startTransition(() => {
-      router.push(target);
-    });
+    const routeTarget = resolveHistoricalSwipeTarget(deltaX, deltaY, selectedDate, today);
+    if (!routeTarget) return;
+    if (routeTarget === '/live') {
+      startTransition(() => router.push('/live'));
+      return;
+    }
+    const date = extractHistoricalDate(routeTarget);
+    if (date) void navigateToDate(date);
   }
 
   function handleTouchCancel() {

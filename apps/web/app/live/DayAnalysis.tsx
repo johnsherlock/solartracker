@@ -268,6 +268,8 @@ export function DayTrendChart({
                   key={series}
                   type="linear"
                   dataKey={series}
+                  animationDuration={500}
+                  animationEasing="ease"
                   stroke={SERIES_COLORS[series]}
                   fill={`url(#fill-${series})`}
                   fillOpacity={
@@ -342,6 +344,8 @@ export function DayTrendChart({
                     key={series}
                     type="linear"
                     dataKey={series}
+                    animationDuration={500}
+                    animationEasing="ease"
                     stroke={COST_SERIES_COLORS[series]}
                     fillOpacity={0}
                     strokeWidth={1.25}
@@ -599,6 +603,8 @@ export function SolarCoveragePanel({
                 fill="url(#coverage-fill)"
                 strokeWidth={1.2}
                 dot={false}
+                animationDuration={500}
+                animationEasing="ease"
               />
             </AreaChart>
           </ResponsiveContainer>
