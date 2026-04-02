@@ -1066,7 +1066,7 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
 
       {/* Control bar */}
       <div className="border-b border-slate-800 bg-[#0c1422]/80">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-4 py-3 sm:px-6">
           <TrustBadge
             screenState={displayScreenState}
             health={displayHealth}
@@ -1075,7 +1075,7 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
               setWarningDetailsOpen(true);
             }}
           />
-          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+          <div className="flex items-center gap-2 text-xs text-slate-400">
             {/* Prev day button */}
             <button
               type="button"
@@ -1104,19 +1104,21 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
               <ChevronRight size={14} />
             </button>
 
-            <span className="inline-flex min-w-[92px] justify-center rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5">
+            <span className="hidden sm:inline-flex min-w-[92px] justify-center rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5">
               {liveTime}
             </span>
-            <UptimeBadge
-              uptimePercent={health.uptimePercent}
-              isDisconnected={isDisconnected}
-              onOpenDetails={() => {
-                setSelectedIncidentId(
-                  primaryActiveIncident?.id ?? health.primaryIncident?.id ?? null,
-                );
-                setWarningDetailsOpen(true);
-              }}
-            />
+            <span className="hidden sm:inline-flex">
+              <UptimeBadge
+                uptimePercent={health.uptimePercent}
+                isDisconnected={isDisconnected}
+                onOpenDetails={() => {
+                  setSelectedIncidentId(
+                    primaryActiveIncident?.id ?? health.primaryIncident?.id ?? null,
+                  );
+                  setWarningDetailsOpen(true);
+                }}
+              />
+            </span>
           </div>
         </div>
       </div>
@@ -1128,7 +1130,7 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
               Historical
             </p>
             <h2 className="mt-1 text-xl font-semibold text-slate-50">{displayDate}</h2>
-            <p className="mt-1 text-sm text-slate-400">
+            <p className="hidden sm:block mt-1 text-sm text-slate-400">
               Full-day energy breakdown and financial interpretation for this date.
             </p>
           </div>
