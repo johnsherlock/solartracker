@@ -1,16 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  Legend,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { EChart } from '@/src/live/EChartsWrapper';
 import { ChevronRight, Eye, EyeOff } from 'lucide-react';
 import type { CostPoint, FinancialEstimate, LivePoint } from '@/src/live/loader';
 import {
@@ -26,6 +17,11 @@ import {
   formatEuro,
   formatEuroTick,
 } from '@/src/live/chartUtils';
+import {
+  buildEnergyTrendOption,
+  buildCostOption,
+  buildCoverageOption,
+} from '@/src/live/echartsOptions';
 
 export type { Resolution, ViewMode, SeriesKey, CostSeriesKey } from '@/src/live/chartUtils';
 export {
@@ -121,19 +117,20 @@ export function DayTrendChart({
 }) {
   const [hoveredSeries, setHoveredSeries] = useState<SeriesKey | null>(null);
   const isStale = screenState === 'stale' || screenState === 'warning';
-  const cumulativeUsesEnergyUnits = viewMode === 'cumulative' && resolution !== '1min';
-  const axisUnit = cumulativeUsesEnergyUnits ? 'kWh' : 'kW';
-  const showFilledMinuteView = resolution === '1min' && viewMode === 'line';
-  const visibleData = data.flatMap((point) => activeSeries.map((series) => point[series]));
-  const maxVisibleValue = visibleData.reduce((max, value) => Math.max(max, value), 0);
-  const yAxisMax =
-    maxVisibleValue <= 0
-      ? 1
-      : Number((Math.ceil((maxVisibleValue * 1.1) / 0.5) * 0.5).toFixed(2));
 
   const eyebrow = mode === 'historical' ? 'Day' : 'Today';
   const title = mode === 'historical' ? 'Energy trend' : 'Live trend';
   const emptyLabel = mode === 'historical' ? 'No data for this day' : 'No live data available';
+
+  const energyOption = buildEnergyTrendOption(
+    data,
+    activeSeries,
+    viewMode,
+    resolution,
+    hoveredSeries,
+  );
+
+  const costOption = buildCostOption(costData, viewMode);
 
   return (
     <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5 shadow-[0_30px_70px_rgba(2,6,23,0.34)]">
@@ -211,82 +208,12 @@ export function DayTrendChart({
             {emptyLabel}
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} margin={{ top: 10, right: 8, left: -12, bottom: 0 }}>
-              <defs>
-                {SERIES_ORDER.map((key) => (
-                  <linearGradient key={key} id={`fill-${key}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop
-                      offset="0%"
-                      stopColor={SERIES_COLORS[key]}
-                      stopOpacity={showFilledMinuteView ? 0.34 : 0.12}
-                    />
-                    <stop
-                      offset="70%"
-                      stopColor={SERIES_COLORS[key]}
-                      stopOpacity={showFilledMinuteView ? 0.16 : 0.04}
-                    />
-                    <stop offset="96%" stopColor={SERIES_COLORS[key]} stopOpacity={0} />
-                  </linearGradient>
-                ))}
-              </defs>
-              <XAxis
-                dataKey="time"
-                stroke="#475569"
-                tick={{ fill: '#64748b', fontSize: 11 }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis
-                domain={[0, yAxisMax]}
-                stroke="#475569"
-                tick={{ fill: '#64748b', fontSize: 11 }}
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={(value) => `${value}${axisUnit}`}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#0f172a',
-                  border: '1px solid rgba(71,85,105,0.55)',
-                  borderRadius: 16,
-                  color: '#e2e8f0',
-                }}
-                formatter={(value, name) => [
-                  cumulativeUsesEnergyUnits
-                    ? formatKwh(typeof value === 'number' ? value : Number(value ?? 0))
-                    : formatKw(typeof value === 'number' ? value : Number(value ?? 0)),
-                  formatSeriesLabel(name as SeriesKey),
-                ]}
-              />
-              <Legend
-                wrapperStyle={{ fontSize: 11, color: '#94a3b8', paddingTop: 12 }}
-                formatter={(value) => formatSeriesLabel(value as SeriesKey)}
-              />
-              {SERIES_ORDER.filter((series) => activeSeries.includes(series)).map((series) => (
-                <Area
-                  key={series}
-                  type="linear"
-                  dataKey={series}
-                  animationDuration={500}
-                  animationEasing="ease"
-                  stroke={SERIES_COLORS[series]}
-                  fill={`url(#fill-${series})`}
-                  fillOpacity={
-                    showFilledMinuteView
-                      ? hoveredSeries && hoveredSeries !== series
-                        ? 0.08
-                        : 0.5
-                      : 0
-                  }
-                  strokeOpacity={hoveredSeries && hoveredSeries !== series ? 0.2 : 1}
-                  strokeWidth={hoveredSeries === series ? 2 : series === 'import' ? 1 : 1.25}
-                  activeDot={{ r: 2.5, strokeWidth: 0 }}
-                  dot={false}
-                />
-              ))}
-            </AreaChart>
-          </ResponsiveContainer>
+          <EChart
+            option={energyOption}
+            style={{ height: '100%', width: '100%' }}
+            notMerge={true}
+            lazyUpdate={false}
+          />
         )}
       </div>
 
@@ -305,56 +232,12 @@ export function DayTrendChart({
               No tariff-backed value data available
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={costData} margin={{ top: 10, right: 8, left: -12, bottom: 0 }}>
-                <XAxis
-                  dataKey="time"
-                  stroke="#475569"
-                  tick={{ fill: '#64748b', fontSize: 11 }}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis
-                  stroke="#475569"
-                  tick={{ fill: '#64748b', fontSize: 11 }}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(value) => formatEuroTick(Number(value))}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#0f172a',
-                    border: '1px solid rgba(71,85,105,0.55)',
-                    borderRadius: 16,
-                    color: '#e2e8f0',
-                  }}
-                  formatter={(value, name) => [
-                    formatEuro(typeof value === 'number' ? value : Number(value ?? 0)),
-                    formatCostSeriesLabel(name as 'importCost' | 'savings' | 'exportCredit'),
-                  ]}
-                />
-                <Legend
-                  wrapperStyle={{ fontSize: 11, color: '#94a3b8', paddingTop: 12 }}
-                  formatter={(value) =>
-                    formatCostSeriesLabel(value as 'importCost' | 'savings' | 'exportCredit')
-                  }
-                />
-                {COST_SERIES_ORDER.map((series) => (
-                  <Area
-                    key={series}
-                    type="linear"
-                    dataKey={series}
-                    animationDuration={500}
-                    animationEasing="ease"
-                    stroke={COST_SERIES_COLORS[series]}
-                    fillOpacity={0}
-                    strokeWidth={1.25}
-                    activeDot={{ r: 2.5, strokeWidth: 0 }}
-                    dot={false}
-                  />
-                ))}
-              </AreaChart>
-            </ResponsiveContainer>
+            <EChart
+              option={costOption}
+              style={{ height: '100%', width: '100%' }}
+              notMerge={true}
+              lazyUpdate={false}
+            />
           )}
         </div>
       </div>
@@ -550,6 +433,8 @@ export function SolarCoveragePanel({
   const secondStatLabel = mode === 'historical' ? "Day's Total Coverage" : "Today's Total Coverage";
   const thirdStatLabel = mode === 'historical' ? 'Final Grid Draw' : 'Current Grid Draw';
 
+  const coverageOption = buildCoverageOption(coverageData);
+
   return (
     <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -562,52 +447,12 @@ export function SolarCoveragePanel({
             No coverage data yet
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={coverageData} margin={{ top: 10, right: 8, left: -18, bottom: 0 }}>
-              <defs>
-                <linearGradient id="coverage-fill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#fbbf24" stopOpacity={0.2} />
-                  <stop offset="70%" stopColor="#86efac" stopOpacity={0.1} />
-                  <stop offset="100%" stopColor="#86efac" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid stroke="rgba(51,65,85,0.28)" vertical={false} />
-              <XAxis
-                dataKey="time"
-                stroke="#475569"
-                tick={{ fill: '#64748b', fontSize: 11 }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis
-                domain={[0, 100]}
-                stroke="#475569"
-                tick={{ fill: '#64748b', fontSize: 11 }}
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={(value) => `${value}%`}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#0f172a',
-                  border: '1px solid rgba(71,85,105,0.55)',
-                  borderRadius: 16,
-                  color: '#e2e8f0',
-                }}
-                formatter={(value) => [`${Number(value ?? 0)}%`, 'Solar coverage']}
-              />
-              <Area
-                type="linear"
-                dataKey="coverage"
-                stroke="#facc15"
-                fill="url(#coverage-fill)"
-                strokeWidth={1.2}
-                dot={false}
-                animationDuration={500}
-                animationEasing="ease"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          <EChart
+            option={coverageOption}
+            style={{ height: '100%', width: '100%' }}
+            notMerge={true}
+            lazyUpdate={false}
+          />
         )}
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-3">
