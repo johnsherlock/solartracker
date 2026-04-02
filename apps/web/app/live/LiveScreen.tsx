@@ -219,7 +219,7 @@ function CapabilityBar({
   ];
 
   return (
-    <div className="border-b border-slate-800 bg-[#08111f] px-4 py-2 text-xs">
+    <div className="hidden sm:block border-b border-slate-800 bg-[#08111f] px-4 py-2 text-xs">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2.5">
         <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
           Setup
@@ -243,7 +243,7 @@ function CapabilityBar({
 
 function NavBar({ screenState }: { screenState: ScreenState }) {
   return (
-    <header className="border-b border-slate-800 bg-[#101826]">
+    <header className="sticky top-0 z-40 border-b border-slate-800 bg-[#101826]">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 text-xs text-slate-400">
@@ -567,7 +567,7 @@ function SectionHeader({
           {eyebrow}
         </p>
         <h2 className="mt-1 text-xl font-semibold text-slate-50">{title}</h2>
-        <p className="mt-1 text-sm text-slate-400">{description}</p>
+        <p className="hidden sm:block mt-1 text-sm text-slate-400">{description}</p>
       </div>
       {action}
     </div>
@@ -1373,8 +1373,8 @@ export function LiveScreen({
         }}
       />
 
-      <div className="border-b border-slate-800 bg-[#0c1422]/80">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
+      <div className="sticky top-14 z-30 border-b border-slate-800 bg-[#0c1422]/80 backdrop-blur-sm">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-4 py-3 sm:px-6">
           <TrustBadge
             screenState={displayScreenState}
             health={displayHealth}
@@ -1383,7 +1383,7 @@ export function LiveScreen({
               setWarningDetailsOpen(true);
             }}
           />
-          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+          <div className="flex items-center gap-2 text-xs text-slate-400">
             {/* Prev day — navigates to yesterday's history */}
             <button
               type="button"
@@ -1411,19 +1411,21 @@ export function LiveScreen({
               <ChevronRight size={14} />
             </button>
 
-            <span className="inline-flex min-w-[92px] justify-center rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5">
+            <span className="hidden sm:inline-flex min-w-[92px] justify-center rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5">
               {liveTime}
             </span>
-            <UptimeBadge
-              uptimePercent={health.uptimePercent}
-              isDisconnected={isDisconnected}
-              onOpenDetails={() => {
-                setSelectedIncidentId(
-                  primaryActiveIncident?.id ?? health.primaryIncident?.id ?? null,
-                );
-                setWarningDetailsOpen(true);
-              }}
-            />
+            <span className="hidden sm:inline-flex">
+              <UptimeBadge
+                uptimePercent={health.uptimePercent}
+                isDisconnected={isDisconnected}
+                onOpenDetails={() => {
+                  setSelectedIncidentId(
+                    primaryActiveIncident?.id ?? health.primaryIncident?.id ?? null,
+                  );
+                  setWarningDetailsOpen(true);
+                }}
+              />
+            </span>
           </div>
         </div>
       </div>

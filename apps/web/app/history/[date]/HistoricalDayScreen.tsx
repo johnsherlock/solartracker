@@ -5,13 +5,11 @@ import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
   Calendar,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
   Clock,
-  TriangleAlert,
   WifiOff,
 } from 'lucide-react';
 import type { FinancialEstimate, LivePoint } from '@/src/live/loader';
@@ -216,61 +214,6 @@ const MIN_HISTORY_DATE = addDays(
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function TrustBadge({
-  screenState,
-  health,
-  onOpenDetails,
-}: {
-  screenState: ScreenState;
-  health: HistoricalDayScreenProps['health'];
-  onOpenDetails?: () => void;
-}) {
-  function label(): string {
-    switch (screenState) {
-      case 'healthy':
-        return `Data for ${health.refreshedAtLocalTime}`;
-      case 'stale':
-        return health.lastReadingLocalTime
-          ? `Last reading ${health.lastReadingLocalTime}`
-          : 'Partial data';
-      case 'warning':
-        return 'Data quality review needed';
-      case 'disconnected':
-        return 'No data for this day';
-    }
-  }
-
-  const config: Record<ScreenState, { icon: ReactNode; className: string }> = {
-    healthy: {
-      icon: <CheckCircle2 size={13} />,
-      className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
-    },
-    stale: {
-      icon: <Clock size={13} />,
-      className: 'border-orange-500/30 bg-orange-500/10 text-orange-300',
-    },
-    warning: {
-      icon: <TriangleAlert size={13} />,
-      className: 'border-orange-500/30 bg-orange-500/10 text-orange-300',
-    },
-    disconnected: {
-      icon: <WifiOff size={13} />,
-      className: 'border-rose-500/30 bg-rose-500/10 text-rose-300',
-    },
-  };
-
-  const item = config[screenState];
-  return (
-    <button
-      type="button"
-      onClick={screenState === 'warning' ? onOpenDetails : undefined}
-      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${item.className}`}
-    >
-      {item.icon}
-      {label()}
-    </button>
-  );
-}
 
 function WarningBanner({
   screenState,
@@ -1032,7 +975,7 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
         </div>
       )}
       {/* Nav bar */}
-      <header className="border-b border-slate-800 bg-[#101826]">
+      <header className="sticky top-0 z-40 border-b border-slate-800 bg-[#101826]">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-3">
             <button
@@ -1065,16 +1008,8 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
       />
 
       {/* Control bar */}
-      <div className="border-b border-slate-800 bg-[#0c1422]/80">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-4 py-3 sm:px-6">
-          <TrustBadge
-            screenState={displayScreenState}
-            health={displayHealth}
-            onOpenDetails={() => {
-              setSelectedIncidentId(primaryActiveIncident?.id ?? health.primaryIncident?.id ?? null);
-              setWarningDetailsOpen(true);
-            }}
-          />
+      <div className="sticky top-14 z-30 border-b border-slate-800 bg-[#0c1422]/80 backdrop-blur-sm">
+        <div className="mx-auto flex max-w-7xl items-center justify-end gap-2 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-2 text-xs text-slate-400">
             {/* Prev day button */}
             <button
@@ -1125,16 +1060,6 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
 
       <main className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6">
         <section className="space-y-4">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-              Historical
-            </p>
-            <h2 className="mt-1 text-xl font-semibold text-slate-50">{displayDate}</h2>
-            <p className="hidden sm:block mt-1 text-sm text-slate-400">
-              Full-day energy breakdown and financial interpretation for this date.
-            </p>
-          </div>
-
           <div className="grid gap-4 xl:grid-cols-[1.7fr_1fr]">
             <DayTrendChart
               mode="historical"

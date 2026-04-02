@@ -83,12 +83,13 @@ export function buildEnergyTrendOption(
 
   const times = data.map((p) => p.time);
 
-  const series = SERIES_ORDER.filter((key) => activeSeries.includes(key)).map((key) => {
+  const series = SERIES_ORDER.map((key) => {
     const color = SERIES_COLORS[key];
+    const isActive = activeSeries.includes(key);
     const isHovered = hoveredSeries === key;
     const isDimmed = hoveredSeries !== null && !isHovered;
-    const lineOpacity = isDimmed ? 0.2 : 1;
-    const areaOpacity = showFill ? (isDimmed ? 0.08 : isHovered ? 0.5 : 0.34) : 0;
+    const lineOpacity = !isActive ? 0 : isDimmed ? 0.2 : 1;
+    const areaOpacity = !isActive || !showFill ? 0 : isDimmed ? 0.08 : isHovered ? 0.5 : 0.34;
 
     return {
       name: formatSeriesLabel(key),
@@ -105,15 +106,18 @@ export function buildEnergyTrendOption(
       areaStyle:
         areaOpacity > 0
           ? { color: areaGradient(color, showFill), opacity: areaOpacity }
-          : undefined,
+          : { opacity: 0 },
       emphasis: { disabled: true },
     };
   });
 
   return {
     animation: true,
-    animationDuration: 600,
+    animationDuration: 500,
+    animationDurationUpdate: 500,
     animationEasing: 'cubicOut',
+    animationEasingUpdate: 'cubicOut',
+    animationThreshold: 10000,
     grid: GRID_DEFAULT,
     xAxis: {
       type: 'category',
@@ -175,8 +179,11 @@ export function buildCostOption(data: CostPoint[], viewMode: ViewMode): object {
 
   return {
     animation: true,
-    animationDuration: 600,
+    animationDuration: 500,
+    animationDurationUpdate: 500,
     animationEasing: 'cubicOut',
+    animationEasingUpdate: 'cubicOut',
+    animationThreshold: 10000,
     grid: GRID_DEFAULT,
     xAxis: {
       type: 'category',
@@ -224,8 +231,11 @@ export function buildCoverageOption(data: { time: string; coverage: number }[]):
 
   return {
     animation: true,
-    animationDuration: 600,
+    animationDuration: 500,
+    animationDurationUpdate: 500,
     animationEasing: 'cubicOut',
+    animationEasingUpdate: 'cubicOut',
+    animationThreshold: 10000,
     grid: { top: 10, right: 8, bottom: 30, left: 36 },
     xAxis: {
       type: 'category',
