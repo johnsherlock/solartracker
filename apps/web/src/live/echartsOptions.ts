@@ -40,6 +40,75 @@ const TOOLTIP_BASE = {
 
 const GRID_DEFAULT = { top: 10, right: 8, bottom: 30, left: 42 };
 
+// Grid with extra bottom space for the dataZoom slider
+const GRID_WITH_ZOOM = { top: 10, right: 8, bottom: 64, left: 42 };
+
+const TOOLBOX = {
+  right: 8,
+  top: 4,
+  itemSize: 14,
+  itemGap: 8,
+  iconStyle: {
+    borderColor: '#475569',
+    borderWidth: 1.5,
+    color: 'transparent',
+  },
+  emphasis: {
+    iconStyle: {
+      borderColor: '#94a3b8',
+      color: 'transparent',
+    },
+  },
+  feature: {
+    dataZoom: {
+      yAxisIndex: 'none',
+      title: { zoom: 'Area zoom', back: 'Undo zoom' },
+      icon: {
+        zoom: 'path://M10 4a6 6 0 1 0 0 12A6 6 0 0 0 10 4zm-8 6a8 8 0 1 1 14.32 4.906l3.387 3.387a1 1 0 0 1-1.414 1.414l-3.387-3.387A8 8 0 0 1 2 10z',
+        back: 'path://M11 17l-5-5 5-5v3h6v4h-6v3z',
+      },
+    },
+    restore: {
+      title: 'Reset zoom',
+    },
+  },
+};
+
+const DATA_ZOOM = [
+  {
+    type: 'inside' as const,
+    xAxisIndex: 0,
+    filterMode: 'filter' as const,
+  },
+  {
+    type: 'slider' as const,
+    xAxisIndex: 0,
+    filterMode: 'filter' as const,
+    height: 20,
+    bottom: 8,
+    borderColor: 'rgba(51,65,85,0.5)',
+    backgroundColor: 'rgba(15,23,42,0.6)',
+    fillerColor: 'rgba(71,85,105,0.25)',
+    handleStyle: {
+      color: '#475569',
+      borderColor: '#64748b',
+    },
+    moveHandleStyle: {
+      color: '#475569',
+    },
+    selectedDataBackground: {
+      lineStyle: { color: '#f59e0b', width: 1 },
+      areaStyle: { color: 'rgba(245,158,11,0.08)' },
+    },
+    dataBackground: {
+      lineStyle: { color: 'rgba(71,85,105,0.4)', width: 1 },
+      areaStyle: { color: 'rgba(15,23,42,0.3)' },
+    },
+    textStyle: { color: '#475569', fontSize: 10 },
+    labelFormatter: (value: number, valueStr: string) => valueStr,
+  },
+];
+
 // ---------------------------------------------------------------------------
 // Gradient helpers
 // ---------------------------------------------------------------------------
@@ -118,7 +187,9 @@ export function buildEnergyTrendOption(
     animationEasing: 'cubicOut',
     animationEasingUpdate: 'cubicOut',
     animationThreshold: 10000,
-    grid: GRID_DEFAULT,
+    grid: GRID_WITH_ZOOM,
+    toolbox: TOOLBOX,
+    dataZoom: DATA_ZOOM,
     xAxis: {
       type: 'category',
       data: times,

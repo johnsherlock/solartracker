@@ -1022,11 +1022,16 @@ function SolarContextPanel({
         </div>
       </div>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <InfoTile
           icon={<Sunrise size={14} />}
           label="Sunrise"
           value={sunEvents ? formatSunTime(sunEvents.sunriseUtc, timezone) : '—'}
+        />
+        <InfoTile
+          icon={<Sun size={14} />}
+          label="Solar noon"
+          value={sunEvents ? formatSunTime(sunEvents.solarNoonUtc, timezone) : '—'}
         />
         <InfoTile
           icon={<Sunset size={14} />}
@@ -1525,7 +1530,7 @@ export function LiveScreen({
 
   return (
     <div
-      className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.08),_transparent_28%),linear-gradient(180deg,#050b14_0%,#0b1220_100%)] font-sans text-slate-100"
+      className={`min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.08),_transparent_28%),linear-gradient(180deg,#050b14_0%,#0b1220_100%)] font-sans text-slate-100 ${isPending ? 'cursor-wait' : ''}`}
       style={{ touchAction: 'pan-y' }}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
