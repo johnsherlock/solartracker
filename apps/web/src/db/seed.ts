@@ -173,7 +173,13 @@ async function seed() {
       installationId: INSTALLATION_ID,
       providerType: 'myenergi',
       status: 'active',
-    }).onConflictDoNothing();
+      // Dev credential reference — reads MYENERGI_USERNAME and MYENERGI_PASSWORD
+      // from the environment. Set these in .env.local to enable direct API access.
+      credentialRef: 'env:MYENERGI_USERNAME:MYENERGI_PASSWORD',
+    }).onConflictDoUpdate({
+      target: providerConnections.id,
+      set: { credentialRef: sql`excluded.credential_ref` },
+    });
     console.log('  provider_connections: ok');
 
     await tx.insert(tariffPlans).values({
