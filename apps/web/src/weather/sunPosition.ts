@@ -61,3 +61,33 @@ export function formatDaylightRemaining(seconds: number): string {
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
 }
+
+function formatHhMm(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+/**
+ * Derive the correct daylight label and value for the Solar Context panel.
+ *
+ * Three states:
+ *  - Sun above horizon  → "Daylight left" / "4h 23m"
+ *  - Pre-dawn (night before sunrise)  → "Until sunrise" / "5h 12m"
+ *  - Post-sunset        → "Daylight left" / "Sunset passed"
+ */
+export function formatDaylightStatus(
+  sunPosition: SunPosition,
+  sunEvents: { sunriseUtc: string; sunsetUtc: string } | null,
+): { label: string; value: string } {
+  if (sunPosition.isAboveHorizon) {
+    return { label: 'Daylight left', value: formatDaylightRemaining(sunPosition.daylightRemainingSeconds) };
+  }
+  if (sunEvents != null && new Date(sunPosition.computedAtUtc) < new Date(sunEvents.sunriseUtc)) {
+    const secs = Math.floor(
+      (new Date(sunEvents.sunriseUtc).getTime() - new Date(sunPosition.computedAtUtc).getTime()) / 1000,
+    );
+    return { label: 'Until sunrise', value: formatHhMm(secs) };
+  }
+  return { label: 'Daylight left', value: 'Sunset passed' };
+}

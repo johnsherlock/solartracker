@@ -36,7 +36,7 @@ import {
 } from 'lucide-react';
 import type { LiveWeatherResult } from '@/src/weather/types';
 import { getWmoInfo } from '@/src/weather/wmoCode';
-import { formatDaylightRemaining } from '@/src/weather/sunPosition';
+import { formatDaylightStatus } from '@/src/weather/sunPosition';
 import type { CurrentMetrics, FinancialEstimate, LivePoint } from '@/src/live/loader';
 import {
   DayTrendChart,
@@ -999,24 +999,7 @@ function SolarContextPanel({
     weatherResult.status === 'ok' ? weatherResult.data.sunPosition : weatherResult.sunPosition;
   const location = weatherResult.status === 'ok' ? weatherResult.data.location : null;
 
-  // Determine whether we're in the pre-dawn window (sun hasn't risen yet today).
-  const isPreDawn =
-    !sunPosition.isAboveHorizon &&
-    sunEvents != null &&
-    new Date(sunPosition.computedAtUtc) < new Date(sunEvents.sunriseUtc);
-
-  const daylightLabel = isPreDawn ? 'Until sunrise' : 'Daylight left';
-  const daylightValue = (() => {
-    if (isPreDawn && sunEvents) {
-      const secs = Math.floor(
-        (new Date(sunEvents.sunriseUtc).getTime() - new Date(sunPosition.computedAtUtc).getTime()) / 1000,
-      );
-      const h = Math.floor(secs / 3600);
-      const m = Math.floor((secs % 3600) / 60);
-      return h > 0 ? `${h}h ${m}m` : `${m}m`;
-    }
-    return formatDaylightRemaining(sunPosition.daylightRemainingSeconds);
-  })();
+  const { label: daylightLabel, value: daylightValue } = formatDaylightStatus(sunPosition, sunEvents);
 
   return (
     <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
