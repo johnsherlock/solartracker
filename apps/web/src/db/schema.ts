@@ -38,6 +38,16 @@ export const installations = pgTable('installations', {
   monthlyFinancePaymentAmount: numeric('monthly_finance_payment_amount', { precision: 12, scale: 2 }),
   financeTermMonths: integer('finance_term_months'),
   providerType: text('provider_type').notNull().default('myenergi'),
+  // Location fields — all nullable; set during onboarding, never on page load
+  locationRawInput: text('location_raw_input'),
+  locationDisplayName: text('location_display_name'),
+  locationLatitude: numeric('location_latitude', { precision: 9, scale: 6 }),
+  locationLongitude: numeric('location_longitude', { precision: 9, scale: 6 }),
+  locationPrecisionMode: text('location_precision_mode'),
+  locationCountryCode: text('location_country_code'),
+  locationLocality: text('location_locality'),
+  locationGeocodedAt: timestamp('location_geocoded_at', { withTimezone: true }),
+  locationGeocoderProvider: text('location_geocoder_provider'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({

@@ -13,6 +13,7 @@ import {
   periodDataToChartPoints,
   periodDataToCostPoints,
 } from '@/src/live/loader';
+import { getLiveWeatherContext } from '@/src/weather/getLiveWeatherContext';
 import { LiveScreen } from './LiveScreen';
 
 export const dynamic = 'force-dynamic';
@@ -74,9 +75,10 @@ export default async function LivePage({
   const fetchedAt = now.toISOString();
 
   // Load tariff and provider data once the installation timezone is known.
-  const [tariffContext, minuteData] = await Promise.all([
+  const [tariffContext, minuteData, weatherResult] = await Promise.all([
     loadTariffContext(SEED_INSTALLATION_ID, selectedDate),
     fetchMinuteData(selectedDate, effectiveTimezone),
+    getLiveWeatherContext(SEED_INSTALLATION_ID),
   ]);
 
   // Build the normalised day-detail from raw minute readings.
@@ -156,7 +158,7 @@ export default async function LivePage({
       }}
       timezone={effectiveTimezone}
       hasTariff={tariffContext !== null}
-      hasCoordinates={false}
+      weatherResult={weatherResult}
       hasCapacity={installationContext?.arrayCapacityKw != null}
       currentMetrics={currentMetrics}
       minuteChartData={minuteChartData}

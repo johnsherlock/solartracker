@@ -14,7 +14,17 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Clock,
+  Cloud,
+  CloudDrizzle,
+  CloudFog,
+  CloudLightning,
+  CloudMoon,
+  CloudRain,
+  CloudSnow,
+  CloudSun,
+  Cloudy,
   Home,
+  Moon,
   RefreshCw,
   Sun,
   Sunrise,
@@ -23,6 +33,9 @@ import {
   WifiOff,
   Zap,
 } from 'lucide-react';
+import type { LiveWeatherResult } from '@/src/weather/types';
+import { getWmoInfo } from '@/src/weather/wmoCode';
+import { formatDaylightRemaining } from '@/src/weather/sunPosition';
 import type { CurrentMetrics, FinancialEstimate, LivePoint } from '@/src/live/loader';
 import {
   DayTrendChart,
@@ -97,7 +110,7 @@ export type LiveScreenProps = {
     } | null;
   };
   hasTariff: boolean;
-  hasCoordinates: boolean;
+  weatherResult: LiveWeatherResult;
   hasCapacity: boolean;
   currentMetrics: CurrentMetrics | null;
   minuteChartData: LivePoint[];
@@ -904,8 +917,53 @@ function DatePickerControl({
   );
 }
 
-function SolarContextPanel({ hasCoordinates }: { hasCoordinates: boolean }) {
-  if (!hasCoordinates) {
+// ---------------------------------------------------------------------------
+// Weather helpers
+// ---------------------------------------------------------------------------
+
+const WMO_ICON_COMPONENT_MAP: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  Sun, Cloud, CloudSun, CloudMoon, Cloudy, CloudFog, CloudDrizzle, CloudRain, CloudSnow, CloudLightning, Moon,
+};
+
+function WmoIcon({ code, isDay, size = 16 }: { code: number; isDay: boolean; size?: number }) {
+  const info = getWmoInfo(code);
+  const iconName = isDay ? info.dayIcon : info.nightIcon;
+  const IconComponent = WMO_ICON_COMPONENT_MAP[iconName] ?? Cloud;
+  return <IconComponent size={size} />;
+}
+
+function formatSunTime(utcIso: string, timezone: string): string {
+  return new Intl.DateTimeFormat('en-IE', {
+    timeZone: timezone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(utcIso));
+}
+
+function formatHourLabel(utcIso: string, timezone: string): string {
+  return new Intl.DateTimeFormat('en-IE', {
+    timeZone: timezone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(utcIso));
+}
+
+function formatDayLabel(localDate: string): string {
+  return new Intl.DateTimeFormat('en-IE', { weekday: 'short' }).format(
+    new Date(`${localDate}T12:00:00`),
+  );
+}
+
+function SolarContextPanel({
+  weatherResult,
+  timezone,
+}: {
+  weatherResult: LiveWeatherResult;
+  timezone: string;
+}) {
+  if (weatherResult.status === 'no-location') {
     return (
       <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -922,6 +980,12 @@ function SolarContextPanel({ hasCoordinates }: { hasCoordinates: boolean }) {
     );
   }
 
+  const sunEvents =
+    weatherResult.status === 'ok' ? weatherResult.data.sunEvents : weatherResult.sunEvents;
+  const sunPosition =
+    weatherResult.status === 'ok' ? weatherResult.data.sunPosition : weatherResult.sunPosition;
+  const location = weatherResult.status === 'ok' ? weatherResult.data.location : null;
+
   return (
     <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
       <div className="flex items-start justify-between gap-4">
@@ -930,9 +994,13 @@ function SolarContextPanel({ hasCoordinates }: { hasCoordinates: boolean }) {
             Next
           </p>
           <h3 className="mt-1 text-lg font-semibold text-slate-50">Solar context</h3>
-          <p className="mt-1 text-sm text-slate-400">
-            Coordinates-only context: useful, calm, and still honest about what we do not know.
-          </p>
+          {location && (
+            <p className="mt-0.5 text-xs text-slate-500">
+              {location.precisionMode === 'approximate'
+                ? `Approximate — ${location.displayName}`
+                : location.displayName}
+            </p>
+          )}
         </div>
         <div className="rounded-full border border-amber-400/20 bg-amber-400/10 p-2 text-amber-300">
           <Sun size={18} />
@@ -940,17 +1008,45 @@ function SolarContextPanel({ hasCoordinates }: { hasCoordinates: boolean }) {
       </div>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <InfoTile icon={<Sunrise size={14} />} label="Sunrise" value="—" />
-        <InfoTile icon={<Sunset size={14} />} label="Sunset" value="—" />
-        <InfoTile icon={<Sun size={14} />} label="Sun altitude" value="—" />
-        <InfoTile icon={<Activity size={14} />} label="Daylight left" value="—" />
+        <InfoTile
+          icon={<Sunrise size={14} />}
+          label="Sunrise"
+          value={sunEvents ? formatSunTime(sunEvents.sunriseUtc, timezone) : '—'}
+        />
+        <InfoTile
+          icon={<Sunset size={14} />}
+          label="Sunset"
+          value={sunEvents ? formatSunTime(sunEvents.sunsetUtc, timezone) : '—'}
+        />
+        <InfoTile
+          icon={<Sun size={14} />}
+          label="Sun altitude"
+          value={
+            sunPosition.isAboveHorizon ? `${sunPosition.elevationDegrees}°` : 'Below horizon'
+          }
+        />
+        <InfoTile
+          icon={<Activity size={14} />}
+          label="Daylight left"
+          value={formatDaylightRemaining(sunPosition.daylightRemainingSeconds)}
+        />
       </div>
+
+      {weatherResult.status === 'forecast-unavailable' && (
+        <p className="mt-3 text-xs text-slate-500">Weather forecast temporarily unavailable.</p>
+      )}
     </div>
   );
 }
 
-function ForecastPanel({ hasCoordinates }: { hasCoordinates: boolean }) {
-  if (!hasCoordinates) {
+function ForecastPanel({
+  weatherResult,
+  timezone,
+}: {
+  weatherResult: LiveWeatherResult;
+  timezone: string;
+}) {
+  if (weatherResult.status === 'no-location') {
     return (
       <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -967,15 +1063,81 @@ function ForecastPanel({ hasCoordinates }: { hasCoordinates: boolean }) {
     );
   }
 
+  if (weatherResult.status === 'forecast-unavailable') {
+    return (
+      <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+          Near term
+        </p>
+        <h3 className="mt-1 text-lg font-semibold text-slate-50">
+          Forecast temporarily unavailable
+        </h3>
+        <p className="mt-2 text-sm text-slate-400">
+          The weather API could not be reached. Solar context is still shown where available.
+        </p>
+      </div>
+    );
+  }
+
+  const { hourlyForecast, dailyForecast } = weatherResult.data;
+
   return (
-    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-        Near term
-      </p>
-      <h3 className="mt-1 text-lg font-semibold text-slate-50">Next few hours</h3>
-      <p className="mt-2 text-sm text-slate-400">
-        Forecast data is not yet wired in. Coordinates unlock this module.
-      </p>
+    <div className="space-y-4">
+      {/* 12-hour scrollable rail */}
+      <div className="overflow-hidden rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+          Near term
+        </p>
+        <h3 className="mt-1 text-base font-semibold text-slate-50">Next 12 hours</h3>
+        <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
+          {hourlyForecast.slots.map((slot) => (
+            <div
+              key={slot.hourUtc}
+              className="flex min-w-[60px] flex-col items-center gap-1.5 rounded-2xl border border-slate-800 bg-slate-950/70 px-2 py-2.5"
+            >
+              <span className="text-[10px] text-slate-400">{formatHourLabel(slot.hourUtc, timezone)}</span>
+              <span className="text-amber-300">
+                <WmoIcon code={slot.weatherCode} isDay={slot.isDay} size={16} />
+              </span>
+              <span className="text-sm font-semibold text-slate-100">{slot.temperatureCelsius}°</span>
+              {slot.precipitationMm > 0 && (
+                <span className="text-[10px] text-blue-300">{slot.precipitationMm}mm</span>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 5-day outlook */}
+      <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
+        <h3 className="text-base font-semibold text-slate-50">5-day outlook</h3>
+        <div className="mt-3 space-y-2">
+          {dailyForecast.days.map((day, i) => (
+            <div
+              key={day.localDate}
+              className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2.5 text-sm"
+            >
+              <span className="w-10 shrink-0 text-slate-300 font-medium">
+                {i === 0 ? 'Today' : formatDayLabel(day.localDate)}
+              </span>
+              <span className="text-amber-300 shrink-0">
+                <WmoIcon code={day.weatherCode} isDay={true} size={15} />
+              </span>
+              <span className="flex-1 text-xs text-slate-500 truncate">
+                {getWmoInfo(day.weatherCode).label}
+              </span>
+              {day.precipitationSumMm > 0 && (
+                <span className="text-[10px] text-blue-300 shrink-0">{day.precipitationSumMm}mm</span>
+              )}
+              <div className="flex items-center gap-1.5 font-mono shrink-0">
+                <span className="text-slate-100">{day.temperatureMaxCelsius}°</span>
+                <span className="text-slate-600">/</span>
+                <span className="text-slate-500">{day.temperatureMinCelsius}°</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1082,7 +1244,7 @@ export function LiveScreen({
   screenState,
   health,
   hasTariff,
-  hasCoordinates,
+  weatherResult,
   hasCapacity,
   currentMetrics,
   minuteChartData,
@@ -1092,6 +1254,7 @@ export function LiveScreen({
   todayTotals,
   financialEstimate,
 }: LiveScreenProps) {
+  const hasCoordinates = weatherResult.status !== 'no-location';
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const pathname = usePathname();
@@ -1548,9 +1711,11 @@ export function LiveScreen({
               />
 
               <div className="grid gap-4 xl:grid-cols-[1.15fr_1fr]">
-                <SolarContextPanel hasCoordinates={hasCoordinates} />
-                <div className="space-y-4">
-                  <ForecastPanel hasCoordinates={hasCoordinates} />
+                <div className="xl:sticky xl:top-20 xl:self-start">
+                  <SolarContextPanel weatherResult={weatherResult} timezone={timezone} />
+                </div>
+                <div className="min-w-0 space-y-4">
+                  <ForecastPanel weatherResult={weatherResult} timezone={timezone} />
                   <NotesPanel
                     screenState={screenState}
                     hasTariff={hasTariff}
