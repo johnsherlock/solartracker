@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import {
   calculateIntervalExportCredit,
   calculateIntervalImportCost,
@@ -227,7 +227,13 @@ export async function loadProviderConnection(
   const rows = await db
     .select()
     .from(providerConnections)
-    .where(eq(providerConnections.installationId, installationId))
+    .where(
+      and(
+        eq(providerConnections.installationId, installationId),
+        eq(providerConnections.providerType, 'myenergi'),
+        eq(providerConnections.status, 'active'),
+      ),
+    )
     .limit(1);
 
   if (rows.length === 0) return null;

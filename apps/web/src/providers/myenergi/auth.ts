@@ -49,7 +49,9 @@ function buildAuthorizationHeader(
   let response: string;
   let authHeader: string;
 
-  if (challenge.qop === 'auth') {
+  const useQopAuth = challenge.qop?.split(',').map((s) => s.trim()).includes('auth') ?? false;
+
+  if (useQopAuth) {
     const nc = '00000001';
     const cnonce = randomBytes(8).toString('hex');
     response = md5(`${ha1}:${challenge.nonce}:${nc}:${cnonce}:auth:${ha2}`);
