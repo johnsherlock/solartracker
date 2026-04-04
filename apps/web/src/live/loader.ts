@@ -88,6 +88,7 @@ let _dbDeps:
   | Promise<{
       db: LiveLoaderDbModule['db'];
       installations: LiveLoaderSchemaModule['installations'];
+      providerConnections: LiveLoaderSchemaModule['providerConnections'];
       tariffPlans: LiveLoaderSchemaModule['tariffPlans'];
       tariffPlanVersions: LiveLoaderSchemaModule['tariffPlanVersions'];
     }>
@@ -99,6 +100,7 @@ async function getDbDeps() {
       ([client, schema]) => ({
         db: client.db,
         installations: schema.installations,
+        providerConnections: schema.providerConnections,
         tariffPlans: schema.tariffPlans,
         tariffPlanVersions: schema.tariffPlanVersions,
       }),
@@ -211,6 +213,26 @@ export async function loadTariffContext(
     peakStartLocalTime: active.peakStartLocalTime ?? null,
     peakEndLocalTime: active.peakEndLocalTime ?? null,
   };
+}
+
+export type ProviderConnectionContext = {
+  id: string;
+  credentialRef: string | null;
+};
+
+export async function loadProviderConnection(
+  installationId: string,
+): Promise<ProviderConnectionContext | null> {
+  const { db, providerConnections } = await getDbDeps();
+  const rows = await db
+    .select()
+    .from(providerConnections)
+    .where(eq(providerConnections.installationId, installationId))
+    .limit(1);
+
+  if (rows.length === 0) return null;
+  const row = rows[0];
+  return { id: row.id, credentialRef: row.credentialRef ?? null };
 }
 
 // ---------------------------------------------------------------------------

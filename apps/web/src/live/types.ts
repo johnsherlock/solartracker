@@ -35,7 +35,7 @@ export type DayDetailResponse = {
   meta: {
     date: string;
     timezone: string;
-    source: 'v1-bridge';
+    source: 'v1-bridge' | 'myenergi';
     fetchedAt: string;
   };
   minuteData: MinuteReading[];

@@ -1,8 +1,8 @@
 import type { NextRequest } from 'next/server';
-import { fetchMinuteData } from '../../../../src/providers/v1/adapter';
 import { buildDayDetail } from '../../../../src/live/normalizer';
 import {
   loadInstallationContext,
+  loadProviderConnection,
   loadTariffContext,
   computeFinancialEstimate,
   getLastReadingLocalTime,
@@ -13,6 +13,9 @@ import {
   type LivePoint,
   type CostPoint,
 } from '../../../../src/live/loader';
+import { fetchDayRecords } from '../../../../src/providers/myenergi/client';
+import { normaliseEddiRecords } from '../../../../src/providers/myenergi/adapter';
+import { resolveMyEnergiCredentials } from '../../../../src/providers/myenergi/credentials';
 import type { HealthIncident } from '../../../../src/live/types';
 
 // ---------------------------------------------------------------------------
@@ -105,12 +108,30 @@ export async function GET(
 
   const fetchedAt = now.toISOString();
 
-  const [tariffContext, minuteData] = await Promise.all([
+  const providerConnection = await loadProviderConnection(SEED_INSTALLATION_ID);
+  const credentials = resolveMyEnergiCredentials(providerConnection?.credentialRef);
+
+  if (!credentials) {
+    return Response.json(
+      { error: 'No valid provider credentials configured for this installation.' },
+      { status: 503 },
+    );
+  }
+
+  const [tariffContext, fetchResult] = await Promise.all([
     loadTariffContext(SEED_INSTALLATION_ID, date),
-    fetchMinuteData(date, effectiveTimezone),
+    fetchDayRecords(date, effectiveTimezone, credentials),
   ]);
 
-  const dayDetail = buildDayDetail(date, minuteData, fetchedAt, effectiveTimezone);
+  let minuteData = fetchResult.ok
+    ? normaliseEddiRecords(fetchResult.records, date, effectiveTimezone)
+    : [];
+
+  if (!fetchResult.ok && fetchResult.kind === 'auth-failure') {
+    return Response.json({ error: 'Provider authentication failed.' }, { status: 502 });
+  }
+
+  const dayDetail = buildDayDetail(date, minuteData, fetchedAt, effectiveTimezone, 'myenergi');
 
   const screenState: 'healthy' | 'warning' | 'disconnected' =
     minuteData.length === 0

@@ -317,12 +317,13 @@ export function buildDayDetail(
   minutes: MinuteReading[],
   fetchedAt: string,
   timezone = 'Europe/Dublin',
+  source: DayDetailResponse['meta']['source'] = 'v1-bridge',
 ): DayDetailResponse {
   return {
     meta: {
       date,
       timezone,
-      source: 'v1-bridge',
+      source,
       fetchedAt,
     },
     minuteData: minutes,
