@@ -132,14 +132,14 @@ async function seed() {
       monthlyFinancePaymentAmount: '158.33',
       financeTermMonths: 60,
       providerType: 'myenergi',
-      // Location: Cork, Ireland — pre-seeded so the weather slice works in dev
-      locationRawInput: 'Cork, Ireland',
-      locationDisplayName: 'Cork, Ireland',
-      locationLatitude: '51.898500',
-      locationLongitude: '-8.475600',
+      // Location: Dublin, Ireland — pre-seeded so the weather slice works in dev
+      locationRawInput: 'Dublin, Ireland',
+      locationDisplayName: 'Dublin, Ireland',
+      locationLatitude: '53.349800',
+      locationLongitude: '-6.260300',
       locationPrecisionMode: 'exact',
       locationCountryCode: 'IE',
-      locationLocality: 'Cork',
+      locationLocality: 'Dublin',
       locationGeocodedAt: new Date('2026-04-03T00:00:00Z'),
       locationGeocoderProvider: 'seed',
     }).onConflictDoUpdate({

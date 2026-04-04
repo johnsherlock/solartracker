@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   Activity,
@@ -765,8 +766,13 @@ function DatePickerControl({
 }) {
   const [open, setOpen] = useState(false);
   const [visibleMonth, setVisibleMonth] = useState(() => `${selectedDate.slice(0, 7)}-01`);
+  const [popoverTop, setPopoverTop] = useState(0);
+  const [mounted, setMounted] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const days = useMemo(() => getMonthDays(visibleMonth), [visibleMonth]);
+
+  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     setVisibleMonth(`${selectedDate.slice(0, 7)}-01`);
@@ -774,33 +780,27 @@ function DatePickerControl({
 
   useEffect(() => {
     if (!open) return;
-
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setPopoverTop(rect.bottom + 8);
+    }
     const handlePointerDown = (event: MouseEvent) => {
-      if (!popoverRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (!triggerRef.current?.contains(target) && !popoverRef.current?.contains(target)) {
         setOpen(false);
       }
     };
-
     document.addEventListener('pointerdown', handlePointerDown);
     return () => document.removeEventListener('pointerdown', handlePointerDown);
   }, [open]);
 
-  return (
-    <div className="relative" ref={popoverRef}>
-      <button
-        type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs font-medium text-slate-300"
-      >
-        <Calendar size={12} />
-        <span>{displayDate}</span>
-      </button>
-
-      {open && (
-        <div
-          data-swipe-ignore="true"
-          className="absolute left-0 top-full z-40 mt-2 w-[280px] rounded-[20px] border border-slate-800 bg-[#111b2b] p-4 shadow-[0_20px_60px_rgba(2,6,23,0.5)]"
-        >
+  const popoverContent = open && (
+    <div
+      ref={popoverRef}
+      data-swipe-ignore="true"
+      style={{ top: popoverTop }}
+      className="fixed left-1/2 z-[9999] -translate-x-1/2 w-[calc(100vw-2rem)] rounded-[20px] border border-slate-800 bg-[#111b2b] p-4 shadow-[0_20px_60px_rgba(2,6,23,0.5)] sm:w-[280px]"
+    >
           <div className="flex items-center justify-between gap-2">
             <button
               type="button"
@@ -912,7 +912,20 @@ function DatePickerControl({
           </div>
 
         </div>
-      )}
+  );
+
+  return (
+    <div className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs font-medium text-slate-300"
+      >
+        <Calendar size={12} />
+        <span>{displayDate}</span>
+      </button>
+      {mounted && createPortal(popoverContent, document.body)}
     </div>
   );
 }
@@ -986,6 +999,25 @@ function SolarContextPanel({
     weatherResult.status === 'ok' ? weatherResult.data.sunPosition : weatherResult.sunPosition;
   const location = weatherResult.status === 'ok' ? weatherResult.data.location : null;
 
+  // Determine whether we're in the pre-dawn window (sun hasn't risen yet today).
+  const isPreDawn =
+    !sunPosition.isAboveHorizon &&
+    sunEvents != null &&
+    new Date(sunPosition.computedAtUtc) < new Date(sunEvents.sunriseUtc);
+
+  const daylightLabel = isPreDawn ? 'Until sunrise' : 'Daylight left';
+  const daylightValue = (() => {
+    if (isPreDawn && sunEvents) {
+      const secs = Math.floor(
+        (new Date(sunEvents.sunriseUtc).getTime() - new Date(sunPosition.computedAtUtc).getTime()) / 1000,
+      );
+      const h = Math.floor(secs / 3600);
+      const m = Math.floor((secs % 3600) / 60);
+      return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    }
+    return formatDaylightRemaining(sunPosition.daylightRemainingSeconds);
+  })();
+
   return (
     <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
       <div className="flex items-start justify-between gap-4">
@@ -1027,8 +1059,8 @@ function SolarContextPanel({
         />
         <InfoTile
           icon={<Activity size={14} />}
-          label="Daylight left"
-          value={formatDaylightRemaining(sunPosition.daylightRemainingSeconds)}
+          label={daylightLabel}
+          value={daylightValue}
         />
       </div>
 
@@ -1039,7 +1071,7 @@ function SolarContextPanel({
   );
 }
 
-function ForecastPanel({
+function NearTermPanel({
   weatherResult,
   timezone,
 }: {
@@ -1079,64 +1111,70 @@ function ForecastPanel({
     );
   }
 
-  const { hourlyForecast, dailyForecast } = weatherResult.data;
+  const { hourlyForecast } = weatherResult.data;
 
   return (
-    <div className="space-y-4">
-      {/* 12-hour scrollable rail */}
-      <div className="overflow-hidden rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-          Near term
-        </p>
-        <h3 className="mt-1 text-base font-semibold text-slate-50">Next 12 hours</h3>
-        <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
-          {hourlyForecast.slots.map((slot) => (
-            <div
-              key={slot.hourUtc}
-              className="flex min-w-[60px] flex-col items-center gap-1.5 rounded-2xl border border-slate-800 bg-slate-950/70 px-2 py-2.5"
-            >
-              <span className="text-[10px] text-slate-400">{formatHourLabel(slot.hourUtc, timezone)}</span>
-              <span className="text-amber-300">
-                <WmoIcon code={slot.weatherCode} isDay={slot.isDay} size={16} />
-              </span>
-              <span className="text-sm font-semibold text-slate-100">{slot.temperatureCelsius}°</span>
-              {slot.precipitationMm > 0 && (
-                <span className="text-[10px] text-blue-300">{slot.precipitationMm}mm</span>
-              )}
-            </div>
-          ))}
-        </div>
+    <div className="overflow-hidden rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+        Near term
+      </p>
+      <h3 className="mt-1 text-base font-semibold text-slate-50">Next 12 hours</h3>
+      <div
+        className="mt-3 flex gap-2 overflow-x-auto pb-2 [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:h-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-track]:bg-transparent"
+        style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgb(51 65 85) transparent', touchAction: 'pan-x' }}
+        data-swipe-ignore="true"
+      >
+        {hourlyForecast.slots.map((slot) => (
+          <div
+            key={slot.hourUtc}
+            className="flex min-w-[60px] flex-col items-center gap-1.5 rounded-2xl border border-slate-800 bg-slate-950/70 px-2 py-2.5"
+          >
+            <span className="text-[10px] text-slate-400">{formatHourLabel(slot.hourUtc, timezone)}</span>
+            <span className="text-amber-300">
+              <WmoIcon code={slot.weatherCode} isDay={slot.isDay} size={16} />
+            </span>
+            <span className="text-sm font-semibold text-slate-100">{slot.temperatureCelsius}°</span>
+            {slot.precipitationMm > 0 && (
+              <span className="text-[10px] text-blue-300">{slot.precipitationMm}mm</span>
+            )}
+          </div>
+        ))}
       </div>
+    </div>
+  );
+}
 
-      {/* 5-day outlook */}
-      <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
-        <h3 className="text-base font-semibold text-slate-50">5-day outlook</h3>
-        <div className="mt-3 space-y-2">
-          {dailyForecast.days.map((day, i) => (
-            <div
-              key={day.localDate}
-              className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2.5 text-sm"
-            >
-              <span className="w-10 shrink-0 text-slate-300 font-medium">
-                {i === 0 ? 'Today' : formatDayLabel(day.localDate)}
-              </span>
-              <span className="text-amber-300 shrink-0">
-                <WmoIcon code={day.weatherCode} isDay={true} size={15} />
-              </span>
-              <span className="flex-1 text-xs text-slate-500 truncate">
-                {getWmoInfo(day.weatherCode).label}
-              </span>
-              {day.precipitationSumMm > 0 && (
-                <span className="text-[10px] text-blue-300 shrink-0">{day.precipitationSumMm}mm</span>
-              )}
-              <div className="flex items-center gap-1.5 font-mono shrink-0">
-                <span className="text-slate-100">{day.temperatureMaxCelsius}°</span>
-                <span className="text-slate-600">/</span>
-                <span className="text-slate-500">{day.temperatureMinCelsius}°</span>
-              </div>
+function OutlookPanel({ weatherResult }: { weatherResult: LiveWeatherResult }) {
+  if (weatherResult.status !== 'ok') return null;
+  const { dailyForecast } = weatherResult.data;
+  return (
+    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
+      <h3 className="text-base font-semibold text-slate-50">5-day outlook</h3>
+      <div className="mt-3 space-y-2">
+        {dailyForecast.days.map((day, i) => (
+          <div
+            key={day.localDate}
+            className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2.5 text-sm"
+          >
+            <span className="w-10 shrink-0 text-slate-300 font-medium">
+              {i === 0 ? 'Today' : formatDayLabel(day.localDate)}
+            </span>
+            <span className="text-amber-300 shrink-0">
+              <WmoIcon code={day.weatherCode} isDay={true} size={15} />
+            </span>
+            <span className="flex-1 text-xs text-slate-500 truncate">
+              {getWmoInfo(day.weatherCode).label}
+            </span>
+            {day.precipitationSumMm > 0 && (
+              <span className="text-[10px] text-blue-300 shrink-0">{day.precipitationSumMm}mm</span>
+            )}
+            <div className="flex items-center gap-1.5 font-mono shrink-0">
+              <span className="text-slate-100">{day.temperatureMaxCelsius}°</span>
+              <span className="text-slate-600">/</span>
+              <span className="text-slate-500">{day.temperatureMinCelsius}°</span>
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -1710,18 +1748,17 @@ export function LiveScreen({
                 description="Daylight, weather, and near-term solar context — unlocked once coordinates are added."
               />
 
-              <div className="grid gap-4 xl:grid-cols-[1.15fr_1fr]">
+              <div className="grid gap-4 xl:grid-cols-2">
+                <NearTermPanel weatherResult={weatherResult} timezone={timezone} />
+                <OutlookPanel weatherResult={weatherResult} />
                 <div className="xl:sticky xl:top-20 xl:self-start">
                   <SolarContextPanel weatherResult={weatherResult} timezone={timezone} />
                 </div>
-                <div className="min-w-0 space-y-4">
-                  <ForecastPanel weatherResult={weatherResult} timezone={timezone} />
-                  <NotesPanel
-                    screenState={screenState}
-                    hasTariff={hasTariff}
-                    hasCoordinates={hasCoordinates}
-                  />
-                </div>
+                <NotesPanel
+                  screenState={screenState}
+                  hasTariff={hasTariff}
+                  hasCoordinates={hasCoordinates}
+                />
               </div>
             </section>
           </>

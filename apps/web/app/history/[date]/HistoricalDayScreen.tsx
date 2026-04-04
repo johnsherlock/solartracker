@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
@@ -442,8 +443,13 @@ function DatePickerControl({
 }) {
   const [open, setOpen] = useState(false);
   const [visibleMonth, setVisibleMonth] = useState(() => `${selectedDate.slice(0, 7)}-01`);
+  const [popoverTop, setPopoverTop] = useState(0);
+  const [mounted, setMounted] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const days = useMemo(() => getMonthDays(visibleMonth), [visibleMonth]);
+
+  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     setVisibleMonth(`${selectedDate.slice(0, 7)}-01`);
@@ -451,33 +457,27 @@ function DatePickerControl({
 
   useEffect(() => {
     if (!open) return;
-
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setPopoverTop(rect.bottom + 8);
+    }
     const handlePointerDown = (event: MouseEvent) => {
-      if (!popoverRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (!triggerRef.current?.contains(target) && !popoverRef.current?.contains(target)) {
         setOpen(false);
       }
     };
-
     document.addEventListener('pointerdown', handlePointerDown);
     return () => document.removeEventListener('pointerdown', handlePointerDown);
   }, [open]);
 
-  return (
-    <div className="relative" ref={popoverRef}>
-      <button
-        type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs font-medium text-slate-300"
-      >
-        <Calendar size={12} />
-        <span>{displayDate}</span>
-      </button>
-
-      {open && (
-        <div
-          data-swipe-ignore="true"
-          className="absolute left-0 top-full z-40 mt-2 w-[280px] rounded-[20px] border border-slate-800 bg-[#111b2b] p-4 shadow-[0_20px_60px_rgba(2,6,23,0.5)]"
-        >
+  const popoverContent = open && (
+    <div
+      ref={popoverRef}
+      data-swipe-ignore="true"
+      style={{ top: popoverTop }}
+      className="fixed left-1/2 z-[9999] -translate-x-1/2 w-[calc(100vw-2rem)] rounded-[20px] border border-slate-800 bg-[#111b2b] p-4 shadow-[0_20px_60px_rgba(2,6,23,0.5)] sm:w-[280px]"
+    >
           <div className="flex items-center justify-between gap-2">
             <button
               type="button"
@@ -601,7 +601,20 @@ function DatePickerControl({
             </button>
           </div>
         </div>
-      )}
+  );
+
+  return (
+    <div className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs font-medium text-slate-300"
+      >
+        <Calendar size={12} />
+        <span>{displayDate}</span>
+      </button>
+      {mounted && createPortal(popoverContent, document.body)}
     </div>
   );
 }

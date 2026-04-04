@@ -1,13 +1,14 @@
 ---
 name: plan-and-implement-story
-description: Create a scoped implementation plan for a story such as P-021 using docs/stories/<story-id>.md and then implement it
+description: Args: storyId, featureId. Create a scoped implementation plan for a story such as P-021 using docs/stories/<story-id>.md and then implement it
 disable-model-invocation: false
 allowed-tools: Read, Grep, Glob, Write, Edit, Create, git commands, bash commands
 ---
 
 Plan a story first then await confirmation before implementing. Do not write code before the plan is confirmed.
 
-Story: $ARGUMENTS
+Story: $1
+Feature: $2
 
 Workflow:
 1. Read `CLAUDE.md`
@@ -15,7 +16,8 @@ Workflow:
 3. Read `docs/architecture.md`
 4. Read `docs/calculation-spec.md`
 5. Read any docs in `docs/decision/`
-6. Read `$ARGUMENTS` (e.g. `docs/stories/P-021.md`)
+6. Read `docs/stories/$1.md` (e.g. `docs/stories/P-021.md`)
+7. Read the relevant feature doc in `docs/features/$2.md` (e.g. `docs/features/FE-001.md`)
 
 Then produce:
 
