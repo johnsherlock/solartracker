@@ -1,0 +1,88 @@
+import type { NextRequest } from 'next/server';
+import {
+  loadRangeInstallationContext,
+  loadTariffVersionsForInstallation,
+  loadFixedChargeVersionsForInstallation,
+  loadDailySummaryRowsForRange,
+} from '../../../src/range/loader';
+import { allDatesInRange, computeRangeSummary } from '../../../src/range/billing';
+import type { RangeSummaryPayload } from '../../../src/range/types';
+
+// ---------------------------------------------------------------------------
+// Single-user seed path — no auth for the current local-dev slice.
+// ---------------------------------------------------------------------------
+const SEED_INSTALLATION_ID = '00000000-0000-0000-0000-000000000002';
+
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function isValidDate(s: string): boolean {
+  return DATE_PATTERN.test(s) && !isNaN(new Date(`${s}T12:00:00Z`).getTime());
+}
+
+// ---------------------------------------------------------------------------
+// Route handler
+// ---------------------------------------------------------------------------
+
+export async function GET(request: NextRequest) {
+  const { searchParams } = request.nextUrl;
+  const from = searchParams.get('from');
+  const to = searchParams.get('to');
+
+  if (!from || !to) {
+    return Response.json(
+      { error: 'Missing required query parameters: from, to (YYYY-MM-DD).' },
+      { status: 400 },
+    );
+  }
+
+  if (!isValidDate(from) || !isValidDate(to)) {
+    return Response.json(
+      { error: 'Invalid date format. Expected YYYY-MM-DD for both from and to.' },
+      { status: 400 },
+    );
+  }
+
+  if (from > to) {
+    return Response.json(
+      { error: 'from must be on or before to.' },
+      { status: 400 },
+    );
+  }
+
+  const installationContext = await loadRangeInstallationContext(SEED_INSTALLATION_ID);
+  if (!installationContext) {
+    return Response.json(
+      { error: 'Installation not found.' },
+      { status: 404 },
+    );
+  }
+
+  const [tariffVersions, fixedCharges, summaryRows] = await Promise.all([
+    loadTariffVersionsForInstallation(SEED_INSTALLATION_ID),
+    loadFixedChargeVersionsForInstallation(SEED_INSTALLATION_ID),
+    loadDailySummaryRowsForRange(SEED_INSTALLATION_ID, from, to),
+  ]);
+
+  const allDates = allDatesInRange(from, to);
+  const { summary, series, health } = computeRangeSummary(
+    summaryRows,
+    allDates,
+    tariffVersions,
+    fixedCharges,
+  );
+
+  const payload: RangeSummaryPayload = {
+    meta: {
+      from,
+      to,
+      timezone: installationContext.timezone,
+      currency: installationContext.currency,
+      generatedAt: new Date().toISOString(),
+    },
+    summary,
+    series,
+    health,
+  };
+
+  return Response.json(payload);
+}

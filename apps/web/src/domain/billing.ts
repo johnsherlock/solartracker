@@ -35,6 +35,15 @@ export type FixedChargeVersion = {
   validToLocalDate?: string | null;
 };
 
+export type DailySummaryForBilling = {
+  localDate: string;
+  importKwh: number;
+  exportKwh: number;
+  generatedKwh: number;
+  consumedKwh: number;
+  immersionDivertedKwh: number;
+};
+
 export type BillingPeriodResult = {
   actual: {
     importCost: number;
@@ -171,6 +180,79 @@ export const calculateBillingPeriod = (
   const totalConsumed = readings.reduce((sum, reading) => sum + reading.consumedKwh, 0);
   const totalImported = readings.reduce((sum, reading) => sum + reading.importKwh, 0);
   const totalExported = readings.reduce((sum, reading) => sum + reading.exportKwh, 0);
+
+  const actualGrossCost = round(actualImportCost + fixedCharges);
+  const actualNetCost = round(actualGrossCost - exportCredit);
+  const withoutSolarGrossCost = round(withoutSolarImportCost + fixedCharges);
+  const withoutSolarNetCost = round(withoutSolarGrossCost);
+  const savings = round(withoutSolarNetCost - actualNetCost);
+  const selfConsumptionRatio = totalConsumed > 0 ? round((totalConsumed - totalImported) / totalConsumed) : 0;
+  const gridDependenceRatio = totalConsumed > 0 ? round(totalImported / totalConsumed) : 0;
+
+  return {
+    actual: {
+      importCost: round(actualImportCost),
+      fixedCharges: round(fixedCharges),
+      exportCredit: round(exportCredit),
+      grossCost: actualGrossCost,
+      netCost: actualNetCost,
+    },
+    withoutSolar: {
+      importCost: round(withoutSolarImportCost),
+      fixedCharges: round(fixedCharges),
+      grossCost: withoutSolarGrossCost,
+      netCost: withoutSolarNetCost,
+    },
+    solar: {
+      savings,
+      exportValue: round(exportCredit),
+      selfConsumptionRatio,
+      gridDependenceRatio,
+    },
+  };
+};
+
+/**
+ * Calculate billing totals from persisted daily summary rows.
+ *
+ * Because daily summaries contain only daily totals (not per-interval
+ * timestamped readings), time-of-use splitting (night / peak windows) is not
+ * possible. The day rate is applied to all import for every day. This matches
+ * the simplified-daily-rate approach used elsewhere in the app.
+ */
+export const calculateBillingFromDailySummaries = (
+  summaries: DailySummaryForBilling[],
+  tariffVersions: TariffVersion[],
+  fixedChargeVersions: FixedChargeVersion[],
+): BillingPeriodResult => {
+  let actualImportCost = 0;
+  let exportCredit = 0;
+  let fixedCharges = 0;
+  let withoutSolarImportCost = 0;
+  let totalConsumed = 0;
+  let totalImported = 0;
+  let totalExported = 0;
+
+  for (const day of summaries) {
+    const tariff = resolveTariffVersion(tariffVersions, `${day.localDate}T12:00`);
+    const vat = 1 + (tariff.vatRate ?? 0);
+    const discount = tariff.discountRuleType === 'percentage' && tariff.discountValue != null
+      ? 1 - tariff.discountValue
+      : 1;
+
+    actualImportCost += round(day.importKwh * tariff.dayRate * discount * vat);
+    exportCredit += round(day.exportKwh * (tariff.exportRate ?? 0));
+    fixedCharges += fixedChargeContributionForDate(day.localDate, tariff.id, fixedChargeVersions);
+
+    const withoutSolarImport = round(
+      day.importKwh + day.generatedKwh - day.exportKwh - day.immersionDivertedKwh,
+    );
+    withoutSolarImportCost += round(withoutSolarImport * tariff.dayRate * discount * vat);
+
+    totalConsumed += day.consumedKwh;
+    totalImported += day.importKwh;
+    totalExported += day.exportKwh;
+  }
 
   const actualGrossCost = round(actualImportCost + fixedCharges);
   const actualNetCost = round(actualGrossCost - exportCredit);
