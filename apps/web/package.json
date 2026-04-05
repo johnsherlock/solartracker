@@ -12,7 +12,9 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx src/db/seed.ts",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "job:daily-summary": "tsx src/scripts/job-daily-summary.ts",
+    "job:catch-up": "tsx src/scripts/job-daily-summary.ts --catch-up"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.2.2",

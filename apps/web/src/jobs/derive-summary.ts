@@ -1,0 +1,181 @@
+/**
+ * Pure helpers for daily summary derivation and local-date logic.
+ *
+ * No I/O — all functions accept explicit inputs so they are unit-testable
+ * without mocking the database or clock.
+ */
+
+import type { MinuteReading } from '../live/types';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export type DailySummaryFields = {
+  importKwh: number;
+  exportKwh: number;
+  generatedKwh: number;
+  consumedKwh: number;
+  immersionDivertedKwh: number;
+  immersionBoostedKwh: number;
+  selfConsumptionRatio: number | null;
+  gridDependenceRatio: number | null;
+  isPartial: boolean;
+};
+
+// ---------------------------------------------------------------------------
+// Local-date helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Return today's local calendar date in the given timezone as YYYY-MM-DD.
+ */
+export function getLocalDate(timezone: string, now: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+}
+
+/**
+ * Return the previous local calendar date (yesterday) in the given timezone.
+ *
+ * DST-safe: we derive the local date via Intl first, then subtract one
+ * calendar day from the date string — no fixed UTC-offset arithmetic.
+ */
+export function getPreviousLocalDate(timezone: string, now: Date = new Date()): string {
+  const localToday = getLocalDate(timezone, now);
+  // Parse as UTC midnight on the local date string, then subtract one day.
+  const d = new Date(`${localToday}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Return true if the current local time in the given timezone is at or beyond
+ * the midnight boundary plus the requested safety buffer.
+ *
+ * Used to ensure a day is "finalized" before we attempt to summarize it.
+ *
+ * @param timezone      IANA timezone (e.g. "Europe/Dublin")
+ * @param bufferMinutes Minutes after local midnight to wait before treating
+ *                      the previous day as final. Default: 15.
+ * @param now           Clock override for testing.
+ */
+export function isAfterMidnightBuffer(
+  timezone: string,
+  bufferMinutes = 15,
+  now: Date = new Date(),
+): boolean {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(now);
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
+  const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
+  const minutesSinceMidnight = hour * 60 + minute;
+  return minutesSinceMidnight >= bufferMinutes;
+}
+
+// ---------------------------------------------------------------------------
+// Expected minutes for a local day (handles DST 23h / 24h / 25h days)
+// ---------------------------------------------------------------------------
+
+/**
+ * Count how many minutes belong to the given local calendar date in the given
+ * timezone. Returns 1380 (spring-forward), 1440 (normal), or 1500 (fall-back).
+ */
+export function expectedMinutesForDay(localDate: string, timezone: string): number {
+  const [year, month, day] = localDate.split('-').map(Number);
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+
+  // Scan a 27-hour UTC window centred on noon of the calendar date and count
+  // how many UTC minutes map to the requested local date.
+  const utcNoon = Date.UTC(year, month - 1, day, 12, 0, 0);
+  const windowStart = utcNoon - 14 * 60 * 60 * 1000;
+  const windowEnd   = utcNoon + 13 * 60 * 60 * 1000;
+  let count = 0;
+
+  for (let ts = windowStart; ts < windowEnd; ts += 60_000) {
+    const parts = formatter.formatToParts(new Date(ts));
+    const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? '0');
+    if (get('year') === year && get('month') === month && get('day') === day) {
+      count++;
+    }
+  }
+
+  return count;
+}
+
+// ---------------------------------------------------------------------------
+// Summary derivation
+// ---------------------------------------------------------------------------
+
+function r6(n: number): number {
+  return Math.round(n * 1_000_000) / 1_000_000;
+}
+
+/**
+ * Derive persisted daily summary fields from the raw minute readings for a day.
+ *
+ * @param readings        MinuteReading[] for the local calendar day
+ * @param expectedMinutes Expected number of minute records for that day
+ *                        (use expectedMinutesForDay() to compute)
+ */
+export function deriveDailySummaryFields(
+  readings: MinuteReading[],
+  expectedMinutes: number,
+): DailySummaryFields {
+  let importKwh = 0;
+  let exportKwh = 0;
+  let generatedKwh = 0;
+  let consumedKwh = 0;
+  let immersionDivertedKwh = 0;
+  let immersionBoostedKwh = 0;
+
+  for (const m of readings) {
+    importKwh += m.importKwh;
+    exportKwh += m.exportKwh;
+    generatedKwh += m.generatedKwh;
+    consumedKwh += m.consumedKwh;
+    immersionDivertedKwh += m.immersionDivertedKwh;
+    immersionBoostedKwh += m.immersionBoostedKwh;
+  }
+
+  importKwh = r6(importKwh);
+  exportKwh = r6(exportKwh);
+  generatedKwh = r6(generatedKwh);
+  consumedKwh = r6(consumedKwh);
+  immersionDivertedKwh = r6(immersionDivertedKwh);
+  immersionBoostedKwh = r6(immersionBoostedKwh);
+
+  // Self-consumption ratio: fraction of total consumption met by solar.
+  // solarConsumed = consumed - grid_import (clamped to ≥0)
+  const solarConsumed = Math.max(0, consumedKwh - importKwh);
+  const selfConsumptionRatio = consumedKwh > 0 ? solarConsumed / consumedKwh : null;
+  const gridDependenceRatio = consumedKwh > 0 ? importKwh / consumedKwh : null;
+
+  const isPartial = readings.length < expectedMinutes;
+
+  return {
+    importKwh,
+    exportKwh,
+    generatedKwh,
+    consumedKwh,
+    immersionDivertedKwh,
+    immersionBoostedKwh,
+    selfConsumptionRatio,
+    gridDependenceRatio,
+    isPartial,
+  };
+}
