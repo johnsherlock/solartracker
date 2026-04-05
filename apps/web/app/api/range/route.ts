@@ -16,7 +16,16 @@ const SEED_INSTALLATION_ID = '00000000-0000-0000-0000-000000000002';
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function isValidDate(s: string): boolean {
-  return DATE_PATTERN.test(s) && !isNaN(new Date(`${s}T12:00:00Z`).getTime());
+  if (!DATE_PATTERN.test(s)) return false;
+  const [year, month, day] = s.split('-').map(Number);
+  // Round-trip validation: JS normalises overflow dates (e.g. Feb 31 → Mar 3),
+  // so we verify the parsed components match the original string.
+  const d = new Date(Date.UTC(year, month - 1, day));
+  return (
+    d.getUTCFullYear() === year &&
+    d.getUTCMonth() === month - 1 &&
+    d.getUTCDate() === day
+  );
 }
 
 // ---------------------------------------------------------------------------

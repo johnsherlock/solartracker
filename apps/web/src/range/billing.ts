@@ -73,7 +73,7 @@ function computeDayBilling(
       row.importKwh + row.generatedKwh - row.exportKwh - (row.immersionDivertedKwh ?? 0),
     );
     const withoutSolarCost = r2(withoutSolarImport * tariff.dayRate * discount * vat);
-    const savings = r2(withoutSolarCost - actualImportCost);
+    const savings = r2(withoutSolarCost - actualNetCost);
 
     return { actualNetCost, savings, exportCredit };
   } catch {
@@ -197,15 +197,26 @@ export function computeRangeSummary(
     };
   });
 
-  // Overall billing — only over days that have summary rows
-  const summariesForBilling: DailySummaryForBilling[] = rows.map((r) => ({
-    localDate: r.localDate,
-    importKwh: r.importKwh,
-    exportKwh: r.exportKwh,
-    generatedKwh: r.generatedKwh,
-    consumedKwh: r.consumedKwh ?? 0,
-    immersionDivertedKwh: r.immersionDivertedKwh ?? 0,
-  }));
+  // Overall billing — only over days that have summary rows AND tariff coverage.
+  // Filtering to tariff-covered days prevents calculateBillingFromDailySummaries
+  // from throwing when a row falls outside all tariff version date windows.
+  const summariesForBilling: DailySummaryForBilling[] = rows
+    .filter((r) => {
+      try {
+        resolveTariffVersion(tariffVersions, `${r.localDate}T12:00`);
+        return true;
+      } catch {
+        return false;
+      }
+    })
+    .map((r) => ({
+      localDate: r.localDate,
+      importKwh: r.importKwh,
+      exportKwh: r.exportKwh,
+      generatedKwh: r.generatedKwh,
+      consumedKwh: r.consumedKwh ?? 0,
+      immersionDivertedKwh: r.immersionDivertedKwh ?? 0,
+    }));
 
   const billing =
     tariffVersions.length > 0 && summariesForBilling.length > 0

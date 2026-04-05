@@ -252,6 +252,68 @@ describe('computeRangeSummary — no tariff', () => {
 });
 
 // ---------------------------------------------------------------------------
+// computeRangeSummary — rows outside tariff coverage window
+// ---------------------------------------------------------------------------
+
+describe('computeRangeSummary — rows outside tariff coverage', () => {
+  // Tariff only covers from 2024-11-03 onward; rows 01-02 are outside.
+  const partialTariff: TariffVersion = {
+    ...baseTariff,
+    id: 'tariff-partial',
+    validFromLocalDate: '2024-11-03',
+    validToLocalDate: null,
+  };
+  const rows = [
+    makeRow('2024-11-01'),  // outside tariff window
+    makeRow('2024-11-02'),  // outside tariff window
+    makeRow('2024-11-03'),  // inside
+    makeRow('2024-11-04'),  // inside
+  ];
+  const allDates = allDatesInRange('2024-11-01', '2024-11-04');
+
+  it('does not throw when some rows fall outside tariff coverage', () => {
+    expect(() =>
+      computeRangeSummary(rows, allDates, [partialTariff], []),
+    ).not.toThrow();
+  });
+
+  it('billing totals cover only tariff-covered rows', () => {
+    const { summary } = computeRangeSummary(rows, allDates, [partialTariff], []);
+    // Only 2 covered days (11-03, 11-04) contribute to billing
+    expect(summary.actual.importCost).toBeGreaterThan(0);
+    // importCost = 2 × (5 * 0.3 * 1.09) = 2 × 1.635 = 3.27
+    expect(summary.actual.importCost).toBeCloseTo(3.27, 1);
+  });
+
+  it('series entries for uncovered days still have null billing', () => {
+    const { series } = computeRangeSummary(rows, allDates, [partialTariff], []);
+    expect(series.find((s) => s.date === '2024-11-01')!.billing).toBeNull();
+    expect(series.find((s) => s.date === '2024-11-02')!.billing).toBeNull();
+    expect(series.find((s) => s.date === '2024-11-03')!.billing).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeRangeSummary — per-day savings includes export credit
+// ---------------------------------------------------------------------------
+
+describe('computeRangeSummary — per-day savings includes export credit', () => {
+  it('savings equals withoutSolarCost minus actualNetCost', () => {
+    const rows = [makeRow('2024-11-01', { importKwh: 5, exportKwh: 3, generatedKwh: 8, consumedKwh: 10, immersionDivertedKwh: 0 })];
+    const allDates = allDatesInRange('2024-11-01', '2024-11-01');
+    const { series } = computeRangeSummary(rows, allDates, [baseTariff], []);
+    const day = series[0];
+    // actualNetCost = r2(importCost - exportCredit) = r2(1.635 - 0.3) = 1.34
+    // withoutSolarImport = 5 + 8 - 3 - 0 = 10
+    // withoutSolarCost = r2(10 * 0.3 * 1.09) = r2(3.27) = 3.27
+    // savings = r2(3.27 - 1.34) = r2(1.93) = 1.93
+    expect(day.billing!.savings).toBeCloseTo(1.93, 2);
+    // Savings must be higher than if export credit were excluded (1.635)
+    expect(day.billing!.savings).toBeGreaterThan(day.billing!.actualNetCost);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // computeRangeSummary — partial days
 // ---------------------------------------------------------------------------
 
