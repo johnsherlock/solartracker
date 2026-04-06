@@ -15,6 +15,20 @@
       "when": 1774571461773,
       "tag": "0001_previous_kang",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774906172391,
+      "tag": "0002_naive_silk_fever",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1775246744292,
+      "tag": "0003_confused_shockwave",
+      "breakpoints": true
     }
   ]
 }

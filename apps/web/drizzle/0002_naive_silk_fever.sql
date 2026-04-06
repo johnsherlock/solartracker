@@ -1,0 +1,1 @@
+ALTER TABLE "installations" ADD COLUMN "array_capacity_kw" numeric(8, 2);

@@ -126,11 +126,22 @@ async function seed() {
       timezone: 'Europe/Dublin',
       locale: 'en-IE',
       currencyCode: 'EUR',
+      arrayCapacityKw: '3.20',
       financeMode: 'finance',
       installCostAmount: null,
       monthlyFinancePaymentAmount: '158.33',
       financeTermMonths: 60,
       providerType: 'myenergi',
+      // Location: Dublin, Ireland — pre-seeded so the weather slice works in dev
+      locationRawInput: 'Dublin, Ireland',
+      locationDisplayName: 'Dublin, Ireland',
+      locationLatitude: '53.349800',
+      locationLongitude: '-6.260300',
+      locationPrecisionMode: 'exact',
+      locationCountryCode: 'IE',
+      locationLocality: 'Dublin',
+      locationGeocodedAt: new Date('2026-04-03T00:00:00Z'),
+      locationGeocoderProvider: 'seed',
     }).onConflictDoUpdate({
       target: installations.id,
       set: {
@@ -138,11 +149,21 @@ async function seed() {
         timezone: sql`excluded.timezone`,
         locale: sql`excluded.locale`,
         currencyCode: sql`excluded.currency_code`,
+        arrayCapacityKw: sql`excluded.array_capacity_kw`,
         financeMode: sql`excluded.finance_mode`,
         installCostAmount: sql`excluded.install_cost_amount`,
         monthlyFinancePaymentAmount: sql`excluded.monthly_finance_payment_amount`,
         financeTermMonths: sql`excluded.finance_term_months`,
         providerType: sql`excluded.provider_type`,
+        locationRawInput: sql`excluded.location_raw_input`,
+        locationDisplayName: sql`excluded.location_display_name`,
+        locationLatitude: sql`excluded.location_latitude`,
+        locationLongitude: sql`excluded.location_longitude`,
+        locationPrecisionMode: sql`excluded.location_precision_mode`,
+        locationCountryCode: sql`excluded.location_country_code`,
+        locationLocality: sql`excluded.location_locality`,
+        locationGeocodedAt: sql`excluded.location_geocoded_at`,
+        locationGeocoderProvider: sql`excluded.location_geocoder_provider`,
       },
     });
     console.log('  installations: ok');
@@ -152,7 +173,13 @@ async function seed() {
       installationId: INSTALLATION_ID,
       providerType: 'myenergi',
       status: 'active',
-    }).onConflictDoNothing();
+      // Dev credential reference — reads MYENERGI_USERNAME and MYENERGI_PASSWORD
+      // from the environment. Set these in .env.local to enable direct API access.
+      credentialRef: 'env:MYENERGI_USERNAME:MYENERGI_PASSWORD',
+    }).onConflictDoUpdate({
+      target: providerConnections.id,
+      set: { credentialRef: sql`excluded.credential_ref` },
+    });
     console.log('  provider_connections: ok');
 
     await tx.insert(tariffPlans).values({

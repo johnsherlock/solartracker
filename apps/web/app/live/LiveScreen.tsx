@@ -1,250 +1,270 @@
 'use client';
 
-import { use, useMemo, useState, type ReactNode } from 'react';
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  Legend,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   Activity,
   AlertTriangle,
   ArrowDownToLine,
   ArrowUpFromLine,
+  Calendar,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Clock,
+  Cloud,
+  CloudDrizzle,
+  CloudFog,
+  CloudLightning,
+  CloudMoon,
+  CloudRain,
+  CloudSnow,
+  CloudSun,
+  Cloudy,
   Home,
+  Moon,
   RefreshCw,
   Sun,
   Sunrise,
   Sunset,
   TriangleAlert,
   WifiOff,
-  Wind,
   Zap,
 } from 'lucide-react';
+import type { LiveWeatherResult } from '@/src/weather/types';
+import { getWmoInfo } from '@/src/weather/wmoCode';
+import { formatDaylightStatus } from '@/src/weather/sunPosition';
+import type { CurrentMetrics, FinancialEstimate, LivePoint } from '@/src/live/loader';
+import {
+  DayTrendChart,
+  DayValuePanel,
+  DayTotalsPanel,
+  SolarCoveragePanel,
+  ToggleGroup,
+} from './DayAnalysis';
+import {
+  type Resolution,
+  type ViewMode,
+  type SeriesKey,
+  SERIES_ORDER,
+  MINUTE_DEFAULT_SERIES,
+  applyViewMode,
+  applyCostViewMode,
+  formatClockTime,
+  formatKw,
+  formatW,
+  formatEuro,
+  parseIsoDate,
+  addDays,
+  startOfMonth,
+  shiftMonth,
+  formatMonthYear,
+  getMonthName,
+  getMonthDays,
+} from '@/src/live/chartUtils';
+import {
+  resolveLiveSwipeTarget,
+  resolveNavigationTarget,
+  shouldIgnoreSwipeTarget,
+} from '@/src/live/swipeNavigation';
+import type { CostPoint } from '@/src/live/loader';
+
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
 
 type ScreenState = 'healthy' | 'stale' | 'warning' | 'disconnected';
-type Resolution = '5min' | '15min' | 'hour';
-type ViewMode = 'line' | 'cumulative';
-type SeriesKey = 'generation' | 'consumption' | 'import' | 'export';
 
-type LivePoint = {
-  time: string;
-  generation: number;
-  consumption: number;
-  import: number;
-  export: number;
-};
-
-const SERIES_ORDER: SeriesKey[] = ['generation', 'consumption', 'import', 'export'];
-const SERIES_COLORS: Record<SeriesKey, string> = {
-  generation: '#fbbf24',
-  consumption: '#94a3b8',
-  import: '#64748b',
-  export: '#34d399',
-};
-
-const FIVE_MINUTE_DATA: LivePoint[] = [
-  { time: '11:00', generation: 1.92, consumption: 1.08, import: 0.22, export: 0.78 },
-  { time: '11:05', generation: 2.08, consumption: 1.02, import: 0.12, export: 0.94 },
-  { time: '11:10', generation: 2.34, consumption: 0.96, import: 0.04, export: 1.28 },
-  { time: '11:15', generation: 2.42, consumption: 1.16, import: 0.14, export: 1.12 },
-  { time: '11:20', generation: 2.24, consumption: 1.28, import: 0.2, export: 0.92 },
-  { time: '11:25', generation: 2.46, consumption: 1.12, import: 0.08, export: 1.26 },
-  { time: '11:30', generation: 2.14, consumption: 0.92, import: 0.1, export: 1.12 },
-];
-
-const FIFTEEN_MINUTE_DATA: LivePoint[] = [
-  { time: '10:45', generation: 1.54, consumption: 0.96, import: 0.22, export: 0.44 },
-  { time: '11:00', generation: 1.96, consumption: 1.04, import: 0.14, export: 0.78 },
-  { time: '11:15', generation: 2.42, consumption: 1.16, import: 0.14, export: 1.12 },
-  { time: '11:30', generation: 2.14, consumption: 0.92, import: 0.1, export: 1.12 },
-];
-
-const HOURLY_DATA: LivePoint[] = [
-  { time: '08:00', generation: 0.34, consumption: 0.88, import: 0.62, export: 0 },
-  { time: '09:00', generation: 0.92, consumption: 0.96, import: 0.3, export: 0.16 },
-  { time: '10:00', generation: 1.58, consumption: 1.02, import: 0.14, export: 0.56 },
-  { time: '11:00', generation: 2.14, consumption: 0.92, import: 0.1, export: 1.12 },
-];
-
-const TODAY_TOTALS = [
-  { label: 'Generated', value: '14.2 kWh', tone: 'text-amber-300' },
-  { label: 'Consumed', value: '9.8 kWh', tone: 'text-slate-200' },
-  { label: 'Imported', value: '1.6 kWh', tone: 'text-slate-400' },
-  { label: 'Exported', value: '4.4 kWh', tone: 'text-emerald-300' },
-];
-
-const VALUE_TOTALS = [
-  { label: 'Import cost so far', value: '€0.84', tone: 'text-rose-300' },
-  { label: 'Export value', value: '€0.29', tone: 'text-emerald-300' },
-  { label: 'Solar savings', value: '€1.42', tone: 'text-amber-300' },
-  { label: 'Net bill impact', value: '-€0.58', tone: 'text-cyan-300' },
-];
-
-function getResolutionData(resolution: Resolution) {
-  if (resolution === '15min') return FIFTEEN_MINUTE_DATA;
-  if (resolution === 'hour') return HOURLY_DATA;
-  return FIVE_MINUTE_DATA;
-}
-
-function applyStateToData(data: LivePoint[], screenState: ScreenState) {
-  if (screenState === 'disconnected') return [];
-  if (screenState === 'healthy') return data;
-  if (screenState === 'stale') {
-    return data.slice(0, Math.max(1, data.length - 1));
-  }
-  return data.map((point, index) =>
-    index === Math.max(1, data.length - 2)
-      ? {
-          ...point,
-          generation: point.generation * 1.55,
-          export: point.export * 1.7,
-        }
-      : point,
-  );
-}
-
-function applyViewMode(data: LivePoint[], viewMode: ViewMode) {
-  if (viewMode === 'line') return data;
-
-  const running = {
-    generation: 0,
-    consumption: 0,
-    import: 0,
-    export: 0,
+export type LiveScreenProps = {
+  today: string;
+  displayDate: string;
+  initialLiveTime: string;
+  selectedDate: string;
+  installationContext: { name: string; arrayCapacityKw: number | null } | null;
+  timezone: string;
+  screenState: ScreenState;
+  health: {
+    minutesStale: number | null;
+    lastReadingLocalTime: string | null;
+    refreshedAtLocalTime: string;
+    uptimePercent: number;
+    expectedMinutes: number;
+    coveredMinutes: number;
+    incidents: {
+      id: string;
+      kind: 'missing-interval';
+      missingMinutes: number;
+      gapStartsAt: string;
+      gapEndsAt: string;
+      message: string;
+    }[];
+    primaryIncident: {
+      id: string;
+      kind: 'missing-interval';
+      missingMinutes: number;
+      gapStartsAt: string;
+      gapEndsAt: string;
+      message: string;
+    } | null;
   };
+  hasTariff: boolean;
+  weatherResult: LiveWeatherResult;
+  hasCapacity: boolean;
+  currentMetrics: CurrentMetrics | null;
+  minuteChartData: LivePoint[];
+  halfHourChartData: LivePoint[];
+  hourChartData: LivePoint[];
+  costChartData: CostPoint[];
+  todayTotals: {
+    generatedKwh: number;
+    consumedKwh: number;
+    importKwh: number;
+    exportKwh: number;
+    immersionDivertedKwh: number;
+  } | null;
+  financialEstimate: FinancialEstimate | null;
+};
 
-  return data.map((point) => {
-    running.generation += point.generation;
-    running.consumption += point.consumption;
-    running.import += point.import;
-    running.export += point.export;
+// ---------------------------------------------------------------------------
+// Utilities (live-screen-specific, not shared with Historical Day)
+// ---------------------------------------------------------------------------
 
-    return {
-      time: point.time,
-      generation: Number(running.generation.toFixed(2)),
-      consumption: Number(running.consumption.toFixed(2)),
-      import: Number(running.import.toFixed(2)),
-      export: Number(running.export.toFixed(2)),
-    };
-  });
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
-function formatSeriesLabel(key: SeriesKey) {
-  return key.charAt(0).toUpperCase() + key.slice(1);
+function mixColor(a: [number, number, number], b: [number, number, number], t: number): string {
+  const ratio = clamp(t, 0, 1);
+  const rgb = a.map((channel, index) => Math.round(channel + (b[index] - channel) * ratio));
+  return `rgb(${rgb[0]} ${rgb[1]} ${rgb[2]})`;
 }
 
-function formatKw(value: number) {
-  return `${value.toFixed(value >= 1 ? 2 : 2)} kW`;
+function getUptimeTone(uptimePercent: number): { border: string; background: string; text: string } {
+  const red: [number, number, number] = [239, 68, 68];
+  const orange: [number, number, number] = [249, 115, 22];
+  const green: [number, number, number] = [34, 197, 94];
+
+  let tone = red;
+  if (uptimePercent >= 90) {
+    tone =
+      uptimePercent >= 100
+        ? green
+        : [
+            Math.round(249 + (34 - 249) * ((uptimePercent - 90) / 10)),
+            Math.round(115 + (197 - 115) * ((uptimePercent - 90) / 10)),
+            Math.round(22 + (94 - 22) * ((uptimePercent - 90) / 10)),
+          ];
+  } else if (uptimePercent >= 80) {
+    tone = [
+      Math.round(239 + (249 - 239) * ((uptimePercent - 80) / 10)),
+      Math.round(68 + (115 - 68) * ((uptimePercent - 80) / 10)),
+      Math.round(68 + (22 - 68) * ((uptimePercent - 80) / 10)),
+    ];
+  }
+
+  return {
+    border: mixColor(tone, [15, 23, 42], 0.25),
+    background: mixColor(tone, [2, 6, 23], 0.12),
+    text: 'rgb(255 255 255)',
+  };
 }
 
-function PrototypeSwitcher({
-  current,
-  onChange,
-}: {
-  current: ScreenState;
-  onChange: (screenState: ScreenState) => void;
-}) {
-  const states: { id: ScreenState; label: string }[] = [
-    { id: 'healthy', label: 'Healthy' },
-    { id: 'stale', label: 'Stale data' },
-    { id: 'warning', label: 'Warning' },
-    { id: 'disconnected', label: 'Disconnected' },
-  ];
-
-  return (
-    <div className="border-b border-slate-800 bg-slate-950 px-4 py-2 text-xs">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2.5">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-          Prototype state
-        </span>
-        {states.map((state) => (
-          <button
-            key={state.id}
-            onClick={() => onChange(state.id)}
-            className={`rounded-full border px-3 py-1 font-medium transition-colors ${
-              current === state.id
-                ? 'border-amber-400/60 bg-amber-400/15 text-amber-200'
-                : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200'
-            }`}
-          >
-            {state.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
+function formatUptimePercent(uptimePercent: number): string {
+  return `${Math.round(uptimePercent)}%`;
 }
+
+function formatMissingMinutesSummary(expectedMinutes: number, coveredMinutes: number): string {
+  const missingMinutes = Math.max(0, expectedMinutes - coveredMinutes);
+  if (missingMinutes === 0) {
+    return 'Provider coverage is complete for the selected period.';
+  }
+
+  return `Provider coverage is slightly below complete: ${missingMinutes} minute${
+    missingMinutes === 1 ? '' : 's'
+  } ${missingMinutes === 1 ? 'is' : 'are'} missing, but ${
+    missingMinutes === 1 ? 'it does' : 'they do'
+  } not cross the outage threshold.`;
+}
+
+function getDismissalStorageKey(date: string, timezone: string): string {
+  return `pv-manager:live-warning-dismissals:${timezone}:${date}`;
+}
+
+function getChartPrefsStorageKey(timezone: string): string {
+  return `pv-manager:live-chart-prefs:${timezone}`;
+}
+
+function isResolution(value: string): value is Resolution {
+  return value === '1min' || value === '30min' || value === '1hour';
+}
+
+function isViewMode(value: string): value is ViewMode {
+  return value === 'line' || value === 'cumulative';
+}
+
+function isSeriesKey(value: string): value is SeriesKey {
+  return SERIES_ORDER.includes(value as SeriesKey);
+}
+
+function buildLiveUrl(pathname: string, date: string, today: string): string {
+  return date === today ? pathname : `${pathname}?date=${date}`;
+}
+
+// ---------------------------------------------------------------------------
+// Sub-components (Live-screen-only, not shared with Historical Day)
+// ---------------------------------------------------------------------------
 
 function CapabilityBar({
   hasTariff,
   hasCoordinates,
   hasCapacity,
-  onToggle,
 }: {
   hasTariff: boolean;
   hasCoordinates: boolean;
   hasCapacity: boolean;
-  onToggle: (key: 'tariff' | 'coordinates' | 'capacity') => void;
 }) {
   const items = [
-    { key: 'tariff' as const, label: 'Tariff linked', active: hasTariff },
-    { key: 'coordinates' as const, label: 'Coordinates added', active: hasCoordinates },
-    { key: 'capacity' as const, label: 'Array capacity known', active: hasCapacity },
+    { key: 'tariff', label: 'Tariff linked', active: hasTariff },
+    { key: 'coordinates', label: 'Coordinates added', active: hasCoordinates },
+    { key: 'capacity', label: 'Array capacity known', active: hasCapacity },
   ];
 
   return (
-    <div className="border-b border-slate-800 bg-[#08111f] px-4 py-2 text-xs">
+    <div className="hidden sm:block border-b border-slate-800 bg-[#08111f] px-4 py-2 text-xs">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2.5">
         <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-          Capability toggles
+          Setup
         </span>
         {items.map((item) => (
-          <button
+          <span
             key={item.key}
-            onClick={() => onToggle(item.key)}
-            className={`rounded-full border px-3 py-1 font-medium transition-colors ${
+            className={`rounded-full border px-3 py-1 font-medium ${
               item.active
                 ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200'
+                : 'border-slate-700 text-slate-500'
             }`}
           >
             {item.label}
-          </button>
+          </span>
         ))}
       </div>
     </div>
   );
 }
 
-function NavBar({
-  screenState,
-  onHome,
-}: {
-  screenState: ScreenState;
-  onHome: () => void;
-}) {
+function NavBar({ screenState }: { screenState: ScreenState }) {
   return (
-    <header className="border-b border-slate-800 bg-[#101826]">
+    <header className="sticky top-0 z-40 border-b border-slate-800 bg-[#101826]">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-3">
-          <button
-            onClick={onHome}
-            className="flex items-center gap-1.5 text-xs text-slate-400 transition-colors hover:text-slate-200"
-          >
+          <div className="flex items-center gap-1.5 text-xs text-slate-400">
             <ChevronLeft size={14} />
             <Home size={13} />
             <span className="hidden sm:inline">Overview</span>
-          </button>
+          </div>
           <span className="text-slate-700">/</span>
           <div className="flex items-center gap-2">
             {screenState === 'healthy' ? (
@@ -272,50 +292,70 @@ function NavBar({
   );
 }
 
-function TrustBadge({ screenState }: { screenState: ScreenState }) {
-  const config: Record<
-    ScreenState,
-    { icon: ReactNode; label: string; className: string }
-  > = {
+function TrustBadge({
+  screenState,
+  health,
+  onOpenDetails,
+}: {
+  screenState: ScreenState;
+  health: LiveScreenProps['health'];
+  onOpenDetails?: () => void;
+}) {
+  function label(): string {
+    switch (screenState) {
+      case 'healthy':
+        return `Updated ${health.refreshedAtLocalTime}`;
+      case 'stale':
+        return health.lastReadingLocalTime
+          ? `Last reading ${health.lastReadingLocalTime}`
+          : 'Data delayed';
+      case 'warning':
+        return 'Data quality review needed';
+      case 'disconnected':
+        return 'Provider disconnected';
+    }
+  }
+
+  const config: Record<ScreenState, { icon: ReactNode; className: string }> = {
     healthy: {
       icon: <CheckCircle2 size={13} />,
-      label: 'Updated 12 seconds ago',
       className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
     },
     stale: {
       icon: <Clock size={13} />,
-      label: 'Last seen 18 minutes ago',
       className: 'border-orange-500/30 bg-orange-500/10 text-orange-300',
     },
     warning: {
       icon: <TriangleAlert size={13} />,
-      label: 'Suspicious reading 3 minutes ago',
       className: 'border-orange-500/30 bg-orange-500/10 text-orange-300',
     },
     disconnected: {
       icon: <WifiOff size={13} />,
-      label: 'Provider disconnected',
       className: 'border-rose-500/30 bg-rose-500/10 text-rose-300',
     },
   };
 
   const item = config[screenState];
   return (
-    <span
+    <button
+      type="button"
+      onClick={screenState === 'warning' ? onOpenDetails : undefined}
       className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${item.className}`}
     >
       {item.icon}
-      {item.label}
-    </span>
+      {label()}
+    </button>
   );
 }
 
 function WarningBanner({
   screenState,
-  onAction,
+  health,
+  onOpenDetails,
 }: {
   screenState: ScreenState;
-  onAction: () => void;
+  health: LiveScreenProps['health'];
+  onOpenDetails?: () => void;
 }) {
   if (screenState === 'healthy') return null;
 
@@ -328,15 +368,17 @@ function WarningBanner({
       icon: <Clock size={15} className="mt-0.5 shrink-0" />,
     },
     warning: {
-      title: 'One reading looks suspicious',
-      body: 'A recent interval spikes above the surrounding pattern. This may be a provider reporting issue rather than a real consumption change.',
-      cta: 'Review Data Health',
+      title: 'A data gap needs review',
+      body:
+        health.primaryIncident?.message ??
+        'A recent interval contains an unusual gap or missing live readings.',
+      cta: 'Review details',
       className: 'border-orange-500/20 bg-orange-500/10 text-orange-200',
       icon: <AlertTriangle size={15} className="mt-0.5 shrink-0" />,
     },
     disconnected: {
       title: 'Provider connection needs attention',
-      body: 'Live telemetry has stopped. You can still preserve the screen structure for review, but reconnect is the next real action.',
+      body: 'Live telemetry has stopped. Reconnecting the provider is the next action.',
       cta: 'Reconnect provider',
       className: 'border-rose-500/20 bg-rose-500/10 text-rose-200',
       icon: <WifiOff size={15} className="mt-0.5 shrink-0" />,
@@ -351,11 +393,173 @@ function WarningBanner({
           <p className="text-sm font-semibold">{config.title}</p>
           <p className="mt-0.5 text-sm text-inherit/80">{config.body}</p>
         </div>
-        <button onClick={onAction} className="text-xs font-semibold underline underline-offset-4">
+        <button
+          type="button"
+          onClick={screenState === 'warning' ? onOpenDetails : undefined}
+          className="text-xs font-semibold underline underline-offset-4"
+        >
           {config.cta}
         </button>
       </div>
     </div>
+  );
+}
+
+function WarningDetailsModal({
+  health,
+  open,
+  selectedIncidentId,
+  dismissedIncidentIds,
+  onClose,
+  onDismiss,
+}: {
+  health: LiveScreenProps['health'];
+  open: boolean;
+  selectedIncidentId: string | null;
+  dismissedIncidentIds: string[];
+  onClose: () => void;
+  onDismiss: (incidentId: string) => void;
+}) {
+  if (!open) return null;
+
+  const selectedIncident =
+    health.incidents.find((incident) => incident.id === selectedIncidentId) ??
+    health.primaryIncident ??
+    health.incidents[0] ??
+    null;
+  const selectedIncidentDismissed =
+    selectedIncident !== null && dismissedIncidentIds.includes(selectedIncident.id);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4">
+      <div className="w-full max-w-lg rounded-[28px] border border-slate-800 bg-[#111b2b] p-5 shadow-[0_30px_80px_rgba(2,6,23,0.55)]">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+          Data quality
+        </p>
+        <h3 className="mt-1 text-lg font-semibold text-slate-50">
+          {health.incidents.length > 0
+            ? `${health.incidents.length} outage${health.incidents.length === 1 ? '' : 's'} detected today`
+            : 'Data quality overview'}
+        </h3>
+        <p className="mt-3 text-sm text-slate-300">
+          Based on expected provider minute coverage
+          {health.expectedMinutes > 0 ? ` so far today.` : '.'}
+        </p>
+        <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-3 text-sm text-slate-300">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-slate-400">Coverage</span>
+            <span className="font-mono">
+              {health.coveredMinutes} / {health.expectedMinutes} mins
+            </span>
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <span className="text-slate-400">Data quality</span>
+            <span className="font-mono">{formatUptimePercent(health.uptimePercent)}</span>
+          </div>
+        </div>
+        {selectedIncident ? (
+          <>
+            <p className="mt-4 text-sm text-slate-300">{selectedIncident.message}</p>
+            <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-3 text-sm text-slate-300">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-slate-400">Active selection</span>
+                <span className="font-mono">
+                  {selectedIncident.gapStartsAt} to {selectedIncident.gapEndsAt}
+                </span>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <span className="text-slate-400">Missing minutes</span>
+                <span className="font-mono">{selectedIncident.missingMinutes}</span>
+              </div>
+            </div>
+          </>
+        ) : (
+          <p className="mt-4 text-sm text-slate-400">
+            {formatMissingMinutesSummary(health.expectedMinutes, health.coveredMinutes)}
+          </p>
+        )}
+        {health.incidents.length > 0 && (
+          <div className="mt-4 space-y-2 rounded-2xl border border-slate-800 bg-slate-950/50 px-3 py-3">
+            {health.incidents.map((incident) => (
+              <div
+                key={incident.id}
+                className={`rounded-2xl border px-3 py-3 text-sm ${
+                  incident.id === selectedIncident?.id
+                    ? 'border-orange-500/30 bg-orange-500/10'
+                    : 'border-slate-800 bg-slate-950/60'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-medium text-slate-200">
+                    {incident.gapStartsAt} to {incident.gapEndsAt}
+                  </span>
+                  <span className="flex items-center gap-2 font-mono text-slate-400">
+                    <span>{incident.missingMinutes} mins</span>
+                    {dismissedIncidentIds.includes(incident.id) && (
+                      <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-slate-500">
+                        Dismissed
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-slate-400">{incident.message}</p>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="mt-4 text-sm text-slate-400">
+          This note is based on missing minute records in the provider feed. Dismissal is stored in
+          this browser for the selected day, and dismissed incidents remain visible here for review.
+        </p>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200"
+          >
+            Close
+          </button>
+          {selectedIncident && !selectedIncidentDismissed && (
+            <button
+              type="button"
+              onClick={() => onDismiss(selectedIncident.id)}
+              className="rounded-full bg-amber-300 px-4 py-2 text-sm font-semibold text-slate-950"
+            >
+              Dismiss warning
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UptimeBadge({
+  uptimePercent,
+  isDisconnected,
+  onOpenDetails,
+}: {
+  uptimePercent: number;
+  isDisconnected: boolean;
+  onOpenDetails: () => void;
+}) {
+  const tone = getUptimeTone(uptimePercent);
+  const label = isDisconnected ? 'No feed' : 'Data quality';
+
+  return (
+    <button
+      type="button"
+      onClick={onOpenDetails}
+      title={label}
+      className="rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors"
+      style={{
+        borderColor: tone.border,
+        backgroundColor: tone.background,
+        color: tone.text,
+      }}
+    >
+      {label} {formatUptimePercent(uptimePercent)}
+    </button>
   );
 }
 
@@ -377,25 +581,34 @@ function SectionHeader({
           {eyebrow}
         </p>
         <h2 className="mt-1 text-xl font-semibold text-slate-50">{title}</h2>
-        <p className="mt-1 text-sm text-slate-400">{description}</p>
+        <p className="hidden sm:block mt-1 text-sm text-slate-400">{description}</p>
       </div>
       {action}
     </div>
   );
 }
 
-function MobileMetricGrid({ stale }: { stale?: boolean }) {
+function MobileMetricGrid({
+  current,
+  stale,
+}: {
+  current: CurrentMetrics;
+  stale?: boolean;
+}) {
   const items = [
-    { label: 'Gen', value: '2.14', unit: 'kW', tone: 'text-amber-300' },
-    { label: 'Use', value: '0.92', unit: 'kW', tone: 'text-slate-100' },
-    { label: 'Imp', value: '0.31', unit: 'kW', tone: 'text-slate-300' },
-    { label: 'Exp', value: '0.81', unit: 'kW', tone: 'text-emerald-300' },
+    { label: 'Gen', value: current.generatedKw.toFixed(2), unit: 'kW', tone: 'text-amber-300' },
+    { label: 'Use', value: current.consumedKw.toFixed(2), unit: 'kW', tone: 'text-slate-100' },
+    { label: 'Imp', value: current.importKw.toFixed(2), unit: 'kW', tone: 'text-slate-300' },
+    { label: 'Exp', value: current.exportKw.toFixed(2), unit: 'kW', tone: 'text-emerald-300' },
   ];
 
   return (
     <div className={`grid grid-cols-2 gap-2 md:hidden ${stale ? 'opacity-90' : ''}`}>
       {items.map((item) => (
-        <div key={item.label} className="rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2.5">
+        <div
+          key={item.label}
+          className="rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2.5"
+        >
           <div className="flex items-end justify-between gap-2">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -441,7 +654,9 @@ function MetricCard({
         <span className={accentClass}>{icon}</span>
       </div>
       <div className="mt-4 flex items-end gap-1.5">
-        <span className={`font-mono text-4xl font-semibold tracking-tight ${stale ? 'text-slate-300' : 'text-slate-50'}`}>
+        <span
+          className={`font-mono text-4xl font-semibold tracking-tight ${stale ? 'text-slate-300' : 'text-slate-50'}`}
+        >
           {value}
         </span>
         <span className="mb-1 text-sm text-slate-500">{unit}</span>
@@ -452,12 +667,27 @@ function MetricCard({
 }
 
 function InsightStrip({
+  current,
+  arrayCapacityKw,
   hasCapacity,
   stale,
 }: {
+  current: CurrentMetrics;
+  arrayCapacityKw: number | null;
   hasCapacity: boolean;
   stale?: boolean;
 }) {
+  const { solarShare, gridShare, importKw, exportKw, generatedKw } = current;
+  const generationVsCapacity =
+    arrayCapacityKw && arrayCapacityKw > 0
+      ? Math.min(100, Math.round((generatedKw / arrayCapacityKw) * 100))
+      : null;
+
+  const netPositionLabel =
+    exportKw > 0 ? 'Surplus' : importKw < generatedKw * 0.1 ? 'Self-sufficient' : 'Grid assisted';
+  const gridPressureLabel =
+    solarShare > 80 ? 'Low' : solarShare > 50 ? 'Moderate' : 'High';
+
   return (
     <div className="grid gap-3 lg:grid-cols-[1.6fr_1fr]">
       <div
@@ -471,17 +701,21 @@ function InsightStrip({
               Right now
             </p>
             <h3 className="mt-1 text-base font-semibold text-slate-100 sm:text-lg">
-              82% of home demand is being covered by solar
+              {solarShare > 0
+                ? `${solarShare}% of home demand is being covered by solar`
+                : 'No solar generation right now'}
             </h3>
           </div>
-          <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold text-emerald-300 sm:text-xs">
-            Covering home + exporting 0.81 kW
-          </span>
+          {exportKw > 0 && (
+            <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold text-emerald-300 sm:text-xs">
+              Covering home + exporting {formatKw(exportKw)}
+            </span>
+          )}
         </div>
         <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-800">
           <div
             className="h-full rounded-full bg-gradient-to-r from-amber-400 via-amber-300 to-emerald-300"
-            style={{ width: '82%' }}
+            style={{ width: `${Math.min(100, solarShare)}%` }}
           />
         </div>
         <div className="mt-2 flex justify-between text-xs text-slate-500">
@@ -497,369 +731,275 @@ function InsightStrip({
         <div className="mt-3 grid gap-2 text-sm text-slate-300 sm:space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-slate-400">Net position</span>
-            <span className="font-semibold text-emerald-300">Surplus</span>
+            <span
+              className={`font-semibold ${exportKw > 0 ? 'text-emerald-300' : 'text-slate-200'}`}
+            >
+              {netPositionLabel}
+            </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-slate-400">Grid draw pressure</span>
-            <span className="font-semibold text-slate-200">Low</span>
+            <span className="font-semibold text-slate-200">{gridPressureLabel}</span>
           </div>
-          {hasCapacity && (
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400">Array efficiency</span>
-              <span className="font-semibold text-cyan-300">78% of 18 kWp max</span>
-            </div>
-          )}
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">Current gen vs capacity</span>
+            <span className="font-semibold text-slate-200">
+              {generationVsCapacity !== null ? `${generationVsCapacity}%` : '—'}
+            </span>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function ToggleGroup<T extends string>({
-  value,
-  options,
-  onChange,
+function DatePickerControl({
+  selectedDate,
+  displayDate,
+  today,
+  onSelectDate,
 }: {
-  value: T;
-  options: readonly T[];
-  onChange: (value: T) => void;
+  selectedDate: string;
+  displayDate: string;
+  today: string;
+  onSelectDate: (date: string) => void;
 }) {
-  return (
-    <div className="inline-flex rounded-full border border-slate-700 bg-slate-900/70 p-1">
-      {options.map((option) => (
-        <button
-          key={option}
-          onClick={() => onChange(option)}
-          className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-            value === option
-              ? 'bg-slate-100 text-slate-950'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          {option}
-        </button>
-      ))}
-    </div>
-  );
-}
+  const [open, setOpen] = useState(false);
+  const [visibleMonth, setVisibleMonth] = useState(() => `${selectedDate.slice(0, 7)}-01`);
+  const [popoverTop, setPopoverTop] = useState(0);
+  const [mounted, setMounted] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  const days = useMemo(() => getMonthDays(visibleMonth), [visibleMonth]);
 
-function LiveTrendChart({
-  data,
-  screenState,
-  resolution,
-  onResolutionChange,
-  viewMode,
-  onViewModeChange,
-  activeSeries,
-  onToggleSeries,
-}: {
-  data: LivePoint[];
-  screenState: ScreenState;
-  resolution: Resolution;
-  onResolutionChange: (resolution: Resolution) => void;
-  viewMode: ViewMode;
-  onViewModeChange: (viewMode: ViewMode) => void;
-  activeSeries: SeriesKey[];
-  onToggleSeries: (series: SeriesKey) => void;
-}) {
-  const isStale = screenState === 'stale' || screenState === 'warning';
+  useEffect(() => { setMounted(true); }, []);
 
-  return (
-    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5 shadow-[0_30px_70px_rgba(2,6,23,0.34)]">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-            Today
-          </p>
-          <h3 className="mt-1 text-xl font-semibold text-slate-50">Live trend</h3>
-          <p className="mt-1 text-sm text-slate-400">
-            Switch between raw and cumulative views, and strip back the series when the story gets noisy.
-          </p>
-        </div>
+  useEffect(() => {
+    setVisibleMonth(`${selectedDate.slice(0, 7)}-01`);
+  }, [selectedDate]);
 
-        <div className="flex flex-wrap gap-2">
-          <ToggleGroup
-            value={resolution}
-            options={['5min', '15min', 'hour'] as const}
-            onChange={onResolutionChange}
-          />
-          <ToggleGroup
-            value={viewMode}
-            options={['line', 'cumulative'] as const}
-            onChange={onViewModeChange}
-          />
-        </div>
-      </div>
+  useEffect(() => {
+    if (!open) return;
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setPopoverTop(rect.bottom + 8);
+    }
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (!triggerRef.current?.contains(target) && !popoverRef.current?.contains(target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [open]);
 
-      {isStale && (
-        <div className="mt-4 rounded-2xl border border-orange-500/20 bg-orange-500/10 px-3 py-2 text-xs text-orange-200">
-          {screenState === 'stale'
-            ? 'Data delayed — chart ends at the last known point.'
-            : 'Potential anomaly — one recent interval may be overstated.'}
-        </div>
-      )}
-
-      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        {SERIES_ORDER.map((series) => {
-          const active = activeSeries.includes(series);
-          return (
+  const popoverContent = open && (
+    <div
+      ref={popoverRef}
+      data-swipe-ignore="true"
+      style={{ top: popoverTop }}
+      className="fixed left-1/2 z-[9999] -translate-x-1/2 w-[calc(100vw-2rem)] rounded-[20px] border border-slate-800 bg-[#111b2b] p-4 shadow-[0_20px_60px_rgba(2,6,23,0.5)] sm:w-[280px]"
+    >
+          <div className="flex items-center justify-between gap-2">
             <button
-              key={series}
-              onClick={() => onToggleSeries(series)}
-              className={`flex items-center justify-between rounded-2xl border px-3 py-2 text-left text-xs transition-colors ${
-                active
-                  ? 'border-slate-600 bg-slate-900/70 text-slate-100'
-                  : 'border-slate-800 bg-slate-950/60 text-slate-500'
-              }`}
+              type="button"
+              onClick={() => setVisibleMonth(shiftMonth(visibleMonth, -12))}
+              className="rounded-full p-1 text-slate-400 hover:text-slate-100"
             >
-              <span className="flex items-center gap-2">
-                <span
-                  className="h-2.5 w-2.5 rounded-full"
-                  style={{ backgroundColor: SERIES_COLORS[series] }}
-                />
-                {formatSeriesLabel(series)}
-              </span>
-              <span className="text-[11px]">{active ? 'Visible' : 'Hidden'}</span>
+              <ChevronsLeft size={14} />
             </button>
-          );
-        })}
-      </div>
-
-      <div className="mt-4 h-[280px] rounded-[24px] border border-slate-800 bg-[#0b1321] p-3">
-        {data.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-sm text-slate-500">
-            No live data available
+            <button
+              type="button"
+              onClick={() => setVisibleMonth(shiftMonth(visibleMonth, -1))}
+              className="rounded-full p-1 text-slate-400 hover:text-slate-100"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <span className="flex-1 text-center text-xs font-semibold text-slate-200">
+              {formatMonthYear(visibleMonth)}
+            </span>
+            <button
+              type="button"
+              onClick={() => setVisibleMonth(shiftMonth(visibleMonth, 1))}
+              disabled={visibleMonth >= `${today.slice(0, 7)}-01`}
+              className="rounded-full p-1 text-slate-400 hover:text-slate-100 disabled:opacity-30"
+            >
+              <ChevronRight size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setVisibleMonth(shiftMonth(visibleMonth, 12))}
+              disabled={visibleMonth >= `${today.slice(0, 7)}-01`}
+              className="rounded-full p-1 text-slate-400 hover:text-slate-100 disabled:opacity-30"
+            >
+              <ChevronsRight size={14} />
+            </button>
           </div>
-        ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} margin={{ top: 10, right: 8, left: -12, bottom: 0 }}>
-              <defs>
-                {SERIES_ORDER.map((key) => (
-                  <linearGradient key={key} id={`fill-${key}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="4%" stopColor={SERIES_COLORS[key]} stopOpacity={0.28} />
-                    <stop offset="96%" stopColor={SERIES_COLORS[key]} stopOpacity={0} />
-                  </linearGradient>
-                ))}
-              </defs>
-              <XAxis
-                dataKey="time"
-                stroke="#475569"
-                tick={{ fill: '#64748b', fontSize: 11 }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis
-                stroke="#475569"
-                tick={{ fill: '#64748b', fontSize: 11 }}
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={(value) => `${value}kW`}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#0f172a',
-                  border: '1px solid rgba(71,85,105,0.55)',
-                  borderRadius: 16,
-                  color: '#e2e8f0',
-                }}
-                formatter={(value, name) => [
-                  formatKw(typeof value === 'number' ? value : Number(value ?? 0)),
-                  formatSeriesLabel(name as SeriesKey),
-                ]}
-              />
-              <Legend
-                wrapperStyle={{ fontSize: 11, color: '#94a3b8', paddingTop: 12 }}
-                formatter={(value) => formatSeriesLabel(value as SeriesKey)}
-              />
-              {SERIES_ORDER.filter((series) => activeSeries.includes(series)).map((series) => (
-                <Area
-                  key={series}
-                  type="monotone"
-                  dataKey={series}
-                  stroke={SERIES_COLORS[series]}
-                  fill={`url(#fill-${series})`}
-                  strokeWidth={series === 'import' ? 1.75 : 2.2}
-                  activeDot={{ r: 4 }}
-                  dot={false}
-                />
-              ))}
-            </AreaChart>
-          </ResponsiveContainer>
-        )}
-      </div>
-    </div>
-  );
-}
 
-function ValuePanel({ hasTariff }: { hasTariff: boolean }) {
-  if (!hasTariff) {
-    return (
-      <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-          Today value
-        </p>
-        <h3 className="mt-1 text-lg font-semibold text-slate-50">Add tariff details to unlock live value</h3>
-        <p className="mt-2 text-sm text-slate-400">
-          Keep the live energy view useful now, then layer in cost, export value, and savings once the tariff setup is complete.
-        </p>
-        <button className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-amber-300">
-          Add tariff details <ChevronRight size={14} />
-        </button>
-      </div>
-    );
-  }
+          <div className="mt-3 grid grid-cols-7 gap-0.5">
+            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
+              <div
+                key={index}
+                className="py-1 text-center text-[10px] font-semibold text-slate-500"
+              >
+                {day}
+              </div>
+            ))}
+            {days.map((day) => {
+              const isFuture = day.iso > today;
+              const isSelected = day.iso === selectedDate;
+              const isToday = day.iso === today;
 
-  return (
-    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-        Today value
-      </p>
-      <h3 className="mt-1 text-lg font-semibold text-slate-50">Energy and money are telling the same story</h3>
-      <div className="mt-4 space-y-3">
-        {VALUE_TOTALS.map((item) => (
-          <div key={item.label} className="flex items-baseline justify-between gap-3">
-            <span className="text-sm text-slate-400">{item.label}</span>
-            <span className={`font-mono text-sm font-semibold ${item.tone}`}>{item.value}</span>
+              return (
+                <button
+                  key={day.iso}
+                  type="button"
+                  disabled={isFuture || !day.inMonth}
+                  onClick={() => {
+                    onSelectDate(day.iso);
+                    setOpen(false);
+                  }}
+                  className={`rounded-full py-1 text-center text-xs transition-colors ${
+                    !day.inMonth
+                      ? 'text-slate-700'
+                      : isFuture
+                        ? 'cursor-not-allowed text-slate-700'
+                        : isSelected
+                          ? 'bg-amber-300 font-semibold text-slate-950'
+                          : isToday
+                            ? 'border border-slate-600 text-slate-200 hover:bg-slate-800'
+                            : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  {day.dayNumber}
+                </button>
+              );
+            })}
           </div>
-        ))}
-      </div>
-      <div className="mt-4 rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-200">
-        Low import during the brightest window is protecting the bill while export is adding a small credit on top.
-      </div>
-    </div>
-  );
-}
 
-function TodayPanel({ screenState }: { screenState: ScreenState }) {
-  return (
-    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-        Today so far
-      </p>
-      <h3 className="mt-1 text-lg font-semibold text-slate-50">The day is still building</h3>
-      <div className="mt-4 space-y-3">
-        {TODAY_TOTALS.map((item) => (
-          <div key={item.label} className="flex items-baseline justify-between gap-3">
-            <span className="text-sm text-slate-400">{item.label}</span>
-            <span className={`font-mono text-sm font-semibold ${item.tone}`}>{item.value}</span>
+          <div className="mt-3 border-t border-slate-800 pt-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                {getMonthName(visibleMonth)}
+              </span>
+              <div className="flex gap-1">
+                {Array.from({ length: 7 }, (_, offset) => addDays(today, -6 + offset)).map(
+                  (date) => (
+                    <button
+                      key={date}
+                      type="button"
+                      onClick={() => {
+                        onSelectDate(date);
+                        setOpen(false);
+                      }}
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                        date === selectedDate
+                          ? 'bg-amber-300 text-slate-950'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {date === today
+                        ? 'Today'
+                        : new Intl.DateTimeFormat('en-IE', { weekday: 'short' }).format(
+                            parseIsoDate(date),
+                          )}
+                    </button>
+                  ),
+                )}
+              </div>
+            </div>
           </div>
-        ))}
-      </div>
-      {(screenState === 'stale' || screenState === 'warning') && (
-        <div className="mt-4 rounded-2xl border border-orange-500/20 bg-orange-500/10 px-3 py-2 text-xs text-orange-200">
-          Current-day totals may still change once the live feed stabilizes again.
+
         </div>
-      )}
-      <button className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-amber-300">
-        View full day <ChevronRight size={14} />
+  );
+
+  return (
+    <div className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs font-medium text-slate-300"
+      >
+        <Calendar size={12} />
+        <span>{displayDate}</span>
       </button>
+      {mounted && createPortal(popoverContent, document.body)}
     </div>
   );
 }
 
-function SolarCoveragePanel() {
-  const coverageData = [
-    { time: '08:00', coverage: 22 },
-    { time: '09:00', coverage: 44 },
-    { time: '10:00', coverage: 67 },
-    { time: '11:00', coverage: 82 },
-    { time: '12:00', coverage: 89 },
-    { time: '13:00', coverage: 85 },
-    { time: '14:00', coverage: 73 },
-    { time: '15:00', coverage: 68 },
-    { time: '16:00', coverage: 57 },
-  ];
+// ---------------------------------------------------------------------------
+// Weather helpers
+// ---------------------------------------------------------------------------
 
-  const best = coverageData.reduce((current, point) =>
-    point.coverage > current.coverage ? point : current,
-  );
+const WMO_ICON_COMPONENT_MAP: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  Sun, Cloud, CloudSun, CloudMoon, Cloudy, CloudFog, CloudDrizzle, CloudRain, CloudSnow, CloudLightning, Moon,
+};
 
-  return (
-    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-        Solar coverage
-      </p>
-      <h3 className="mt-1 text-lg font-semibold text-slate-50">How much of the home solar has covered today</h3>
-      <div className="mt-4 h-44 rounded-[24px] border border-slate-800 bg-[#0b1321] p-3">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={coverageData} margin={{ top: 10, right: 8, left: -18, bottom: 0 }}>
-            <defs>
-              <linearGradient id="coverage-fill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#fbbf24" stopOpacity={0.34} />
-                <stop offset="70%" stopColor="#86efac" stopOpacity={0.18} />
-                <stop offset="100%" stopColor="#86efac" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid stroke="rgba(51,65,85,0.28)" vertical={false} />
-            <XAxis
-              dataKey="time"
-              stroke="#475569"
-              tick={{ fill: '#64748b', fontSize: 11 }}
-              tickLine={false}
-              axisLine={false}
-            />
-            <YAxis
-              domain={[0, 100]}
-              stroke="#475569"
-              tick={{ fill: '#64748b', fontSize: 11 }}
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={(value) => `${value}%`}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: '#0f172a',
-                border: '1px solid rgba(71,85,105,0.55)',
-                borderRadius: 16,
-                color: '#e2e8f0',
-              }}
-              formatter={(value) => [`${Number(value ?? 0)}%`, 'Solar coverage']}
-            />
-            <Area
-              type="monotone"
-              dataKey="coverage"
-              stroke="#facc15"
-              fill="url(#coverage-fill)"
-              strokeWidth={2.4}
-              dot={false}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-      <div className="mt-4 grid gap-2 sm:grid-cols-3">
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Current</p>
-          <p className="mt-1 font-mono text-lg font-semibold text-amber-300">82%</p>
-        </div>
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Best hour</p>
-          <p className="mt-1 font-mono text-lg font-semibold text-emerald-300">
-            {best.coverage}% <span className="text-sm text-slate-500">@ {best.time}</span>
-          </p>
-        </div>
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Grid share</p>
-          <p className="mt-1 font-mono text-lg font-semibold text-slate-300">18%</p>
-        </div>
-      </div>
-    </div>
+function WmoIcon({ code, isDay, size = 16 }: { code: number; isDay: boolean; size?: number }) {
+  const info = getWmoInfo(code);
+  const iconName = isDay ? info.dayIcon : info.nightIcon;
+  const IconComponent = WMO_ICON_COMPONENT_MAP[iconName] ?? Cloud;
+  return <IconComponent size={size} />;
+}
+
+function formatSunTime(utcIso: string, timezone: string): string {
+  return new Intl.DateTimeFormat('en-IE', {
+    timeZone: timezone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(utcIso));
+}
+
+function formatHourLabel(utcIso: string, timezone: string): string {
+  return new Intl.DateTimeFormat('en-IE', {
+    timeZone: timezone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(utcIso));
+}
+
+function formatDayLabel(localDate: string): string {
+  return new Intl.DateTimeFormat('en-IE', { weekday: 'short' }).format(
+    new Date(`${localDate}T12:00:00`),
   );
 }
 
-function SolarContextPanel({ hasCoordinates }: { hasCoordinates: boolean }) {
-  if (!hasCoordinates) {
+function SolarContextPanel({
+  weatherResult,
+  timezone,
+}: {
+  weatherResult: LiveWeatherResult;
+  timezone: string;
+}) {
+  if (weatherResult.status === 'no-location') {
     return (
       <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
           Next
         </p>
-        <h3 className="mt-1 text-lg font-semibold text-slate-50">Add coordinates to unlock solar context</h3>
+        <h3 className="mt-1 text-lg font-semibold text-slate-50">
+          Add coordinates to unlock solar context
+        </h3>
         <p className="mt-2 text-sm text-slate-400">
-          Sunrise, sunset, daylight remaining, and sun-position cues can all live here without needing full roof modeling.
+          Sunrise, sunset, daylight remaining, and sun-position cues can all live here without
+          needing full roof modeling.
         </p>
       </div>
     );
   }
+
+  const sunEvents =
+    weatherResult.status === 'ok' ? weatherResult.data.sunEvents : weatherResult.sunEvents;
+  const sunPosition =
+    weatherResult.status === 'ok' ? weatherResult.data.sunPosition : weatherResult.sunPosition;
+  const location = weatherResult.status === 'ok' ? weatherResult.data.location : null;
+
+  const { label: daylightLabel, value: daylightValue } = formatDaylightStatus(sunPosition, sunEvents);
 
   return (
     <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
@@ -869,111 +1009,160 @@ function SolarContextPanel({ hasCoordinates }: { hasCoordinates: boolean }) {
             Next
           </p>
           <h3 className="mt-1 text-lg font-semibold text-slate-50">Solar context</h3>
-          <p className="mt-1 text-sm text-slate-400">
-            Coordinates-only context: useful, calm, and still honest about what we do not know.
-          </p>
+          {location && (
+            <p className="mt-0.5 text-xs text-slate-500">
+              {location.precisionMode === 'approximate'
+                ? `Approximate — ${location.displayName}`
+                : location.displayName}
+            </p>
+          )}
         </div>
         <div className="rounded-full border border-amber-400/20 bg-amber-400/10 p-2 text-amber-300">
           <Sun size={18} />
         </div>
       </div>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <InfoTile icon={<Sunrise size={14} />} label="Sunrise" value="06:08" />
-        <InfoTile icon={<Sunset size={14} />} label="Sunset" value="18:52" />
-        <InfoTile icon={<Sun size={14} />} label="Sun altitude" value="43.4°" />
-        <InfoTile icon={<Activity size={14} />} label="Daylight left" value="6h 33m" />
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <InfoTile
+          icon={<Sunrise size={14} />}
+          label="Sunrise"
+          value={sunEvents ? formatSunTime(sunEvents.sunriseUtc, timezone) : '—'}
+        />
+        <InfoTile
+          icon={<Sun size={14} />}
+          label="Solar noon"
+          value={sunEvents ? formatSunTime(sunEvents.solarNoonUtc, timezone) : '—'}
+        />
+        <InfoTile
+          icon={<Sunset size={14} />}
+          label="Sunset"
+          value={sunEvents ? formatSunTime(sunEvents.sunsetUtc, timezone) : '—'}
+        />
+        <InfoTile
+          icon={<Sun size={14} />}
+          label="Sun altitude"
+          value={
+            sunPosition.isAboveHorizon ? `${sunPosition.elevationDegrees}°` : 'Below horizon'
+          }
+        />
+        <InfoTile
+          icon={<Activity size={14} />}
+          label={daylightLabel}
+          value={daylightValue}
+        />
       </div>
 
-      <div className="mt-5 rounded-[24px] border border-slate-800 bg-[#0b1321] p-4">
-        <div className="flex items-center justify-between text-xs text-slate-500">
-          <span>Solar window today</span>
-          <span>Peak window around 13:30</span>
-        </div>
-        <div className="mt-4 h-24 rounded-[20px] bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.16),_transparent_38%),linear-gradient(180deg,rgba(15,23,42,0)_0%,rgba(15,23,42,0.3)_100%)] p-4">
-          <div className="relative h-full">
-            <div className="absolute inset-x-0 bottom-4 h-px bg-slate-700" />
-            <div className="absolute bottom-4 left-[8%] h-10 w-px border-l border-dashed border-slate-600" />
-            <div className="absolute bottom-4 left-[50%] h-16 w-px border-l border-dashed border-amber-400/60" />
-            <div className="absolute bottom-4 left-[84%] h-8 w-px border-l border-dashed border-slate-600" />
-            <div className="absolute bottom-14 left-[48%] rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-1 text-[11px] text-amber-200">
-              solar noon
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <HourlyWeatherStrip />
+      {weatherResult.status === 'forecast-unavailable' && (
+        <p className="mt-3 text-xs text-slate-500">Weather forecast temporarily unavailable.</p>
+      )}
     </div>
   );
 }
 
-function HourlyWeatherStrip() {
-  const weather = [
-    { time: '12pm', temp: '11°', icon: <Sun size={16} />, label: 'Clear' },
-    { time: '1pm', temp: '12°', icon: <Sun size={16} />, label: 'Bright' },
-    { time: '2pm', temp: '12°', icon: <Wind size={16} />, label: 'Breezy' },
-    { time: '3pm', temp: '11°', icon: <Sun size={16} />, label: 'Light cloud' },
-    { time: '4pm', temp: '10°', icon: <Sunset size={16} />, label: 'Cooling' },
-  ];
-
-  return (
-    <div className="mt-5 rounded-[24px] border border-slate-800 bg-[#0b1321] p-4">
-      <div className="flex items-center justify-between text-xs text-slate-500">
-        <span>Hourly weather forecast</span>
-        <span>Next 5 hours</span>
-      </div>
-      <div className="mt-4 grid grid-cols-5 gap-2">
-        {weather.map((item) => (
-          <div key={item.time} className="rounded-2xl border border-slate-800 bg-slate-950/70 px-2 py-3 text-center">
-            <p className="text-[11px] font-semibold text-slate-400">{item.time}</p>
-            <div className="mt-2 flex justify-center text-amber-300">{item.icon}</div>
-            <p className="mt-2 text-sm font-semibold text-slate-100">{item.temp}</p>
-            <p className="mt-1 text-[11px] text-slate-500">{item.label}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ForecastPanel({ hasCoordinates }: { hasCoordinates: boolean }) {
-  if (!hasCoordinates) {
+function NearTermPanel({
+  weatherResult,
+  timezone,
+}: {
+  weatherResult: LiveWeatherResult;
+  timezone: string;
+}) {
+  if (weatherResult.status === 'no-location') {
     return (
       <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
           Near term
         </p>
-        <h3 className="mt-1 text-lg font-semibold text-slate-50">Forecast held back until site context exists</h3>
+        <h3 className="mt-1 text-lg font-semibold text-slate-50">
+          Forecast held back until site context exists
+        </h3>
         <p className="mt-2 text-sm text-slate-400">
-          Weather alone can be shown later, but the more useful version combines it with daylight timing and expected solar window.
+          Weather alone can be shown later, but the more useful version combines it with daylight
+          timing and expected solar window.
         </p>
       </div>
     );
   }
 
-  const forecast = [
-    { label: 'Expected peak', value: '1pm to 2pm', tone: 'text-amber-300' },
-    { label: 'Cloud risk', value: 'Low', tone: 'text-emerald-300' },
-    { label: 'Export outlook', value: 'Likely until 4pm', tone: 'text-cyan-300' },
-  ];
+  if (weatherResult.status === 'forecast-unavailable') {
+    return (
+      <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+          Near term
+        </p>
+        <h3 className="mt-1 text-lg font-semibold text-slate-50">
+          Forecast temporarily unavailable
+        </h3>
+        <p className="mt-2 text-sm text-slate-400">
+          The weather API could not be reached. Solar context is still shown where available.
+        </p>
+      </div>
+    );
+  }
+
+  const { hourlyForecast } = weatherResult.data;
 
   return (
-    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
+    <div className="overflow-hidden rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
         Near term
       </p>
-      <h3 className="mt-1 text-lg font-semibold text-slate-50">Next few hours</h3>
-      <div className="mt-4 space-y-3">
-        {forecast.map((item) => (
-          <div key={item.label} className="flex items-baseline justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2.5">
-            <span className="text-sm text-slate-400">{item.label}</span>
-            <span className={`font-mono text-sm font-semibold ${item.tone}`}>{item.value}</span>
+      <h3 className="mt-1 text-base font-semibold text-slate-50">Next 12 hours</h3>
+      <div
+        className="mt-3 flex gap-2 overflow-x-auto pb-2 [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:h-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-track]:bg-transparent"
+        style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgb(51 65 85) transparent', touchAction: 'pan-x' }}
+        data-swipe-ignore="true"
+      >
+        {hourlyForecast.slots.map((slot) => (
+          <div
+            key={slot.hourUtc}
+            className="flex min-w-[60px] flex-col items-center gap-1.5 rounded-2xl border border-slate-800 bg-slate-950/70 px-2 py-2.5"
+          >
+            <span className="text-[10px] text-slate-400">{formatHourLabel(slot.hourUtc, timezone)}</span>
+            <span className="text-amber-300">
+              <WmoIcon code={slot.weatherCode} isDay={slot.isDay} size={16} />
+            </span>
+            <span className="text-sm font-semibold text-slate-100">{slot.temperatureCelsius}°</span>
+            {slot.precipitationMm > 0 && (
+              <span className="text-[10px] text-blue-300">{slot.precipitationMm}mm</span>
+            )}
           </div>
         ))}
       </div>
-      <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
-        Short-horizon outlook is strongest when it explains the next solar opportunity window, not just generic weather.
+    </div>
+  );
+}
+
+function OutlookPanel({ weatherResult }: { weatherResult: LiveWeatherResult }) {
+  if (weatherResult.status !== 'ok') return null;
+  const { dailyForecast } = weatherResult.data;
+  return (
+    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
+      <h3 className="text-base font-semibold text-slate-50">5-day outlook</h3>
+      <div className="mt-3 space-y-2">
+        {dailyForecast.days.map((day, i) => (
+          <div
+            key={day.localDate}
+            className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2.5 text-sm"
+          >
+            <span className="w-10 shrink-0 text-slate-300 font-medium">
+              {i === 0 ? 'Today' : formatDayLabel(day.localDate)}
+            </span>
+            <span className="text-amber-300 shrink-0">
+              <WmoIcon code={day.weatherCode} isDay={true} size={15} />
+            </span>
+            <span className="flex-1 text-xs text-slate-500 truncate">
+              {getWmoInfo(day.weatherCode).label}
+            </span>
+            {day.precipitationSumMm > 0 && (
+              <span className="text-[10px] text-blue-300 shrink-0">{day.precipitationSumMm}mm</span>
+            )}
+            <div className="flex items-center gap-1.5 font-mono shrink-0">
+              <span className="text-slate-100">{day.temperatureMaxCelsius}°</span>
+              <span className="text-slate-600">/</span>
+              <span className="text-slate-500">{day.temperatureMinCelsius}°</span>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -1016,31 +1205,26 @@ function NotesPanel({
       <h3 className="mt-1 text-lg font-semibold text-slate-50">Trust and interpretation</h3>
       <div className="mt-4 space-y-3 text-sm text-slate-300">
         <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
-          <p className="font-semibold text-slate-100">Why this feels different</p>
-          <p className="mt-1 text-slate-400">
-            The page now explains the present, the day, and the next solar window instead of stopping at four top cards and one chart.
-          </p>
-        </div>
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
           <p className="font-semibold text-slate-100">Capability gating</p>
           <p className="mt-1 text-slate-400">
             {hasTariff
-              ? 'Tariff data is present, so live value can be shown without pretending it is the primary lens.'
+              ? 'Tariff data is present, so live value is shown as a simplified daily-rate estimate.'
               : 'Tariff data is missing, so value stays as a prompt card while live energy remains fully useful.'}
           </p>
           <p className="mt-1 text-slate-400">
             {hasCoordinates
-              ? 'Coordinates allow daylight and sun-position context, but not house-relative or roof-relative claims.'
-              : 'Coordinates are absent, so the page deliberately withholds solar-context modules instead of filling space with decorative content.'}
+              ? 'Coordinates allow daylight and sun-position context.'
+              : 'Coordinates are absent, so solar-context modules show setup prompts instead.'}
           </p>
         </div>
         {(screenState === 'stale' || screenState === 'warning') && (
           <div className="rounded-2xl border border-orange-500/20 bg-orange-500/10 p-3 text-orange-100">
             <p className="font-semibold">
-              {screenState === 'stale' ? 'Stale state' : 'Suspicious-data state'}
+              {screenState === 'stale' ? 'Stale data' : 'Suspicious data'}
             </p>
             <p className="mt-1 text-orange-100/80">
-              Warnings stay calm and actionable; the page preserves context without quietly hiding uncertainty.
+              Warnings stay calm and actionable; the page preserves context without quietly hiding
+              uncertainty.
             </p>
           </div>
         )}
@@ -1055,9 +1239,10 @@ function DisconnectedState() {
       <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-rose-500/30 bg-rose-500/10 text-rose-300">
         <WifiOff size={22} />
       </div>
-      <h2 className="mt-5 text-2xl font-semibold text-slate-50">Live feed paused</h2>
+      <h2 className="mt-5 text-2xl font-semibold text-slate-50">Live feed unavailable</h2>
       <p className="mx-auto mt-2 max-w-xl text-sm text-slate-300">
-        The provider connection has stopped, so the prototype shifts focus from live interpretation to recovery. In production, this state would preserve the same hierarchy but pin reconnect as the next action.
+        No data was returned from the provider for today. This may be a temporary outage or a
+        configuration issue. The page will show live data once the provider feed resumes.
       </p>
       <div className="mt-6 flex flex-wrap justify-center gap-3">
         <button className="rounded-full bg-rose-400 px-4 py-2 text-sm font-semibold text-slate-950">
@@ -1071,31 +1256,232 @@ function DisconnectedState() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Main export
+// ---------------------------------------------------------------------------
+
 export function LiveScreen({
-  searchParams,
-}: {
-  searchParams: Promise<{ state?: string }>;
-}) {
-  const params = use(searchParams);
-  const initialState = (params.state as ScreenState) ?? 'healthy';
-  const [screenState, setScreenState] = useState<ScreenState>(initialState);
-  const [resolution, setResolution] = useState<Resolution>('5min');
+  today,
+  displayDate,
+  initialLiveTime,
+  selectedDate,
+  installationContext,
+  timezone,
+  screenState,
+  health,
+  hasTariff,
+  weatherResult,
+  hasCapacity,
+  currentMetrics,
+  minuteChartData,
+  halfHourChartData,
+  hourChartData,
+  costChartData,
+  todayTotals,
+  financialEstimate,
+}: LiveScreenProps) {
+  const hasCoordinates = weatherResult.status !== 'no-location';
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const pathname = usePathname();
+  const chartPrefsStorageKey = useMemo(() => getChartPrefsStorageKey(timezone), [timezone]);
+  const [resolution, setResolution] = useState<Resolution>('1min');
   const [viewMode, setViewMode] = useState<ViewMode>('line');
-  const [hasTariff, setHasTariff] = useState(true);
-  const [hasCoordinates, setHasCoordinates] = useState(true);
-  const [hasCapacity, setHasCapacity] = useState(true);
-  const [activeSeries, setActiveSeries] = useState<SeriesKey[]>(SERIES_ORDER);
+  const [activeSeries, setActiveSeries] = useState<SeriesKey[]>(MINUTE_DEFAULT_SERIES);
+  const [chartPrefsReady, setChartPrefsReady] = useState(false);
+  const [warningDetailsOpen, setWarningDetailsOpen] = useState(false);
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
+  const [dismissedIncidentIds, setDismissedIncidentIds] = useState<string[]>([]);
+  const [liveTime, setLiveTime] = useState(initialLiveTime);
 
-  const chartData = useMemo(() => {
-    const base = getResolutionData(resolution);
-    const stateAdjusted = applyStateToData(base, screenState);
-    return applyViewMode(stateAdjusted, viewMode);
-  }, [resolution, screenState, viewMode]);
+  // Touch state for swipe navigation
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
 
-  function toggleCapability(key: 'tariff' | 'coordinates' | 'capacity') {
-    if (key === 'tariff') setHasTariff((current) => !current);
-    if (key === 'coordinates') setHasCoordinates((current) => !current);
-    if (key === 'capacity') setHasCapacity((current) => !current);
+  const baseChartData = useMemo(() => {
+    if (resolution === '30min') return halfHourChartData;
+    if (resolution === '1hour') return hourChartData;
+    return minuteChartData;
+  }, [resolution, minuteChartData, halfHourChartData, hourChartData]);
+
+  const chartData = useMemo(
+    () => applyViewMode(baseChartData, viewMode, resolution),
+    [baseChartData, viewMode, resolution],
+  );
+  const valueChartData = useMemo(
+    () => applyCostViewMode(costChartData, viewMode),
+    [costChartData, viewMode],
+  );
+  const overallSolarCoverage =
+    todayTotals && todayTotals.consumedKwh > 0
+      ? Math.round(
+          Math.min(
+            100,
+            Math.max(
+              0,
+              ((todayTotals.consumedKwh - todayTotals.importKwh) / todayTotals.consumedKwh) * 100,
+            ),
+          ),
+        )
+      : null;
+
+  const dismissalStorageKey = useMemo(
+    () => getDismissalStorageKey(selectedDate, timezone),
+    [selectedDate, timezone],
+  );
+  const activeIncidents = useMemo(
+    () => health.incidents.filter((incident) => !dismissedIncidentIds.includes(incident.id)),
+    [dismissedIncidentIds, health.incidents],
+  );
+  const primaryActiveIncident = activeIncidents[0] ?? null;
+
+  const displayScreenState: ScreenState =
+    screenState === 'warning' && !primaryActiveIncident
+      ? (health.minutesStale ?? 0) > 30
+        ? 'stale'
+        : 'healthy'
+      : screenState;
+
+  const displayHealth = useMemo(
+    () => ({
+      ...health,
+      incidents: health.incidents,
+      primaryIncident: primaryActiveIncident,
+    }),
+    [health, primaryActiveIncident],
+  );
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(chartPrefsStorageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setResolution(isResolution(parsed?.resolution) ? parsed.resolution : '1min');
+        setViewMode(isViewMode(parsed?.viewMode) ? parsed.viewMode : 'line');
+        const series = Array.isArray(parsed?.activeSeries)
+          ? parsed.activeSeries.filter((value: string) => isSeriesKey(value))
+          : [];
+        setActiveSeries(series.length > 0 ? series : MINUTE_DEFAULT_SERIES);
+      }
+    } catch {
+      // Storage read failed — leave state at defaults already set by useState.
+    } finally {
+      setChartPrefsReady(true);
+    }
+  }, [chartPrefsStorageKey]);
+
+  useEffect(() => {
+    setActiveSeries((current) => {
+      if (current.length === 0) {
+        return resolution === '1min' ? MINUTE_DEFAULT_SERIES : SERIES_ORDER;
+      }
+
+      const next = current.filter((series) => SERIES_ORDER.includes(series));
+      return next.length > 0 ? next : resolution === '1min' ? MINUTE_DEFAULT_SERIES : SERIES_ORDER;
+    });
+  }, [resolution]);
+
+  useEffect(() => {
+    if (!chartPrefsReady) return;
+    try {
+      window.localStorage.setItem(
+        chartPrefsStorageKey,
+        JSON.stringify({
+          resolution,
+          viewMode,
+          activeSeries,
+        }),
+      );
+    } catch {
+      // Ignore storage failures and keep the UI functional in-memory.
+    }
+  }, [activeSeries, chartPrefsReady, chartPrefsStorageKey, resolution, viewMode]);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(dismissalStorageKey);
+      if (!raw) {
+        setDismissedIncidentIds([]);
+        return;
+      }
+
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setDismissedIncidentIds(parsed.filter((id): id is string => typeof id === 'string'));
+      } else {
+        setDismissedIncidentIds([]);
+      }
+    } catch {
+      setDismissedIncidentIds([]);
+    }
+  }, [dismissalStorageKey]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        dismissalStorageKey,
+        JSON.stringify(
+          dismissedIncidentIds.filter((id) =>
+            health.incidents.some((incident) => incident.id === id),
+          ),
+        ),
+      );
+    } catch {
+      // Ignore storage failures and fall back to in-memory state.
+    }
+  }, [dismissalStorageKey, dismissedIncidentIds, health.incidents]);
+
+  // Clock ticks independently of whether the user is on Live or Historical Day.
+  useEffect(() => {
+    const updateClock = () => setLiveTime(formatClockTime(new Date(), timezone));
+    updateClock();
+    const clockIntervalId = window.setInterval(updateClock, 1_000);
+    return () => window.clearInterval(clockIntervalId);
+  }, [timezone]);
+
+  // Auto-refresh every few minutes to keep the live view current.
+  useEffect(() => {
+
+    let refreshTimeoutId: number | null = null;
+
+    const clearRefreshTimer = () => {
+      if (refreshTimeoutId !== null) {
+        window.clearTimeout(refreshTimeoutId);
+        refreshTimeoutId = null;
+      }
+    };
+
+    const scheduleRefresh = () => {
+      clearRefreshTimer();
+      if (document.visibilityState !== 'visible') return;
+      refreshTimeoutId = window.setTimeout(() => {
+        router.refresh();
+        scheduleRefresh();
+      }, 60_000);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        router.refresh();
+        scheduleRefresh();
+      } else {
+        clearRefreshTimer();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    scheduleRefresh();
+
+    return () => {
+      clearRefreshTimer();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [router, timezone]);
+
+  function navigateToDate(date: string) {
+    startTransition(() => {
+      router.push(resolveNavigationTarget(date, today));
+    });
   }
 
   function toggleSeries(series: SeriesKey) {
@@ -1107,33 +1493,127 @@ export function LiveScreen({
     });
   }
 
-  const isStale = screenState === 'stale' || screenState === 'warning';
-  const isDisconnected = screenState === 'disconnected';
+  const yesterday = addDays(today, -1);
+
+  // Touch swipe handlers — swipe right navigates to yesterday
+  function handleTouchStart(e: React.TouchEvent<HTMLDivElement>) {
+    const target = e.target as Element;
+    if (e.touches.length !== 1 || shouldIgnoreSwipeTarget(target)) {
+      touchStartX.current = null;
+      touchStartY.current = null;
+      return;
+    }
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  }
+
+  function handleTouchEnd(e: React.TouchEvent<HTMLDivElement>) {
+    if (touchStartX.current === null || touchStartY.current === null) return;
+    const deltaX = e.changedTouches[0].clientX - touchStartX.current;
+    const deltaY = e.changedTouches[0].clientY - touchStartY.current;
+    touchStartX.current = null;
+    touchStartY.current = null;
+    const target = resolveLiveSwipeTarget(deltaX, deltaY, today);
+    if (!target) return;
+    startTransition(() => {
+      router.push(target);
+    });
+  }
+
+  function handleTouchCancel() {
+    touchStartX.current = null;
+    touchStartY.current = null;
+  }
+
+  const isStale = displayScreenState === 'stale' || displayScreenState === 'warning';
+  const isDisconnected = displayScreenState === 'disconnected';
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.08),_transparent_28%),linear-gradient(180deg,#050b14_0%,#0b1220_100%)] font-sans text-slate-100">
-      <PrototypeSwitcher current={screenState} onChange={setScreenState} />
+    <div
+      className={`min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.08),_transparent_28%),linear-gradient(180deg,#050b14_0%,#0b1220_100%)] font-sans text-slate-100 ${isPending ? 'cursor-wait' : ''}`}
+      style={{ touchAction: 'pan-y' }}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchCancel}
+    >
+      {isPending && (
+        <div className="fixed top-0 left-0 right-0 z-50 h-0.5 overflow-hidden">
+          <div
+            className="h-full w-full animate-shimmer"
+            style={{
+              background: 'linear-gradient(90deg, transparent 0%, #38bdf8 50%, transparent 100%)',
+              backgroundSize: '200% 100%',
+            }}
+          />
+        </div>
+      )}
       <CapabilityBar
         hasTariff={hasTariff}
         hasCoordinates={hasCoordinates}
         hasCapacity={hasCapacity}
-        onToggle={toggleCapability}
       />
-      <NavBar screenState={screenState} onHome={() => undefined} />
-      <WarningBanner screenState={screenState} onAction={() => undefined} />
+      <NavBar screenState={displayScreenState} />
+      <WarningBanner
+        screenState={displayScreenState}
+        health={displayHealth}
+        onOpenDetails={() => {
+          setSelectedIncidentId(primaryActiveIncident?.id ?? health.primaryIncident?.id ?? null);
+          setWarningDetailsOpen(true);
+        }}
+      />
 
-      <div className="border-b border-slate-800 bg-[#0c1422]/80">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <TrustBadge screenState={screenState} />
-          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-            <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5">
-              Sat 28 Mar 2026
+      <div className="sticky top-14 z-30 border-b border-slate-800 bg-[#0c1422]/80 backdrop-blur-sm">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-4 py-3 sm:px-6">
+          <TrustBadge
+            screenState={displayScreenState}
+            health={displayHealth}
+            onOpenDetails={() => {
+              setSelectedIncidentId(primaryActiveIncident?.id ?? health.primaryIncident?.id ?? null);
+              setWarningDetailsOpen(true);
+            }}
+          />
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            {/* Prev day — navigates to yesterday's history */}
+            <button
+              type="button"
+              onClick={() => navigateToDate(yesterday)}
+              title="Previous day"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-700 bg-slate-900/70 text-slate-300 hover:text-slate-100 transition-colors"
+            >
+              <ChevronLeft size={14} />
+            </button>
+
+            <DatePickerControl
+              selectedDate={selectedDate}
+              displayDate={displayDate}
+              today={today}
+              onSelectDate={navigateToDate}
+            />
+
+            {/* Next day — disabled on Live (already on today) */}
+            <button
+              type="button"
+              disabled
+              title="Already on today"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-700 bg-slate-900/70 text-slate-300 opacity-30 cursor-not-allowed"
+            >
+              <ChevronRight size={14} />
+            </button>
+
+            <span className="hidden sm:inline-flex min-w-[92px] justify-center rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5">
+              {liveTime}
             </span>
-            <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5">
-              Live now
-            </span>
-            <span className="hidden rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 sm:inline-flex">
-              Healthy window: midday solar surplus
+            <span className="hidden sm:inline-flex">
+              <UptimeBadge
+                uptimePercent={health.uptimePercent}
+                isDisconnected={isDisconnected}
+                onOpenDetails={() => {
+                  setSelectedIncidentId(
+                    primaryActiveIncident?.id ?? health.primaryIncident?.id ?? null,
+                  );
+                  setWarningDetailsOpen(true);
+                }}
+              />
             </span>
           </div>
         </div>
@@ -1144,56 +1624,63 @@ export function LiveScreen({
           <SectionHeader
             eyebrow="Now"
             title="What the system is doing right now"
-            description="The first layer stays operational: current power, freshness, and a quick interpretation of whether solar is carrying the home."
+            description="Current power, freshness, and a quick read of whether solar is carrying the home."
           />
 
           {isDisconnected ? (
             <DisconnectedState />
           ) : (
-            <>
-              <MobileMetricGrid stale={isStale} />
+            currentMetrics && (
+              <>
+                <MobileMetricGrid current={currentMetrics} stale={isStale} />
 
-              <div className="hidden gap-3 md:grid md:grid-cols-2 xl:grid-cols-4">
-                <MetricCard
-                  label="Generation"
-                  value="2,140"
-                  unit="W"
-                  caption="from panels"
-                  icon={<Zap size={16} />}
-                  accentClass="text-amber-300"
-                  stale={isStale}
-                />
-                <MetricCard
-                  label="Consumption"
-                  value="920"
-                  unit="W"
-                  caption="home using now"
-                  icon={<Home size={16} />}
-                  accentClass="text-slate-300"
-                  stale={isStale}
-                />
-                <MetricCard
-                  label="Import"
-                  value="310"
-                  unit="W"
-                  caption="from grid"
-                  icon={<ArrowDownToLine size={16} />}
-                  accentClass="text-slate-400"
-                  stale={isStale}
-                />
-                <MetricCard
-                  label="Export"
-                  value="810"
-                  unit="W"
-                  caption="to grid"
-                  icon={<ArrowUpFromLine size={16} />}
-                  accentClass="text-emerald-300"
-                  stale={isStale}
-                />
-              </div>
+                <div className="hidden gap-3 md:grid md:grid-cols-2 xl:grid-cols-4">
+                  <MetricCard
+                    label="Generation"
+                    value={formatW(currentMetrics.generatedKw)}
+                    unit="W"
+                    caption="from panels"
+                    icon={<Zap size={16} />}
+                    accentClass="text-amber-300"
+                    stale={isStale}
+                  />
+                  <MetricCard
+                    label="Consumption"
+                    value={formatW(currentMetrics.consumedKw)}
+                    unit="W"
+                    caption="home using now"
+                    icon={<Home size={16} />}
+                    accentClass="text-slate-300"
+                    stale={isStale}
+                  />
+                  <MetricCard
+                    label="Import"
+                    value={formatW(currentMetrics.importKw)}
+                    unit="W"
+                    caption="from grid"
+                    icon={<ArrowDownToLine size={16} />}
+                    accentClass="text-slate-400"
+                    stale={isStale}
+                  />
+                  <MetricCard
+                    label="Export"
+                    value={formatW(currentMetrics.exportKw)}
+                    unit="W"
+                    caption="to grid"
+                    icon={<ArrowUpFromLine size={16} />}
+                    accentClass="text-emerald-300"
+                    stale={isStale}
+                  />
+                </div>
 
-              <InsightStrip hasCapacity={hasCapacity} stale={isStale} />
-            </>
+                <InsightStrip
+                  current={currentMetrics}
+                  arrayCapacityKw={installationContext?.arrayCapacityKw ?? null}
+                  hasCapacity={hasCapacity}
+                  stale={isStale}
+                />
+              </>
+            )
           )}
         </section>
 
@@ -1203,13 +1690,15 @@ export function LiveScreen({
               <SectionHeader
                 eyebrow="Today"
                 title="What today has meant so far"
-                description="The second layer combines live trend, same-day totals, and financial interpretation without turning the page into a billing dashboard."
+                description="Live trend, same-day totals, and financial interpretation without turning the page into a billing dashboard."
               />
 
               <div className="grid gap-4 xl:grid-cols-[1.7fr_1fr]">
-                <LiveTrendChart
+                <DayTrendChart
+                  mode="live"
                   data={chartData}
-                  screenState={screenState}
+                  costData={valueChartData}
+                  screenState={displayScreenState}
                   resolution={resolution}
                   onResolutionChange={setResolution}
                   viewMode={viewMode}
@@ -1219,9 +1708,23 @@ export function LiveScreen({
                 />
 
                 <div className="space-y-4">
-                  <ValuePanel hasTariff={hasTariff} />
-                  <TodayPanel screenState={screenState} />
-                  <SolarCoveragePanel />
+                  <DayValuePanel
+                    mode="live"
+                    hasTariff={hasTariff}
+                    estimate={financialEstimate}
+                  />
+                  <DayTotalsPanel
+                    mode="live"
+                    totals={todayTotals}
+                    screenState={displayScreenState}
+                  />
+                  <SolarCoveragePanel
+                    mode="live"
+                    chartData={baseChartData}
+                    currentSolarShare={currentMetrics?.solarShare ?? 0}
+                    overallSolarCoverage={overallSolarCoverage}
+                    currentGridDraw={currentMetrics?.gridShare ?? 100}
+                  />
                 </div>
               </div>
             </section>
@@ -1230,24 +1733,42 @@ export function LiveScreen({
               <SectionHeader
                 eyebrow="Next"
                 title="What is likely to happen over the next few hours"
-                description="The final layer adds daylight, weather, and near-term solar context so the Live screen feels like a real energy platform rather than a theme-skinned inverter dashboard."
+                description="Daylight, weather, and near-term solar context — unlocked once coordinates are added."
               />
 
-              <div className="grid gap-4 xl:grid-cols-[1.15fr_1fr]">
-                <SolarContextPanel hasCoordinates={hasCoordinates} />
-                <div className="space-y-4">
-                  <ForecastPanel hasCoordinates={hasCoordinates} />
-                  <NotesPanel
-                    screenState={screenState}
-                    hasTariff={hasTariff}
-                    hasCoordinates={hasCoordinates}
-                  />
+              <div className="grid gap-4 xl:grid-cols-2">
+                <NearTermPanel weatherResult={weatherResult} timezone={timezone} />
+                <OutlookPanel weatherResult={weatherResult} />
+                <div className="xl:sticky xl:top-20 xl:self-start">
+                  <SolarContextPanel weatherResult={weatherResult} timezone={timezone} />
                 </div>
+                <NotesPanel
+                  screenState={screenState}
+                  hasTariff={hasTariff}
+                  hasCoordinates={hasCoordinates}
+                />
               </div>
             </section>
           </>
         )}
       </main>
+      <WarningDetailsModal
+        health={displayHealth}
+        open={warningDetailsOpen}
+        selectedIncidentId={selectedIncidentId}
+        dismissedIncidentIds={dismissedIncidentIds}
+        onClose={() => setWarningDetailsOpen(false)}
+        onDismiss={(incidentId) => {
+          setDismissedIncidentIds((current) =>
+            current.includes(incidentId) ? current : [...current, incidentId],
+          );
+          const nextIncident = activeIncidents.find((incident) => incident.id !== incidentId);
+          setSelectedIncidentId(nextIncident?.id ?? incidentId);
+          if (!nextIncident && activeIncidents.length <= 1) {
+            setWarningDetailsOpen(false);
+          }
+        }}
+      />
     </div>
   );
 }

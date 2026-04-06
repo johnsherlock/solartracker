@@ -12,19 +12,23 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx src/db/seed.ts",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "job:daily-summary": "tsx src/scripts/job-daily-summary.ts",
+    "job:catch-up": "tsx src/scripts/job-daily-summary.ts --catch-up"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.2.2",
     "dotenv": "^17.3.1",
     "drizzle-orm": "^0.45.1",
+    "echarts": "^6.0.0",
+    "echarts-for-react": "^3.0.6",
     "lucide-react": "^1.7.0",
     "next": "^15.3.0",
     "pg": "^8.16.3",
     "postcss": "^8.5.8",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "recharts": "^3.8.1",
+    "suncalc": "^1.9.0",
     "tailwindcss": "^4.2.2"
   },
   "devDependencies": {
@@ -32,6 +36,7 @@
     "@types/pg": "^8.15.5",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
+    "@types/suncalc": "^1.9.2",
     "drizzle-kit": "^0.31.10",
     "esbuild": "^0.27.4",
     "tsx": "^4.21.0",

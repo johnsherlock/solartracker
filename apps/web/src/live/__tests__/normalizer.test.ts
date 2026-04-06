@@ -119,23 +119,29 @@ describe('buildSummary', () => {
 
 describe('buildHealth', () => {
   const fetchedAt = '2026-03-29T10:00:00.000Z';
+  const normalDate = '2026-03-28';
 
   it('marks full day correctly', () => {
-    const health = buildHealth(makeFullDay(), fetchedAt);
+    const health = buildHealth(normalDate, makeFullDay(), fetchedAt);
     expect(health.recordCount).toBe(1440);
     expect(health.isPartialDay).toBe(false);
     expect(health.completenessRatio).toBe(1);
+    expect(health.expectedMinutes).toBe(1440);
+    expect(health.coveredMinutes).toBe(1440);
+    expect(health.uptimePercent).toBe(100);
     expect(health.hasSuspiciousReadings).toBe(false);
+    expect(health.incidents).toEqual([]);
+    expect(health.primaryIncident).toBeNull();
   });
 
   it('marks partial day when fewer than 1440 records', () => {
-    const health = buildHealth([makeMinute(0, 0)], fetchedAt);
+    const health = buildHealth(normalDate, [makeMinute(0, 0)], fetchedAt);
     expect(health.isPartialDay).toBe(true);
     expect(health.completenessRatio).toBeCloseTo(1 / 1440);
   });
 
   it('returns zero counts for empty input', () => {
-    const health = buildHealth([], fetchedAt);
+    const health = buildHealth(normalDate, [], fetchedAt);
     expect(health.recordCount).toBe(0);
     expect(health.isPartialDay).toBe(true);
     expect(health.hasSuspiciousReadings).toBe(false);
@@ -148,7 +154,7 @@ describe('buildHealth', () => {
       if (m >= 10 && m <= 14) continue; // 5-minute gap at minutes 10-14
       minutes.push(makeMinute(0, m));
     }
-    const health = buildHealth(minutes, fetchedAt);
+    const health = buildHealth(normalDate, minutes, fetchedAt);
     expect(health.hasSuspiciousReadings).toBe(false);
   });
 
@@ -158,15 +164,111 @@ describe('buildHealth', () => {
       if (m >= 10 && m <= 16) continue; // 7-minute gap
       minutes.push(makeMinute(0, m));
     }
-    const health = buildHealth(minutes, fetchedAt);
+    const health = buildHealth(normalDate, minutes, fetchedAt);
     expect(health.hasSuspiciousReadings).toBe(true);
+    expect(health.incidents).toEqual([{
+      id: 'missing-interval:10-16:7',
+      kind: 'missing-interval',
+      missingMinutes: 7,
+      gapStartsAt: '00:10',
+      gapEndsAt: '00:16',
+      message: 'Missing 7 consecutive minute readings between 00:10 and 00:16.',
+    }]);
+    expect(health.primaryIncident).toEqual(health.incidents[0]);
+  });
+
+  it('does not flag the spring-forward hour as missing in Europe/Dublin', () => {
+    const minutes: MinuteReading[] = [];
+    for (let h = 0; h < 24; h++) {
+      if (h === 1) continue;
+      for (let m = 0; m < 60; m++) {
+        minutes.push(makeMinute(h, m));
+      }
+    }
+
+    const health = buildHealth('2026-03-29', minutes, fetchedAt, 'Europe/Dublin');
+    expect(health.recordCount).toBe(1380);
+    expect(health.isPartialDay).toBe(false);
+    expect(health.completenessRatio).toBe(1);
+    expect(health.uptimePercent).toBe(100);
+    expect(health.hasSuspiciousReadings).toBe(false);
+    expect(health.incidents).toEqual([]);
+    expect(health.primaryIncident).toBeNull();
+  });
+
+  it('counts the repeated fall-back hour in expected and covered minutes', () => {
+    const minutes: MinuteReading[] = [];
+
+    for (let h = 0; h < 24; h++) {
+      for (let m = 0; m < 60; m++) {
+        minutes.push(makeMinute(h, m));
+        if (h === 1) {
+          minutes.push(makeMinute(h, m));
+        }
+      }
+    }
+
+    const health = buildHealth('2026-10-25', minutes, '2026-10-26T10:00:00.000Z', 'Europe/Dublin');
+
+    expect(health.recordCount).toBe(1500);
+    expect(health.expectedMinutes).toBe(1500);
+    expect(health.coveredMinutes).toBe(1500);
+    expect(health.uptimePercent).toBe(100);
+  });
+
+  it('does not flag a gap that only exists in future-labelled minutes for the current local day', () => {
+    const minutes: MinuteReading[] = [];
+
+    for (let m = 0; m < 60; m++) {
+      minutes.push(makeMinute(0, m));
+    }
+
+    for (let m = 0; m < 5; m++) {
+      minutes.push(makeMinute(2, m));
+    }
+
+    const health = buildHealth('2026-03-30', minutes, '2026-03-30T00:04:52.000Z', 'Europe/Dublin');
+
+    expect(health.hasSuspiciousReadings).toBe(false);
+    expect(health.incidents).toEqual([]);
+    expect(health.primaryIncident).toBeNull();
+  });
+
+  it('collects multiple suspicious incidents in chronological order', () => {
+    const minutes: MinuteReading[] = [];
+
+    for (let m = 0; m < 60; m++) {
+      if ((m >= 10 && m <= 16) || (m >= 30 && m <= 39)) continue;
+      minutes.push(makeMinute(0, m));
+    }
+
+    const health = buildHealth(normalDate, minutes, fetchedAt);
+
+    expect(health.incidents.map((incident) => incident.id)).toEqual([
+      'missing-interval:10-16:7',
+      'missing-interval:30-39:10',
+    ]);
+    expect(health.primaryIncident?.id).toBe('missing-interval:10-16:7');
+  });
+
+  it('computes current-day uptime from expected minutes so far', () => {
+    const minutes: MinuteReading[] = [];
+    for (let m = 0; m <= 4; m++) {
+      minutes.push(makeMinute(0, m));
+    }
+
+    const health = buildHealth('2026-03-30', minutes, '2026-03-30T00:09:52.000Z', 'Europe/Dublin');
+
+    expect(health.expectedMinutes).toBe(69);
+    expect(health.coveredMinutes).toBe(5);
+    expect(health.uptimePercent).toBeCloseTo(7.246376811594203);
   });
 });
 
 describe('buildDayDetail', () => {
   it('returns correct top-level shape', () => {
     const fetchedAt = '2026-03-29T10:00:00.000Z';
-    const result = buildDayDetail('2026-03-29', [], fetchedAt);
+    const result = buildDayDetail('2026-03-29', [], fetchedAt, 'Europe/Dublin');
 
     expect(result.meta.date).toBe('2026-03-29');
     expect(result.meta.timezone).toBe('Europe/Dublin');

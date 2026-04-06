@@ -22,11 +22,20 @@ export type PeriodReading = {
   selfConsumptionRatio: number;
 };
 
+export type HealthIncident = {
+  id: string;
+  kind: 'missing-interval';
+  missingMinutes: number;
+  gapStartsAt: string;
+  gapEndsAt: string;
+  message: string;
+};
+
 export type DayDetailResponse = {
   meta: {
     date: string;
     timezone: string;
-    source: 'v1-bridge';
+    source: 'v1-bridge' | 'myenergi';
     fetchedAt: string;
   };
   minuteData: MinuteReading[];
@@ -46,7 +55,12 @@ export type DayDetailResponse = {
     recordCount: number;
     isPartialDay: boolean;
     completenessRatio: number;
+    expectedMinutes: number;
+    coveredMinutes: number;
+    uptimePercent: number;
     hasSuspiciousReadings: boolean;
+    incidents: HealthIncident[];
+    primaryIncident: HealthIncident | null;
     fetchedAt: string;
   };
 };
