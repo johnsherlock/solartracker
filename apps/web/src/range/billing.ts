@@ -10,6 +10,7 @@
 
 import {
   calculateBillingFromDailySummaries,
+  fixedChargeContributionForDate,
   resolveTariffVersion,
   type TariffVersion,
   type FixedChargeVersion,
@@ -66,14 +67,16 @@ function computeDayBilling(
 
     const actualImportCost = r2(row.importKwh * tariff.dayRate * discount * vat);
     const exportCredit = r2(row.exportKwh * (tariff.exportRate ?? 0));
-    const actualNetCost = r2(actualImportCost - exportCredit);
+    const fixedCharges = fixedChargeContributionForDate(row.localDate, tariff.id, fixedChargeVersions);
+    const actualNetCost = r2(actualImportCost + fixedCharges - exportCredit);
 
     const withoutSolarImport = Math.max(
       0,
       row.importKwh + row.generatedKwh - row.exportKwh - (row.immersionDivertedKwh ?? 0),
     );
     const withoutSolarCost = r2(withoutSolarImport * tariff.dayRate * discount * vat);
-    const savings = r2(withoutSolarCost - actualNetCost);
+    const withoutSolarNetCost = r2(withoutSolarCost + fixedCharges);
+    const savings = r2(withoutSolarNetCost - actualNetCost);
 
     return { actualNetCost, savings, exportCredit };
   } catch {
@@ -101,13 +104,12 @@ function deriveHealth(
 
     if (!row) {
       missingDayDates.push(date);
-      continue;
-    }
-
-    if (row.isPartial) {
+    } else if (row.isPartial) {
       partialDays++;
     }
 
+    // Check tariff coverage for every date in the range (not just covered days)
+    // so hasTariffChange reflects the full requested period.
     if (hasTariff) {
       try {
         const version = resolveTariffVersion(tariffVersions, `${date}T12:00`);

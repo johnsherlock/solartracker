@@ -94,13 +94,15 @@ describe('computeRangeSummary — basic billing', () => {
     expect(series.map((s) => s.date)).toEqual(['2024-11-01', '2024-11-02', '2024-11-03']);
   });
 
-  it('computes billing for each series day', () => {
+  it('computes billing for each series day including fixed charges', () => {
     const { series } = computeRangeSummary(rows, allDates, [baseTariff], [standingCharge]);
     for (const day of series) {
       expect(day.billing).not.toBeNull();
-      // importCost = 5 * 0.3 * 1.09 = 1.635, exportCredit = 3 * 0.1 = 0.3
-      // actualNetCost = r2(1.635 - 0.3) = r2(1.335) = 1.34
-      expect(day.billing!.actualNetCost).toBeCloseTo(1.34, 2);
+      // importCost = r2(5 * 0.3 * 1.09) = r2(1.635) = 1.64
+      // fixedCharges = 0.50 (standing charge per day)
+      // exportCredit = r2(3 * 0.1) = 0.3
+      // actualNetCost = r2(1.64 + 0.50 - 0.3) = r2(1.84) = 1.84
+      expect(day.billing!.actualNetCost).toBeCloseTo(1.84, 2);
       expect(day.billing!.exportCredit).toBeCloseTo(0.3, 6);
     }
   });
@@ -290,6 +292,61 @@ describe('computeRangeSummary — rows outside tariff coverage', () => {
     expect(series.find((s) => s.date === '2024-11-01')!.billing).toBeNull();
     expect(series.find((s) => s.date === '2024-11-02')!.billing).toBeNull();
     expect(series.find((s) => s.date === '2024-11-03')!.billing).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeRangeSummary — tariff change detected on missing days
+// ---------------------------------------------------------------------------
+
+describe('computeRangeSummary — tariff change on missing day', () => {
+  // v1 covers 11-01 to 11-02, v2 covers 11-03 onward.
+  // Only 11-01 and 11-03 have summary rows; 11-02 (the change boundary) is missing.
+  const tariffV1: TariffVersion = {
+    ...baseTariff,
+    id: 'tariff-v1',
+    validFromLocalDate: '2024-11-01',
+    validToLocalDate: '2024-11-02',
+  };
+  const tariffV2: TariffVersion = {
+    ...baseTariff,
+    id: 'tariff-v2',
+    validFromLocalDate: '2024-11-03',
+    validToLocalDate: null,
+  };
+  const rows = [makeRow('2024-11-01'), makeRow('2024-11-03')]; // 11-02 missing
+  const allDates = allDatesInRange('2024-11-01', '2024-11-03');
+
+  it('detects hasTariffChange even when the boundary day has no summary', () => {
+    const { health } = computeRangeSummary(rows, allDates, [tariffV1, tariffV2], []);
+    expect(health.hasTariffChange).toBe(true);
+    expect(health.tariffVersionIds).toContain('tariff-v1');
+    expect(health.tariffVersionIds).toContain('tariff-v2');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// calculateBillingFromDailySummaries — withoutSolarImport clamped to zero
+// ---------------------------------------------------------------------------
+
+describe('calculateBillingFromDailySummaries — withoutSolarImport clamped', () => {
+  it('does not produce negative withoutSolarImportCost for bad data', () => {
+    // Pathological row: immersion diverted exceeds what the formula allows,
+    // which without clamping would give a negative withoutSolarImport.
+    const badRow: DailySummaryRow = {
+      localDate: '2024-11-01',
+      importKwh: 1,
+      exportKwh: 0,
+      generatedKwh: 2,
+      consumedKwh: 3,
+      immersionDivertedKwh: 100, // implausibly large — would make withoutSolarImport negative
+      immersionBoostedKwh: 0,
+      isPartial: false,
+    };
+    const allDates = allDatesInRange('2024-11-01', '2024-11-01');
+    const { summary } = computeRangeSummary([badRow], allDates, [baseTariff], []);
+    expect(summary.withoutSolar.importCost).toBeGreaterThanOrEqual(0);
+    expect(summary.withoutSolar.netCost).toBeGreaterThanOrEqual(0);
   });
 });
 

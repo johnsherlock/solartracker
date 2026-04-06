@@ -136,7 +136,7 @@ export const calculateWithoutSolarImportKwh = (reading: IntervalReading) => {
   return round(reading.importKwh + reading.generatedKwh - reading.exportKwh - immersionDiverted);
 };
 
-const fixedChargeContributionForDate = (
+export const fixedChargeContributionForDate = (
   localDate: string,
   tariffVersionId: string,
   fixedChargeVersions: FixedChargeVersion[],
@@ -244,9 +244,9 @@ export const calculateBillingFromDailySummaries = (
     exportCredit += round(day.exportKwh * (tariff.exportRate ?? 0));
     fixedCharges += fixedChargeContributionForDate(day.localDate, tariff.id, fixedChargeVersions);
 
-    const withoutSolarImport = round(
+    const withoutSolarImport = Math.max(0, round(
       day.importKwh + day.generatedKwh - day.exportKwh - day.immersionDivertedKwh,
-    );
+    ));
     withoutSolarImportCost += round(withoutSolarImport * tariff.dayRate * discount * vat);
 
     totalConsumed += day.consumedKwh;
