@@ -24,5 +24,6 @@ jobs:
           types: |-
             feat
             fix
-            chore
+            docs
+            test
           requireScope: false
