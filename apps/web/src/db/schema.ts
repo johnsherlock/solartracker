@@ -153,6 +153,10 @@ export const dailySummaries = pgTable('daily_summaries', {
   immersionBoostedKwh: numeric('immersion_boosted_kwh', { precision: 14, scale: 6 }),
   selfConsumptionRatio: numeric('self_consumption_ratio', { precision: 8, scale: 4 }),
   gridDependenceRatio: numeric('grid_dependence_ratio', { precision: 8, scale: 4 }),
+  dayImportKwh: numeric('day_import_kwh', { precision: 14, scale: 6 }),
+  nightImportKwh: numeric('night_import_kwh', { precision: 14, scale: 6 }),
+  peakImportKwh: numeric('peak_import_kwh', { precision: 14, scale: 6 }),
+  freeImportKwh: numeric('free_import_kwh', { precision: 14, scale: 6 }),
   isPartial: boolean('is_partial').notNull().default(false),
   rebuiltAt: timestamp('rebuilt_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({

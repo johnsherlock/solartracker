@@ -45,8 +45,8 @@ export type RangeSummarySection = {
   withoutSolar: RangeWithoutSolarBreakdown;
   solar: RangeSolarSummary;
   totals: RangeEnergyTotals;
-  /** Billing uses day rate for all import — time-of-use splitting is not possible from daily summaries. */
-  note: 'simplified-daily-rate';
+  /** Reflects whether banded (day/night/peak) or simplified (day rate only) billing was applied. */
+  note: 'banded-daily-rate' | 'simplified-daily-rate';
 };
 
 export type RangeSeriesDayBilling = {
@@ -65,6 +65,9 @@ export type RangeSeriesDay = {
   isPartial: boolean;
   /** null when no tariff version covers this day */
   billing: RangeSeriesDayBilling | null;
+  dayImportKwh: number | null;
+  nightImportKwh: number | null;
+  peakImportKwh: number | null;
 };
 
 export type RangeSummaryHealth = {

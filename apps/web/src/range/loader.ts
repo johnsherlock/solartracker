@@ -173,6 +173,10 @@ export type DailySummaryRow = {
   immersionDivertedKwh: number | null;
   immersionBoostedKwh: number | null;
   isPartial: boolean;
+  dayImportKwh: number | null;
+  nightImportKwh: number | null;
+  peakImportKwh: number | null;
+  freeImportKwh: number | null;
 };
 
 /**
@@ -204,5 +208,9 @@ export async function loadDailySummaryRowsForRange(
     immersionDivertedKwh: r.immersionDivertedKwh != null ? Number(r.immersionDivertedKwh) : null,
     immersionBoostedKwh: r.immersionBoostedKwh != null ? Number(r.immersionBoostedKwh) : null,
     isPartial: r.isPartial,
+    dayImportKwh: r.dayImportKwh != null ? Number(r.dayImportKwh) : null,
+    nightImportKwh: r.nightImportKwh != null ? Number(r.nightImportKwh) : null,
+    peakImportKwh: r.peakImportKwh != null ? Number(r.peakImportKwh) : null,
+    freeImportKwh: r.freeImportKwh != null ? Number(r.freeImportKwh) : null,
   }));
 }

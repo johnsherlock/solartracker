@@ -65,7 +65,16 @@ function computeDayBilling(
       ? 1 - tariff.discountValue
       : 1;
 
-    const actualImportCost = r2(row.importKwh * tariff.dayRate * discount * vat);
+    let rawImportCost: number;
+    if (row.dayImportKwh != null && row.nightImportKwh != null && row.peakImportKwh != null) {
+      const dayBand   = row.dayImportKwh  * tariff.dayRate;
+      const nightBand = row.nightImportKwh * (tariff.nightRate ?? tariff.dayRate);
+      const peakBand  = row.peakImportKwh  * (tariff.peakRate  ?? tariff.dayRate);
+      rawImportCost = (dayBand + nightBand + peakBand) * discount * vat;
+    } else {
+      rawImportCost = row.importKwh * tariff.dayRate * discount * vat;
+    }
+    const actualImportCost = r2(rawImportCost);
     const exportCredit = r2(row.exportKwh * (tariff.exportRate ?? 0));
     const fixedCharges = fixedChargeContributionForDate(row.localDate, tariff.id, fixedChargeVersions);
     const actualNetCost = r2(actualImportCost + fixedCharges - exportCredit);
@@ -74,6 +83,9 @@ function computeDayBilling(
       0,
       row.importKwh + row.generatedKwh - row.exportKwh - (row.immersionDivertedKwh ?? 0),
     );
+    // No-solar baseline always uses day rate: we cannot know how a higher
+    // counterfactual load would have split across night/peak bands, so the
+    // day rate is used as a documented, accepted simplification.
     const withoutSolarCost = r2(withoutSolarImport * tariff.dayRate * discount * vat);
     const withoutSolarNetCost = r2(withoutSolarCost + fixedCharges);
     const savings = r2(withoutSolarNetCost - actualNetCost);
@@ -181,6 +193,9 @@ export function computeRangeSummary(
         immersionDivertedKwh: null,
         isPartial: false,
         billing: null,
+        dayImportKwh: null,
+        nightImportKwh: null,
+        peakImportKwh: null,
       };
     }
 
@@ -196,6 +211,9 @@ export function computeRangeSummary(
         tariffVersions.length > 0
           ? computeDayBilling(row, tariffVersions, fixedCharges)
           : null,
+      dayImportKwh: row.dayImportKwh,
+      nightImportKwh: row.nightImportKwh,
+      peakImportKwh: row.peakImportKwh,
     };
   });
 
@@ -218,7 +236,16 @@ export function computeRangeSummary(
       generatedKwh: r.generatedKwh,
       consumedKwh: r.consumedKwh ?? 0,
       immersionDivertedKwh: r.immersionDivertedKwh ?? 0,
+      dayImportKwh: r.dayImportKwh,
+      nightImportKwh: r.nightImportKwh,
+      peakImportKwh: r.peakImportKwh,
     }));
+
+  const allBillingDaysHaveBandData =
+    summariesForBilling.length > 0 &&
+    summariesForBilling.every(
+      (s) => s.dayImportKwh != null && s.nightImportKwh != null && s.peakImportKwh != null,
+    );
 
   const billing =
     tariffVersions.length > 0 && summariesForBilling.length > 0
@@ -250,7 +277,7 @@ export function computeRangeSummary(
       consumedKwh: r2(totalConsumedKwh),
       immersionDivertedKwh: r2(totalImmersionDivertedKwh),
     },
-    note: 'simplified-daily-rate',
+    note: allBillingDaysHaveBandData ? 'banded-daily-rate' : 'simplified-daily-rate',
   };
 
   const health = deriveHealth(allDates, summaryMap, tariffVersions);

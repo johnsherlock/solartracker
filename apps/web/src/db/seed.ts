@@ -60,10 +60,23 @@ type DayInput = {
 
 const round4 = (n: number) => Math.round(n * 10000) / 10000;
 
+/**
+ * Approximate band splits for Irish household usage.
+ * Night: 23:00–08:00 (~35% of import), Peak: 17:00–19:00 (~10%), Day: remainder.
+ * Values sum exactly to importKwh.
+ */
+const bandSplit = (importKwh: number) => {
+  const night = round4(importKwh * 0.35);
+  const peak  = round4(importKwh * 0.10);
+  const day   = round4(importKwh - night - peak);
+  return { night, peak, day };
+};
+
 const buildSummaryRow = (day: DayInput) => {
   const consumed = round4(day.importKwh + day.generatedKwh - day.exportKwh - day.immersionDivertedKwh);
   const selfConsumptionRatio = consumed > 0 ? round4((consumed - day.importKwh) / consumed) : 0;
   const gridDependenceRatio  = consumed > 0 ? round4(day.importKwh / consumed) : 0;
+  const bands = bandSplit(day.importKwh);
 
   return {
     id: SUMMARY_IDS[day.localDate],
@@ -77,6 +90,10 @@ const buildSummaryRow = (day: DayInput) => {
     immersionBoostedKwh: String(day.immersionBoostedKwh),
     selfConsumptionRatio: String(selfConsumptionRatio),
     gridDependenceRatio: String(gridDependenceRatio),
+    dayImportKwh: String(bands.day),
+    nightImportKwh: String(bands.night),
+    peakImportKwh: String(bands.peak),
+    freeImportKwh: null,
     isPartial: false,
   };
 };
@@ -292,6 +309,10 @@ async function seed() {
         immersionBoostedKwh: sql`excluded.immersion_boosted_kwh`,
         selfConsumptionRatio: sql`excluded.self_consumption_ratio`,
         gridDependenceRatio: sql`excluded.grid_dependence_ratio`,
+        dayImportKwh: sql`excluded.day_import_kwh`,
+        nightImportKwh: sql`excluded.night_import_kwh`,
+        peakImportKwh: sql`excluded.peak_import_kwh`,
+        freeImportKwh: sql`excluded.free_import_kwh`,
         isPartial: sql`excluded.is_partial`,
         rebuiltAt: sql`excluded.rebuilt_at`,
       },

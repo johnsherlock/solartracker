@@ -6,6 +6,7 @@
  */
 
 import type { MinuteReading } from '../live/types';
+import { inWindow } from '../domain/billing';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -21,6 +22,17 @@ export type DailySummaryFields = {
   selfConsumptionRatio: number | null;
   gridDependenceRatio: number | null;
   isPartial: boolean;
+  dayImportKwh: number | null;
+  nightImportKwh: number | null;
+  peakImportKwh: number | null;
+  freeImportKwh: number | null;
+};
+
+export type TariffWindows = {
+  nightStartLocalTime: string;
+  nightEndLocalTime: string;
+  peakStartLocalTime?: string | null;
+  peakEndLocalTime?: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -131,10 +143,14 @@ function r6(n: number): number {
  * @param readings        MinuteReading[] for the local calendar day
  * @param expectedMinutes Expected number of minute records for that day
  *                        (use expectedMinutesForDay() to compute)
+ * @param tariffWindows   Optional tariff time windows for band classification.
+ *                        When provided, each reading is classified into
+ *                        day/night/peak bands. When absent, band fields are null.
  */
 export function deriveDailySummaryFields(
   readings: MinuteReading[],
   expectedMinutes: number,
+  tariffWindows?: TariffWindows | null,
 ): DailySummaryFields {
   let importKwh = 0;
   let exportKwh = 0;
@@ -142,6 +158,9 @@ export function deriveDailySummaryFields(
   let consumedKwh = 0;
   let immersionDivertedKwh = 0;
   let immersionBoostedKwh = 0;
+  let dayImportKwh = 0;
+  let nightImportKwh = 0;
+  let peakImportKwh = 0;
 
   for (const m of readings) {
     importKwh += m.importKwh;
@@ -150,6 +169,17 @@ export function deriveDailySummaryFields(
     consumedKwh += m.consumedKwh;
     immersionDivertedKwh += m.immersionDivertedKwh;
     immersionBoostedKwh += m.immersionBoostedKwh;
+
+    if (tariffWindows) {
+      const time = `${String(m.hour).padStart(2, '0')}:${String(m.minute).padStart(2, '0')}`;
+      if (inWindow(time, tariffWindows.peakStartLocalTime, tariffWindows.peakEndLocalTime)) {
+        peakImportKwh += m.importKwh;
+      } else if (inWindow(time, tariffWindows.nightStartLocalTime, tariffWindows.nightEndLocalTime)) {
+        nightImportKwh += m.importKwh;
+      } else {
+        dayImportKwh += m.importKwh;
+      }
+    }
   }
 
   importKwh = r6(importKwh);
@@ -167,6 +197,15 @@ export function deriveDailySummaryFields(
 
   const isPartial = readings.length < expectedMinutes;
 
+  const hasBands = tariffWindows != null;
+
+  // Compute night and peak independently, then derive day as the remainder so
+  // that dayImportKwh + nightImportKwh + peakImportKwh === importKwh exactly
+  // (avoids up to 3 µkWh of floating-point drift from independent rounding).
+  const roundedNight = hasBands ? r6(nightImportKwh) : null;
+  const roundedPeak  = hasBands ? r6(peakImportKwh)  : null;
+  const roundedDay   = hasBands ? importKwh - (roundedNight ?? 0) - (roundedPeak ?? 0) : null;
+
   return {
     importKwh,
     exportKwh,
@@ -177,5 +216,9 @@ export function deriveDailySummaryFields(
     selfConsumptionRatio,
     gridDependenceRatio,
     isPartial,
+    dayImportKwh: roundedDay,
+    nightImportKwh: roundedNight,
+    peakImportKwh: roundedPeak,
+    freeImportKwh: null,
   };
 }

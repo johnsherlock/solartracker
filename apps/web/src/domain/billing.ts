@@ -42,6 +42,9 @@ export type DailySummaryForBilling = {
   generatedKwh: number;
   consumedKwh: number;
   immersionDivertedKwh: number;
+  dayImportKwh?: number | null;
+  nightImportKwh?: number | null;
+  peakImportKwh?: number | null;
 };
 
 export type BillingPeriodResult = {
@@ -73,7 +76,7 @@ const timePart = (localDateTime: string) => localDateTime.slice(11, 16);
 
 const inDateRange = (date: string, from: string, to?: string | null) => date >= from && (!to || date <= to);
 
-const inWindow = (time: string, start?: string | null, end?: string | null) => {
+export const inWindow = (time: string, start?: string | null, end?: string | null) => {
   if (!start || !end) return false;
   if (start < end) {
     return time >= start && time < end;
@@ -215,10 +218,16 @@ export const calculateBillingPeriod = (
 /**
  * Calculate billing totals from persisted daily summary rows.
  *
- * Because daily summaries contain only daily totals (not per-interval
- * timestamped readings), time-of-use splitting (night / peak windows) is not
- * possible. The day rate is applied to all import for every day. This matches
- * the simplified-daily-rate approach used elsewhere in the app.
+ * When a row carries band breakdown fields (dayImportKwh / nightImportKwh /
+ * peakImportKwh), banded rates are applied: each band is multiplied by its
+ * respective rate before discount and VAT. When band data is absent (older
+ * rows or installations without tariff windows configured), the full import is
+ * costed at the day rate — the simplified-daily-rate fallback.
+ *
+ * The no-solar counterfactual (withoutSolarImportCost) always uses the day
+ * rate for the full hypothetical import, regardless of band data, because
+ * we cannot know how a higher counterfactual load would have split across
+ * bands. This is a documented, accepted simplification.
  */
 export const calculateBillingFromDailySummaries = (
   summaries: DailySummaryForBilling[],
@@ -240,7 +249,19 @@ export const calculateBillingFromDailySummaries = (
       ? 1 - tariff.discountValue
       : 1;
 
-    actualImportCost += round(day.importKwh * tariff.dayRate * discount * vat);
+    const hasBandData =
+      day.dayImportKwh != null &&
+      day.nightImportKwh != null &&
+      day.peakImportKwh != null;
+
+    if (hasBandData) {
+      const dayBand  = (day.dayImportKwh  ?? 0) * tariff.dayRate;
+      const nightBand = (day.nightImportKwh ?? 0) * (tariff.nightRate ?? tariff.dayRate);
+      const peakBand  = (day.peakImportKwh  ?? 0) * (tariff.peakRate  ?? tariff.dayRate);
+      actualImportCost += round((dayBand + nightBand + peakBand) * discount * vat);
+    } else {
+      actualImportCost += round(day.importKwh * tariff.dayRate * discount * vat);
+    }
     exportCredit += round(day.exportKwh * (tariff.exportRate ?? 0));
     fixedCharges += fixedChargeContributionForDate(day.localDate, tariff.id, fixedChargeVersions);
 

@@ -6,6 +6,7 @@ import {
   isAfterMidnightBuffer,
   expectedMinutesForDay,
   deriveDailySummaryFields,
+  type TariffWindows,
 } from '../derive-summary';
 
 // ---------------------------------------------------------------------------
@@ -242,5 +243,94 @@ describe('deriveDailySummaryFields', () => {
     expect(result.selfConsumptionRatio).toBeNull();
     expect(result.gridDependenceRatio).toBeNull();
     expect(result.isPartial).toBe(true);
+  });
+
+  it('returns null band fields when no tariff windows are supplied', () => {
+    const readings = [makeReading({ hour: 2, minute: 0, importKwh: 0.1 })];
+    const result = deriveDailySummaryFields(readings, 1440);
+    expect(result.dayImportKwh).toBeNull();
+    expect(result.nightImportKwh).toBeNull();
+    expect(result.peakImportKwh).toBeNull();
+    expect(result.freeImportKwh).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deriveDailySummaryFields — band classification
+// ---------------------------------------------------------------------------
+
+describe('deriveDailySummaryFields — band classification', () => {
+  const windows: TariffWindows = {
+    nightStartLocalTime: '23:00',
+    nightEndLocalTime: '08:00',
+    peakStartLocalTime: '17:00',
+    peakEndLocalTime: '19:00',
+  };
+
+  it('classifies a mid-day reading as day import', () => {
+    const readings = [makeReading({ hour: 12, minute: 0, importKwh: 1.0 })];
+    const result = deriveDailySummaryFields(readings, 1440, windows);
+    expect(result.dayImportKwh).toBeCloseTo(1.0, 6);
+    expect(result.nightImportKwh).toBeCloseTo(0, 6);
+    expect(result.peakImportKwh).toBeCloseTo(0, 6);
+  });
+
+  it('classifies a peak reading as peak import', () => {
+    const readings = [makeReading({ hour: 17, minute: 30, importKwh: 0.5 })];
+    const result = deriveDailySummaryFields(readings, 1440, windows);
+    expect(result.peakImportKwh).toBeCloseTo(0.5, 6);
+    expect(result.dayImportKwh).toBeCloseTo(0, 6);
+    expect(result.nightImportKwh).toBeCloseTo(0, 6);
+  });
+
+  it('classifies an early-morning reading in the midnight-crossing night window', () => {
+    // 02:00 is inside 23:00–08:00 (midnight-crossing)
+    const readings = [makeReading({ hour: 2, minute: 0, importKwh: 0.8 })];
+    const result = deriveDailySummaryFields(readings, 1440, windows);
+    expect(result.nightImportKwh).toBeCloseTo(0.8, 6);
+    expect(result.dayImportKwh).toBeCloseTo(0, 6);
+    expect(result.peakImportKwh).toBeCloseTo(0, 6);
+  });
+
+  it('classifies a late-night reading (23:30) in the midnight-crossing night window', () => {
+    const readings = [makeReading({ hour: 23, minute: 30, importKwh: 0.6 })];
+    const result = deriveDailySummaryFields(readings, 1440, windows);
+    expect(result.nightImportKwh).toBeCloseTo(0.6, 6);
+    expect(result.dayImportKwh).toBeCloseTo(0, 6);
+  });
+
+  it('band totals sum to total importKwh across a mixed day', () => {
+    // 6 readings spread across different bands
+    const readings = [
+      makeReading({ hour: 2, minute: 0, importKwh: 0.3 }),   // night
+      makeReading({ hour: 8, minute: 0, importKwh: 0.5 }),   // day (08:00 is end of night, exclusive)
+      makeReading({ hour: 12, minute: 0, importKwh: 0.7 }),  // day
+      makeReading({ hour: 17, minute: 0, importKwh: 0.4 }),  // peak
+      makeReading({ hour: 18, minute: 0, importKwh: 0.2 }),  // peak
+      makeReading({ hour: 23, minute: 0, importKwh: 0.1 }),  // night
+    ];
+    const result = deriveDailySummaryFields(readings, 1440, windows);
+    const bandTotal = (result.dayImportKwh ?? 0) + (result.nightImportKwh ?? 0) + (result.peakImportKwh ?? 0);
+    expect(bandTotal).toBeCloseTo(result.importKwh, 5);
+  });
+
+  it('peak takes priority over night when windows would overlap', () => {
+    // Peak is checked first in the classification logic
+    const overlappingWindows: TariffWindows = {
+      nightStartLocalTime: '16:00',
+      nightEndLocalTime: '20:00',
+      peakStartLocalTime: '17:00',
+      peakEndLocalTime: '19:00',
+    };
+    const readings = [makeReading({ hour: 17, minute: 30, importKwh: 1.0 })];
+    const result = deriveDailySummaryFields(readings, 1440, overlappingWindows);
+    expect(result.peakImportKwh).toBeCloseTo(1.0, 6);
+    expect(result.nightImportKwh).toBeCloseTo(0, 6);
+  });
+
+  it('freeImportKwh is always null (deferred)', () => {
+    const readings = [makeReading({ hour: 12, minute: 0, importKwh: 1.0 })];
+    const result = deriveDailySummaryFields(readings, 1440, windows);
+    expect(result.freeImportKwh).toBeNull();
   });
 });

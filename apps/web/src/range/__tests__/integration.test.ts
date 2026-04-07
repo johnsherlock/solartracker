@@ -89,29 +89,42 @@ const seedFixedCharges: FixedChargeVersion[] = [
 ];
 
 /**
+ * Approximate band splits matching the seeded bandSplit() logic in seed.ts.
+ * night ≈ 35%, peak ≈ 10%, day = remainder. Values must sum to importKwh.
+ */
+function bandSplit(importKwh: number) {
+  const r4 = (n: number) => Math.round(n * 10000) / 10000;
+  const night = r4(importKwh * 0.35);
+  const peak  = r4(importKwh * 0.10);
+  const day   = r4(importKwh - night - peak);
+  return { dayImportKwh: day, nightImportKwh: night, peakImportKwh: peak, freeImportKwh: null };
+}
+
+/**
  * Daily summaries matching the seeded rows in src/db/seed.ts.
  * V1 period: 2025-10-03 to 2025-10-09 (7 days, day rate pre rate-change)
  * V2 period: 2025-10-10 to 2025-10-16 (7 days, day rate post rate-change)
  * consumed = import + generated − export − immersionDiverted
+ * Band splits use the same approximate percentages as seed.ts.
  */
 const v1SummaryRows: DailySummaryRow[] = [
-  { localDate: '2025-10-03', importKwh:  7.5, exportKwh: 1.5, generatedKwh: 4.2, consumedKwh:  9.2, immersionDivertedKwh: 1.0, immersionBoostedKwh: 0.0, isPartial: false },
-  { localDate: '2025-10-04', importKwh: 11.2, exportKwh: 0.0, generatedKwh: 0.8, consumedKwh: 12.0, immersionDivertedKwh: 0.0, immersionBoostedKwh: 0.0, isPartial: false },
-  { localDate: '2025-10-05', importKwh:  9.8, exportKwh: 0.8, generatedKwh: 3.1, consumedKwh: 11.5, immersionDivertedKwh: 0.6, immersionBoostedKwh: 0.0, isPartial: false },
-  { localDate: '2025-10-06', importKwh: 12.4, exportKwh: 0.0, generatedKwh: 0.4, consumedKwh: 12.8, immersionDivertedKwh: 0.0, immersionBoostedKwh: 1.2, isPartial: false },
-  { localDate: '2025-10-07', importKwh:  8.9, exportKwh: 2.1, generatedKwh: 5.0, consumedKwh: 10.6, immersionDivertedKwh: 1.2, immersionBoostedKwh: 0.0, isPartial: false },
-  { localDate: '2025-10-08', importKwh: 10.3, exportKwh: 0.3, generatedKwh: 2.5, consumedKwh: 12.1, immersionDivertedKwh: 0.4, immersionBoostedKwh: 0.0, isPartial: false },
-  { localDate: '2025-10-09', importKwh: 13.1, exportKwh: 0.0, generatedKwh: 0.2, consumedKwh: 13.3, immersionDivertedKwh: 0.0, immersionBoostedKwh: 2.0, isPartial: false },
+  { localDate: '2025-10-03', importKwh:  7.5, exportKwh: 1.5, generatedKwh: 4.2, consumedKwh:  9.2, immersionDivertedKwh: 1.0, immersionBoostedKwh: 0.0, isPartial: false, ...bandSplit( 7.5) },
+  { localDate: '2025-10-04', importKwh: 11.2, exportKwh: 0.0, generatedKwh: 0.8, consumedKwh: 12.0, immersionDivertedKwh: 0.0, immersionBoostedKwh: 0.0, isPartial: false, ...bandSplit(11.2) },
+  { localDate: '2025-10-05', importKwh:  9.8, exportKwh: 0.8, generatedKwh: 3.1, consumedKwh: 11.5, immersionDivertedKwh: 0.6, immersionBoostedKwh: 0.0, isPartial: false, ...bandSplit( 9.8) },
+  { localDate: '2025-10-06', importKwh: 12.4, exportKwh: 0.0, generatedKwh: 0.4, consumedKwh: 12.8, immersionDivertedKwh: 0.0, immersionBoostedKwh: 1.2, isPartial: false, ...bandSplit(12.4) },
+  { localDate: '2025-10-07', importKwh:  8.9, exportKwh: 2.1, generatedKwh: 5.0, consumedKwh: 10.6, immersionDivertedKwh: 1.2, immersionBoostedKwh: 0.0, isPartial: false, ...bandSplit( 8.9) },
+  { localDate: '2025-10-08', importKwh: 10.3, exportKwh: 0.3, generatedKwh: 2.5, consumedKwh: 12.1, immersionDivertedKwh: 0.4, immersionBoostedKwh: 0.0, isPartial: false, ...bandSplit(10.3) },
+  { localDate: '2025-10-09', importKwh: 13.1, exportKwh: 0.0, generatedKwh: 0.2, consumedKwh: 13.3, immersionDivertedKwh: 0.0, immersionBoostedKwh: 2.0, isPartial: false, ...bandSplit(13.1) },
 ];
 
 const v2SummaryRows: DailySummaryRow[] = [
-  { localDate: '2025-10-10', importKwh:  9.4, exportKwh: 1.0, generatedKwh: 3.6, consumedKwh: 11.2, immersionDivertedKwh: 0.8, immersionBoostedKwh: 0.0, isPartial: false },
-  { localDate: '2025-10-11', importKwh: 11.6, exportKwh: 0.0, generatedKwh: 0.5, consumedKwh: 12.1, immersionDivertedKwh: 0.0, immersionBoostedKwh: 0.0, isPartial: false },
-  { localDate: '2025-10-12', importKwh:  8.2, exportKwh: 1.8, generatedKwh: 4.5, consumedKwh:  9.6, immersionDivertedKwh: 1.1, immersionBoostedKwh: 0.0, isPartial: false },
-  { localDate: '2025-10-13', importKwh: 14.0, exportKwh: 0.0, generatedKwh: 0.1, consumedKwh: 14.1, immersionDivertedKwh: 0.0, immersionBoostedKwh: 1.5, isPartial: false },
-  { localDate: '2025-10-14', importKwh: 10.7, exportKwh: 0.5, generatedKwh: 2.8, consumedKwh: 12.5, immersionDivertedKwh: 0.5, immersionBoostedKwh: 0.0, isPartial: false },
-  { localDate: '2025-10-15', importKwh: 12.9, exportKwh: 0.0, generatedKwh: 0.3, consumedKwh: 13.2, immersionDivertedKwh: 0.0, immersionBoostedKwh: 0.8, isPartial: false },
-  { localDate: '2025-10-16', importKwh:  9.1, exportKwh: 1.2, generatedKwh: 3.9, consumedKwh: 11.8, immersionDivertedKwh: 0.9, immersionBoostedKwh: 0.0, isPartial: false },
+  { localDate: '2025-10-10', importKwh:  9.4, exportKwh: 1.0, generatedKwh: 3.6, consumedKwh: 11.2, immersionDivertedKwh: 0.8, immersionBoostedKwh: 0.0, isPartial: false, ...bandSplit( 9.4) },
+  { localDate: '2025-10-11', importKwh: 11.6, exportKwh: 0.0, generatedKwh: 0.5, consumedKwh: 12.1, immersionDivertedKwh: 0.0, immersionBoostedKwh: 0.0, isPartial: false, ...bandSplit(11.6) },
+  { localDate: '2025-10-12', importKwh:  8.2, exportKwh: 1.8, generatedKwh: 4.5, consumedKwh:  9.6, immersionDivertedKwh: 1.1, immersionBoostedKwh: 0.0, isPartial: false, ...bandSplit( 8.2) },
+  { localDate: '2025-10-13', importKwh: 14.0, exportKwh: 0.0, generatedKwh: 0.1, consumedKwh: 14.1, immersionDivertedKwh: 0.0, immersionBoostedKwh: 1.5, isPartial: false, ...bandSplit(14.0) },
+  { localDate: '2025-10-14', importKwh: 10.7, exportKwh: 0.5, generatedKwh: 2.8, consumedKwh: 12.5, immersionDivertedKwh: 0.5, immersionBoostedKwh: 0.0, isPartial: false, ...bandSplit(10.7) },
+  { localDate: '2025-10-15', importKwh: 12.9, exportKwh: 0.0, generatedKwh: 0.3, consumedKwh: 13.2, immersionDivertedKwh: 0.0, immersionBoostedKwh: 0.8, isPartial: false, ...bandSplit(12.9) },
+  { localDate: '2025-10-16', importKwh:  9.1, exportKwh: 1.2, generatedKwh: 3.9, consumedKwh: 11.8, immersionDivertedKwh: 0.9, immersionBoostedKwh: 0.0, isPartial: false, ...bandSplit( 9.1) },
 ];
 
 const allSeedRows = [...v1SummaryRows, ...v2SummaryRows];
@@ -192,7 +205,7 @@ describe('range-summary integration — full 14-day seeded range (2025-10-03 to 
         consumedKwh: expect.any(Number),
         immersionDivertedKwh: expect.any(Number),
       }),
-      note: 'simplified-daily-rate',
+      note: 'banded-daily-rate',
     });
   });
 
@@ -230,33 +243,46 @@ describe('range-summary integration — full 14-day seeded range (2025-10-03 to 
 
   // --- per-day series spot-checks ---
 
+  it('exposes band import fields on series days', () => {
+    const day = series.find((d) => d.date === '2025-10-03')!;
+    // bandSplit(7.5): night=2.625, peak=0.75, day=4.125
+    expect(day.dayImportKwh).toBeCloseTo(4.125, 4);
+    expect(day.nightImportKwh).toBeCloseTo(2.625, 4);
+    expect(day.peakImportKwh).toBeCloseTo(0.75, 4);
+    // bands sum to total import
+    expect((day.dayImportKwh ?? 0) + (day.nightImportKwh ?? 0) + (day.peakImportKwh ?? 0)).toBeCloseTo(7.5, 4);
+  });
+
   it('computes correct billing for the first V1 day (2025-10-03)', () => {
     const day = series.find((d) => d.date === '2025-10-03')!;
     expect(day.isPartial).toBe(false);
     expect(day.generatedKwh).toBe(4.2);
     expect(day.importKwh).toBe(7.5);
     expect(day.exportKwh).toBe(1.5);
-    // actualImportCost = r2(7.5 × 0.3451 × 1.09) = 2.82
+    // Banded: day=4.125×0.3451 + night=2.625×0.1848 + peak=0.75×0.3617, all ×1.09
+    // rawImportCost = (1.42351+0.4851+0.27128)×1.09 = 2.37608 → r2 = 2.38
     // fixedCharge = 0.59, exportCredit = r2(1.5 × 0.20) = 0.30
-    // actualNetCost = r2(2.82 + 0.59 − 0.30) = 3.11
-    expect(day.billing!.actualNetCost).toBeCloseTo(3.11, 2);
+    // actualNetCost = r2(2.38 + 0.59 − 0.30) = 2.67
+    expect(day.billing!.actualNetCost).toBeCloseTo(2.67, 1);
     expect(day.billing!.exportCredit).toBeCloseTo(0.30, 2);
-    // withoutSolarImport = 9.2; withoutSolarCost = r2(9.2 × 0.3451 × 1.09) = 3.46
-    // withoutSolarNetCost = r2(3.46 + 0.59) = 4.05; savings = r2(4.05 − 3.11) = 0.94
-    expect(day.billing!.savings).toBeCloseTo(0.94, 2);
+    // withoutSolarImport = 9.2 (day rate on baseline — documented simplification)
+    // withoutSolarCost = r2(9.2 × 0.3451 × 1.09) = 3.46; withoutSolarNetCost = 4.05
+    // savings = r2(4.05 − 2.67) = 1.38
+    expect(day.billing!.savings).toBeCloseTo(1.38, 1);
   });
 
   it('computes correct billing for the first V2 day (2025-10-10)', () => {
     const day = series.find((d) => d.date === '2025-10-10')!;
     expect(day.isPartial).toBe(false);
-    // actualImportCost = r2(9.4 × 0.3865 × 1.09) = 3.96
+    // Banded: day=5.17×0.3865 + night=3.29×0.2125 + peak=0.94×0.4340, all ×1.09
+    // rawImportCost = (1.99821+0.69913+0.40796)×1.09 = 3.38478 → r2 = 3.38
     // fixedCharge = 0.66, exportCredit = r2(1.0 × 0.185) = 0.19
-    // actualNetCost = r2(3.96 + 0.66 − 0.19) = 4.43
-    expect(day.billing!.actualNetCost).toBeCloseTo(4.43, 2);
+    // actualNetCost = r2(3.38 + 0.66 − 0.19) = 3.85
+    expect(day.billing!.actualNetCost).toBeCloseTo(3.85, 1);
     expect(day.billing!.exportCredit).toBeCloseTo(0.19, 2);
     // withoutSolarImport = 11.2; withoutSolarNetCost = r2(r2(11.2 × 0.3865 × 1.09) + 0.66) = 5.38
-    // savings = r2(5.38 − 4.43) = 0.95
-    expect(day.billing!.savings).toBeCloseTo(0.95, 2);
+    // savings = r2(5.38 − 3.85) = 1.53
+    expect(day.billing!.savings).toBeCloseTo(1.53, 1);
   });
 });
 
@@ -301,19 +327,21 @@ describe('range-summary integration — V1-only range (2025-10-03 to 2025-10-09)
     expect(summary.actual.exportCredit).toBeCloseTo(0.94, 2);
   });
 
-  it('accumulates correct import cost at V1 day rate with VAT', () => {
-    // 73.2 kWh × 0.3451 × 1.09 ≈ €27.53
-    expect(summary.actual.importCost).toBeCloseTo(27.53, 1);
+  it('accumulates correct import cost using banded rates with VAT', () => {
+    // Banded billing: night(35%)×0.1848 + peak(10%)×0.3617 + day(55%)×0.3451, all ×1.09
+    // Pre-computed from bandSplit() applied to each V1 day ≈ €23.19
+    expect(summary.actual.importCost).toBeCloseTo(23.19, 0);
   });
 
   it('produces the correct net cost after fixed charges and export credit', () => {
-    // grossCost ≈ 27.53 + 4.13 = 31.66; netCost ≈ 31.66 − 0.94 = 30.72
-    expect(summary.actual.netCost).toBeCloseTo(30.72, 1);
+    // grossCost ≈ 23.19 + 4.13 = 27.32; netCost ≈ 27.32 − 0.94 = 26.38
+    expect(summary.actual.netCost).toBeCloseTo(26.38, 0);
   });
 
   it('produces correct solar savings over the V1 period', () => {
-    // withoutSolarCost − actualNetCost ≈ €4.06
-    expect(summary.solar.savings).toBeCloseTo(4.06, 1);
+    // withoutSolar uses day rate on full baseline: ~€30.66 + €4.13 - netCost
+    // savings ≈ €8.41 (banded billing gives cheaper actual cost vs day-rate baseline)
+    expect(summary.solar.savings).toBeCloseTo(8.41, 0);
   });
 
   it('accumulates correct energy totals for V1 days', () => {

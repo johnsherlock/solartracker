@@ -44,6 +44,10 @@ function makeRow(localDate: string, overrides?: Partial<DailySummaryRow>): Daily
     immersionDivertedKwh: 0,
     immersionBoostedKwh: 0,
     isPartial: false,
+    dayImportKwh: null,
+    nightImportKwh: null,
+    peakImportKwh: null,
+    freeImportKwh: null,
     ...overrides,
   };
 }
@@ -118,9 +122,39 @@ describe('computeRangeSummary — basic billing', () => {
     expect(summary.actual.fixedCharges).toBeCloseTo(1.5, 5);
   });
 
-  it('returns simplified-daily-rate note', () => {
+  it('returns simplified-daily-rate note when rows have no band data', () => {
     const { summary } = computeRangeSummary(rows, allDates, [baseTariff], [standingCharge]);
     expect(summary.note).toBe('simplified-daily-rate');
+  });
+
+  it('returns banded-daily-rate note when all rows have band data', () => {
+    const bandedRows = rows.map((r) => ({
+      ...r,
+      dayImportKwh: 2.75,
+      nightImportKwh: 1.75,
+      peakImportKwh: 0.5,
+      freeImportKwh: null,
+    }));
+    const { summary } = computeRangeSummary(bandedRows, allDates, [baseTariff], [standingCharge]);
+    expect(summary.note).toBe('banded-daily-rate');
+  });
+
+  it('uses banded rates when band data is present and tariff has night/peak rates', () => {
+    const bandedTariff = {
+      ...baseTariff,
+      nightRate: 0.1,
+      peakRate: 0.4,
+      nightStartLocalTime: '23:00',
+      nightEndLocalTime: '08:00',
+      peakStartLocalTime: '17:00',
+      peakEndLocalTime: '19:00',
+    };
+    // importKwh=5: day=2.75, night=1.75, peak=0.5 — bands sum to 5
+    const bandedRow = makeRow('2024-11-01', { dayImportKwh: 2.75, nightImportKwh: 1.75, peakImportKwh: 0.5 });
+    const { summary } = computeRangeSummary([bandedRow], allDatesInRange('2024-11-01', '2024-11-01'), [bandedTariff], []);
+    // banded: (2.75×0.3 + 1.75×0.1 + 0.5×0.4) × 1.09 = (0.825+0.175+0.2) × 1.09 = 1.2 × 1.09 = 1.308
+    // simplified would be: 5 × 0.3 × 1.09 = 1.635
+    expect(summary.actual.importCost).toBeCloseTo(1.308, 2);
   });
 });
 
@@ -342,6 +376,10 @@ describe('calculateBillingFromDailySummaries — withoutSolarImport clamped', ()
       immersionDivertedKwh: 100, // implausibly large — would make withoutSolarImport negative
       immersionBoostedKwh: 0,
       isPartial: false,
+      dayImportKwh: null,
+      nightImportKwh: null,
+      peakImportKwh: null,
+      freeImportKwh: null,
     };
     const allDates = allDatesInRange('2024-11-01', '2024-11-01');
     const { summary } = computeRangeSummary([badRow], allDates, [baseTariff], []);

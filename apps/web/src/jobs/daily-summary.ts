@@ -10,13 +10,15 @@
  * one daily_summaries row per installation + local date.
  */
 
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lte, or } from 'drizzle-orm';
 import { db } from '../db/client';
 import {
   installations,
   providerConnections,
   dailySummaries,
   jobRuns,
+  tariffPlans,
+  tariffPlanVersions,
 } from '../db/schema';
 import { fetchDayRecords } from '../providers/myenergi/client';
 import { normaliseEddiRecords } from '../providers/myenergi/adapter';
@@ -26,6 +28,7 @@ import {
   isAfterMidnightBuffer,
   expectedMinutesForDay,
   deriveDailySummaryFields,
+  type TariffWindows,
 } from './derive-summary';
 
 // ---------------------------------------------------------------------------
@@ -83,6 +86,59 @@ async function loadActiveInstallations(): Promise<ActiveInstallation[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Tariff window loader
+// ---------------------------------------------------------------------------
+
+async function loadTariffWindowsForDate(
+  installationId: string,
+  localDate: string,
+): Promise<TariffWindows | null> {
+  const planRows = await db
+    .select({ id: tariffPlans.id })
+    .from(tariffPlans)
+    .where(eq(tariffPlans.installationId, installationId));
+
+  if (planRows.length === 0) return null;
+
+  const planIds = planRows.map((p) => p.id);
+
+  const versionRows = await db
+    .select({
+      nightStartLocalTime: tariffPlanVersions.nightStartLocalTime,
+      nightEndLocalTime: tariffPlanVersions.nightEndLocalTime,
+      peakStartLocalTime: tariffPlanVersions.peakStartLocalTime,
+      peakEndLocalTime: tariffPlanVersions.peakEndLocalTime,
+    })
+    .from(tariffPlanVersions)
+    .where(
+      and(
+        planIds.length === 1
+          ? eq(tariffPlanVersions.tariffPlanId, planIds[0])
+          : inArray(tariffPlanVersions.tariffPlanId, planIds),
+        lte(tariffPlanVersions.validFromLocalDate, localDate),
+        or(
+          isNull(tariffPlanVersions.validToLocalDate),
+          gte(tariffPlanVersions.validToLocalDate, localDate),
+        ),
+      ),
+    )
+    .orderBy(desc(tariffPlanVersions.validFromLocalDate))
+    .limit(1);
+
+  if (versionRows.length === 0) return null;
+
+  const v = versionRows[0];
+  if (!v.nightStartLocalTime || !v.nightEndLocalTime) return null;
+
+  return {
+    nightStartLocalTime: v.nightStartLocalTime,
+    nightEndLocalTime: v.nightEndLocalTime,
+    peakStartLocalTime: v.peakStartLocalTime ?? null,
+    peakEndLocalTime: v.peakEndLocalTime ?? null,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Upsert
 // ---------------------------------------------------------------------------
 
@@ -106,6 +162,10 @@ async function upsertDailySummary(
       fields.selfConsumptionRatio != null ? String(fields.selfConsumptionRatio) : null,
     gridDependenceRatio:
       fields.gridDependenceRatio != null ? String(fields.gridDependenceRatio) : null,
+    dayImportKwh: fields.dayImportKwh != null ? String(fields.dayImportKwh) : null,
+    nightImportKwh: fields.nightImportKwh != null ? String(fields.nightImportKwh) : null,
+    peakImportKwh: fields.peakImportKwh != null ? String(fields.peakImportKwh) : null,
+    freeImportKwh: fields.freeImportKwh != null ? String(fields.freeImportKwh) : null,
     isPartial: fields.isPartial,
     rebuiltAt: now,
   };
@@ -124,6 +184,10 @@ async function upsertDailySummary(
         immersionBoostedKwh: values.immersionBoostedKwh,
         selfConsumptionRatio: values.selfConsumptionRatio,
         gridDependenceRatio: values.gridDependenceRatio,
+        dayImportKwh: values.dayImportKwh,
+        nightImportKwh: values.nightImportKwh,
+        peakImportKwh: values.peakImportKwh,
+        freeImportKwh: values.freeImportKwh,
         isPartial: values.isPartial,
         rebuiltAt: values.rebuiltAt,
       },
@@ -167,7 +231,8 @@ async function summariseInstallation(
 
   const readings = normaliseEddiRecords(fetchResult.records, targetDate, inst.timezone);
   const expected = expectedMinutesForDay(targetDate, inst.timezone);
-  const fields = deriveDailySummaryFields(readings, expected);
+  const tariffWindows = await loadTariffWindowsForDate(inst.installationId, targetDate);
+  const fields = deriveDailySummaryFields(readings, expected, tariffWindows);
 
   await upsertDailySummary(inst.installationId, targetDate, fields);
 
