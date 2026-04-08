@@ -57,6 +57,8 @@ export type RangeSeriesDayBilling = {
 
 export type RangeSeriesDay = {
   date: string;              // YYYY-MM-DD
+  /** true when a persisted daily summary row exists for this date; false for placeholder gaps */
+  hasSummary: boolean;
   generatedKwh: number;
   importKwh: number;
   exportKwh: number;

@@ -34,6 +34,24 @@ export default function HomePage() {
           >
             Live screen prototype →
           </Link>
+          <Link
+            href="/range"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '10px 18px',
+              background: '#3730a3',
+              color: '#fff',
+              borderRadius: '10px',
+              fontFamily: 'system-ui, sans-serif',
+              fontSize: '0.92rem',
+              fontWeight: 600,
+              textDecoration: 'none',
+            }}
+          >
+            Range History →
+          </Link>
         </div>
       </div>
     </main>

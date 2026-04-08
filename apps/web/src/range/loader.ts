@@ -43,6 +43,7 @@ export type RangeInstallationContext = {
   name: string;
   timezone: string;
   currency: string;
+  financeMode: string | null;
 };
 
 export async function loadRangeInstallationContext(
@@ -62,6 +63,7 @@ export async function loadRangeInstallationContext(
     name: row.name,
     timezone: row.timezone,
     currency: row.currencyCode,
+    financeMode: row.financeMode,
   };
 }
 

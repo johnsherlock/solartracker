@@ -186,6 +186,7 @@ export function computeRangeSummary(
     if (!row) {
       return {
         date,
+        hasSummary: false,
         generatedKwh: 0,
         importKwh: 0,
         exportKwh: 0,
@@ -201,6 +202,7 @@ export function computeRangeSummary(
 
     return {
       date,
+      hasSummary: true,
       generatedKwh: row.generatedKwh,
       importKwh: row.importKwh,
       exportKwh: row.exportKwh,
