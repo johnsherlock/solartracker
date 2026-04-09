@@ -1,5 +1,5 @@
 /**
- * ECharts option builders for Range History energy charts.
+ * ECharts option builders for Range History energy and financial charts.
  *
  * Keeping these outside the React components makes the chart config easy to
  * read, test, and adjust in isolation.
@@ -351,5 +351,208 @@ export function buildPerDayBarOption(series: RangeSeriesDay[], hasBandData: bool
       nameTextStyle: { color: '#475569', fontSize: 10 },
     },
     series: [...importSeries, ...genSeries],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Chart 3 — Per-day cost histogram
+// ---------------------------------------------------------------------------
+
+const ACTUAL_COST_COLOR = '#818cf8';    // indigo-400
+const WITHOUT_SOLAR_COLOR = '#475569'; // slate-600
+const EXPORT_CREDIT_COLOR = '#34d399'; // emerald-400
+
+/**
+ * Build an ECharts option for the per-day cost histogram.
+ *
+ * Shows actual net cost vs without-solar net cost per day, with export credit
+ * as a third series. Days with no tariff (billing === null) render a zero bar.
+ */
+export function buildCostHistogramOption(series: RangeSeriesDay[]) {
+  const dates = series.map((d) => shortDate(d.date));
+
+  function fmt(n: number): string {
+    return `€${n.toFixed(2)}`;
+  }
+
+  const actualData = series.map((d) => {
+    if (!d.hasSummary || !d.billing) return null;
+    return round2(d.billing.actualNetCost);
+  });
+
+  const withoutSolarData = series.map((d) => {
+    if (!d.hasSummary || !d.billing) return null;
+    return round2(d.billing.actualNetCost + d.billing.savings);
+  });
+
+  const exportData = series.map((d) => {
+    if (!d.hasSummary || !d.billing) return null;
+    return round2(d.billing.exportCredit);
+  });
+
+  return {
+    backgroundColor: 'transparent',
+    grid: { ...GRID, bottom: 60 },
+    toolbox: TOOLBOX,
+    dataZoom: DATA_ZOOM,
+    tooltip: {
+      ...TOOLTIP_BASE,
+      trigger: 'axis' as const,
+      formatter(params: { name: string; seriesName: string; value: number | null; color: string }[]) {
+        const name = params[0]?.name ?? '';
+        const find = (n: string) => params.find((p) => p.seriesName === n);
+        const actual = find('Actual cost');
+        const withoutSolar = find('Without solar');
+        const exportCredit = find('Export credit');
+
+        if (!actual?.value && !withoutSolar?.value) {
+          return `<div style="font-size:11px;color:#94a3b8;margin-bottom:4px">${name}</div><span style="color:#475569;font-size:11px">No tariff data</span>`;
+        }
+
+        const savings = (withoutSolar?.value ?? 0) - (actual?.value ?? 0);
+        const dot = (c: string) => `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c};margin-right:5px;"></span>`;
+
+        return [
+          `<div style="font-size:11px;color:#94a3b8;margin-bottom:4px">${name}</div>`,
+          actual ? `${dot(actual.color)}Actual: <b>${fmt(actual.value!)}</b>` : '',
+          withoutSolar ? `${dot(withoutSolar.color)}Without solar: <b>${fmt(withoutSolar.value!)}</b>` : '',
+          savings > 0 ? `<span style="color:#a5b4fc;font-size:11px">Solar saved ${fmt(savings)}</span>` : '',
+          exportCredit?.value ? `${dot(exportCredit.color)}Export credit: <b>${fmt(exportCredit.value)}</b>` : '',
+        ].filter(Boolean).join('<br>');
+      },
+    },
+    legend: {
+      top: 0,
+      right: 0,
+      orient: 'horizontal' as const,
+      itemWidth: 12,
+      itemHeight: 8,
+      itemGap: 12,
+      textStyle: { color: '#94a3b8', fontSize: 10 },
+    },
+    xAxis: {
+      type: 'category' as const,
+      data: dates,
+      axisLabel: { ...AXIS_LABEL, interval: Math.max(0, Math.floor(series.length / 8) - 1) },
+      axisLine: AXIS_LINE,
+      axisTick: AXIS_TICK,
+    },
+    yAxis: {
+      type: 'value' as const,
+      axisLabel: { ...AXIS_LABEL, formatter: (v: number) => `€${v}` },
+      axisLine: AXIS_LINE,
+      axisTick: AXIS_TICK,
+      splitLine: SPLIT_LINE,
+      name: '€',
+      nameTextStyle: { color: '#475569', fontSize: 10 },
+    },
+    series: [
+      {
+        name: 'Without solar',
+        type: 'bar',
+        data: withoutSolarData,
+        itemStyle: { color: WITHOUT_SOLAR_COLOR, borderRadius: [3, 3, 0, 0] },
+        barMaxWidth: 18,
+      },
+      {
+        name: 'Actual cost',
+        type: 'bar',
+        data: actualData,
+        itemStyle: { color: ACTUAL_COST_COLOR, borderRadius: [3, 3, 0, 0] },
+        barMaxWidth: 18,
+      },
+      {
+        name: 'Export credit',
+        type: 'bar',
+        data: exportData,
+        itemStyle: { color: EXPORT_CREDIT_COLOR, borderRadius: [3, 3, 0, 0] },
+        barMaxWidth: 18,
+      },
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Chart 4 — Period cost breakdown donut
+// ---------------------------------------------------------------------------
+
+export type PeriodCostTotals = {
+  importCost: number;
+  fixedCharges: number;
+  exportCredit: number;
+  savings: number;
+};
+
+const DONUT_IMPORT_COLOR = '#818cf8';   // indigo-400
+const DONUT_FIXED_COLOR = '#94a3b8';    // slate-400
+const DONUT_EXPORT_COLOR = '#34d399';   // emerald-400
+const DONUT_SAVINGS_COLOR = '#a5b4fc';  // indigo-300
+const DONUT_FREE_COLOR = '#1e293b';     // slate-800 (inactive placeholder)
+
+/**
+ * Build an ECharts option for the period cost breakdown donut chart.
+ */
+export function buildPeriodCostDonutOption(totals: PeriodCostTotals) {
+  const { importCost, fixedCharges, exportCredit, savings } = totals;
+
+  const fmt = (n: number) => `€${n.toFixed(2)}`;
+
+  const data = [
+    { value: Math.max(0, importCost), name: 'Import cost', itemStyle: { color: DONUT_IMPORT_COLOR } },
+    { value: Math.max(0, fixedCharges), name: 'Fixed charges', itemStyle: { color: DONUT_FIXED_COLOR } },
+    { value: Math.max(0, exportCredit), name: 'Export credit', itemStyle: { color: DONUT_EXPORT_COLOR } },
+    { value: Math.max(0, savings), name: 'Solar savings', itemStyle: { color: DONUT_SAVINGS_COLOR } },
+    {
+      value: 0.001, // near-zero so it renders as a thin slice placeholder
+      name: 'Free import',
+      itemStyle: { color: DONUT_FREE_COLOR },
+      label: { show: false },
+      emphasis: { disabled: true },
+    },
+  ];
+
+  return {
+    backgroundColor: 'transparent',
+    tooltip: {
+      ...TOOLTIP_BASE,
+      trigger: 'item' as const,
+      formatter(param: { name: string; value: number; percent: number; color: string }) {
+        if (param.name === 'Free import') {
+          return `<div style="font-size:11px;color:#94a3b8">Free import<br><span style="color:#475569">Not active</span></div>`;
+        }
+        const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${param.color};margin-right:5px;"></span>`;
+        return `${dot}${param.name}: <b>${fmt(param.value)}</b> (${param.percent}%)`;
+      },
+    },
+    legend: {
+      orient: 'vertical' as const,
+      right: 0,
+      top: 'middle',
+      itemWidth: 10,
+      itemHeight: 10,
+      itemGap: 10,
+      textStyle: { color: '#94a3b8', fontSize: 11 },
+      formatter(name: string) {
+        if (name === 'Free import') return 'Free import (not active)';
+        const item = data.find((d) => d.name === name);
+        if (!item || item.value < 0.01) return name;
+        return `${name}  ${fmt(item.value)}`;
+      },
+    },
+    series: [
+      {
+        type: 'pie',
+        radius: ['42%', '70%'],
+        center: ['35%', '50%'],
+        avoidLabelOverlap: true,
+        label: { show: false },
+        emphasis: {
+          label: { show: true, fontSize: 12, fontWeight: 'bold', color: '#e2e8f0' },
+          scale: true,
+          scaleSize: 6,
+        },
+        data,
+      },
+    ],
   };
 }

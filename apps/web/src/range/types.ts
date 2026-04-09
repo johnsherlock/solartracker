@@ -55,6 +55,8 @@ export type RangeSeriesDayBilling = {
   actualNetCost: number;
   savings: number;
   exportCredit: number;
+  importCost: number;
+  fixedCharges: number;
 };
 
 export type RangeSeriesDay = {
