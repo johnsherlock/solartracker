@@ -1,28 +1,30 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
   BarChart3,
   ChevronLeft,
+  ChevronRight,
   Home,
   Info,
   RefreshCw,
+  RotateCcw,
   TrendingUp,
   X,
   Zap,
 } from 'lucide-react';
 import type { RangeSummaryPayload, RangeSeriesDay } from '@/src/range/types';
 import {
-  type RangePreset,
-  type PresetWindow,
-  PRESET_LABELS,
-  PRESET_ORDER,
-  DEFAULT_PRESET,
-  computePresetWindow,
-  clampToLoadedWindow,
-  formatCustomWindowLabel,
+  type ActiveRange,
+  formatRangeLabel,
+  stepRangeForward,
+  stepRangeBackward,
+  isStepForwardDisabled,
+  isStepBackwardDisabled,
+  defaultActiveRange,
   loadedWindowStart,
 } from '@/src/range/presets';
 import {
@@ -32,6 +34,7 @@ import {
 } from '@/src/range/kpi';
 import { EnergyTrendChart } from './EnergyTrendChart';
 import { PerDayBarChart } from './PerDayBarChart';
+import { RangePickerPopover } from './RangePickerPopover';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -41,6 +44,7 @@ export type RangeHistoryScreenProps = {
   payload: RangeSummaryPayload | null;
   today: string;
   financeMode: string | null;
+  initialMode: string | null;
   error: boolean;
 };
 
@@ -48,46 +52,82 @@ export type RangeHistoryScreenProps = {
 // Root screen
 // ---------------------------------------------------------------------------
 
-export function RangeHistoryScreen({ payload, today, financeMode, error }: RangeHistoryScreenProps) {
-  const [activePreset, setActivePreset] = useState<RangePreset | 'custom'>(DEFAULT_PRESET);
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo, setCustomTo] = useState('');
-  const [customOpen, setCustomOpen] = useState(false);
+export function RangeHistoryScreen({ payload, today, financeMode, initialMode, error }: RangeHistoryScreenProps) {
+  const router = useRouter();
+
+  const earliestDate = payload?.meta.earliestDate ?? null;
+  const loadedFrom = payload?.meta.from ?? loadedWindowStart(today);
+
+  const [activeRange, setActiveRange] = useState<ActiveRange>(() => {
+    if (initialMode === 'all') {
+      const from = earliestDate ?? loadedWindowStart(today);
+      return { mode: 'all', from, to: today };
+    }
+    return defaultActiveRange(today);
+  });
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [tariffCalloutDismissed, setTariffCalloutDismissed] = useState(false);
 
-  const windowStart = loadedWindowStart(today);
-
-  const activeWindow: PresetWindow = useMemo(() => {
-    if (activePreset === 'custom' && customFrom && customTo) {
-      return clampToLoadedWindow(customFrom, customTo, today);
+  // ---------------------------------------------------------------------------
+  // Effective range clamped to what's loaded server-side
+  // ---------------------------------------------------------------------------
+  const effectiveRange = useMemo((): ActiveRange => {
+    if (activeRange.mode === 'all') {
+      // If earliestDate is before loaded window, we trigger a URL-based reload
+      // (handled in handleRangeChange below). For rendering purposes, use the
+      // loaded window start as the floor.
+      return {
+        ...activeRange,
+        from: activeRange.from < loadedFrom ? loadedFrom : activeRange.from,
+      };
     }
-    return computePresetWindow(activePreset as RangePreset, today);
-  }, [activePreset, customFrom, customTo, today]);
+    return activeRange;
+  }, [activeRange, loadedFrom]);
 
   const filteredSeries = useMemo(() => {
     if (!payload) return [];
     return payload.series.filter(
-      (d) => d.date >= activeWindow.from && d.date <= activeWindow.to,
+      (d) => d.date >= effectiveRange.from && d.date <= effectiveRange.to,
     );
-  }, [payload, activeWindow]);
+  }, [payload, effectiveRange]);
 
   const kpis = useMemo(() => {
     if (!payload) return null;
-    return aggregateKpisFromSeries(filteredSeries, activeWindow.from, activeWindow.to);
-  }, [payload, filteredSeries, activeWindow]);
+    return aggregateKpisFromSeries(filteredSeries, effectiveRange.from, effectiveRange.to);
+  }, [payload, filteredSeries, effectiveRange]);
 
   const isFinanced = financeMode === 'finance';
 
-  function handlePresetClick(preset: RangePreset) {
-    setActivePreset(preset);
-    setCustomOpen(false);
+  // ---------------------------------------------------------------------------
+  // Range change handler — triggers navigation for "All" when needed
+  // ---------------------------------------------------------------------------
+  function handleRangeChange(range: ActiveRange) {
+    if (range.mode === 'all' && earliestDate && earliestDate < loadedFrom) {
+      // Full history needed; reload page with ?mode=all
+      router.push('/range?mode=all');
+      return;
+    }
+    setActiveRange(range);
   }
 
-  function handleCustomApply() {
-    if (customFrom && customTo && customFrom <= customTo) {
-      setActivePreset('custom');
-      setCustomOpen(false);
+  // ---------------------------------------------------------------------------
+  // Chevron state
+  // ---------------------------------------------------------------------------
+  const fwdDisabled = isStepForwardDisabled(activeRange, today);
+  const bwdDisabled = isStepBackwardDisabled(activeRange, earliestDate);
+
+  function handleStepForward() {
+    if (!fwdDisabled) setActiveRange((r) => stepRangeForward(r, today));
+  }
+
+  function handleStepBackward() {
+    if (bwdDisabled) return;
+    const next = stepRangeBackward(activeRange, earliestDate);
+    if (next.from < loadedFrom && earliestDate && earliestDate < loadedFrom) {
+      router.push('/range?mode=all');
+      return;
     }
+    setActiveRange(next);
   }
 
   const health = payload?.health;
@@ -102,11 +142,6 @@ export function RangeHistoryScreen({ payload, today, financeMode, error }: Range
   const lastCoveredDate = payload
     ? [...payload.series].reverse().find((d) => d.hasSummary)?.date ?? null
     : null;
-
-  const customWindowLabel =
-    activePreset === 'custom' && customFrom && customTo
-      ? formatCustomWindowLabel(customFrom, customTo)
-      : null;
 
   return (
     <div className="min-h-screen font-sans text-slate-100 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.06),_transparent_30%),linear-gradient(180deg,#050b14_0%,#0b1220_100%)]">
@@ -139,78 +174,60 @@ export function RangeHistoryScreen({ payload, today, financeMode, error }: Range
       {/* ------------------------------------------------------------------ */}
       <div className="sticky top-14 z-30 border-b border-slate-800 bg-[#0c1422]/90 backdrop-blur-sm">
         <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6">
-          {/* Preset pills */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-0.5 scrollbar-hide">
-            {PRESET_ORDER.map((preset) => (
-              <button
-                key={preset}
-                onClick={() => handlePresetClick(preset)}
-                className={[
-                  'shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-                  activePreset === preset
-                    ? 'border-indigo-500/60 bg-indigo-600 text-white'
-                    : 'border-slate-700 bg-slate-900/70 text-slate-300 hover:border-slate-600 hover:text-slate-100',
-                ].join(' ')}
-              >
-                {PRESET_LABELS[preset]}
-              </button>
-            ))}
+          {/* Period bar: [<] [label] [>] */}
+          <div className="relative flex items-center justify-center gap-3">
+            {/* Back chevron */}
             <button
-              onClick={() => setCustomOpen((v) => !v)}
+              onClick={handleStepBackward}
+              disabled={bwdDisabled}
+              aria-label="Step backward"
               className={[
-                'shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-                activePreset === 'custom'
-                  ? 'border-indigo-500/60 bg-indigo-600 text-white'
+                'flex h-8 w-8 items-center justify-center rounded-full border transition-colors',
+                bwdDisabled
+                  ? 'border-slate-800 text-slate-700 cursor-default opacity-40'
                   : 'border-slate-700 bg-slate-900/70 text-slate-300 hover:border-slate-600 hover:text-slate-100',
               ].join(' ')}
             >
-              {customWindowLabel ?? 'Custom…'}
+              <ChevronLeft size={14} />
             </button>
+
+            {/* Label / picker trigger */}
+            <button
+              onClick={() => setPickerOpen((v) => !v)}
+              className="min-w-[140px] rounded-full border border-slate-700 bg-slate-900/70 px-4 py-1.5 text-sm font-medium text-slate-200 transition-colors hover:border-slate-600 hover:text-white sm:min-w-[180px]"
+            >
+              {formatRangeLabel(activeRange)}
+            </button>
+
+            {/* Forward chevron */}
+            <button
+              onClick={handleStepForward}
+              disabled={fwdDisabled}
+              aria-label="Step forward"
+              className={[
+                'flex h-8 w-8 items-center justify-center rounded-full border transition-colors',
+                fwdDisabled
+                  ? 'border-slate-800 text-slate-700 cursor-default opacity-40'
+                  : 'border-slate-700 bg-slate-900/70 text-slate-300 hover:border-slate-600 hover:text-slate-100',
+              ].join(' ')}
+            >
+              <ChevronRight size={14} />
+            </button>
+
+            {/* Range picker popover */}
+            {pickerOpen && (
+              <RangePickerPopover
+                today={today}
+                earliestDate={earliestDate}
+                activeRange={activeRange}
+                onRangeChange={handleRangeChange}
+                onClose={() => setPickerOpen(false)}
+              />
+            )}
           </div>
 
-          {/* Custom range disclosure */}
-          {customOpen && (
-            <div className="mt-2 flex flex-wrap items-end gap-3 rounded-2xl border border-slate-700 bg-[#111b2b] p-3">
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">From</label>
-                <input
-                  type="date"
-                  value={customFrom}
-                  min={windowStart}
-                  max={customTo || today}
-                  onChange={(e) => setCustomFrom(e.target.value)}
-                  className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">To</label>
-                <input
-                  type="date"
-                  value={customTo}
-                  min={customFrom || windowStart}
-                  max={today}
-                  onChange={(e) => setCustomTo(e.target.value)}
-                  className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                />
-              </div>
-              <button
-                onClick={handleCustomApply}
-                disabled={!customFrom || !customTo || customFrom > customTo}
-                className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40 hover:bg-indigo-500"
-              >
-                Apply
-              </button>
-              <button
-                onClick={() => setCustomOpen(false)}
-                className="rounded-lg px-3 py-1.5 text-sm text-slate-400 hover:text-slate-200"
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-
           {/* Trust strip */}
-          <p className="mt-2 flex items-center gap-1.5 text-[11px] text-slate-500">
+          <p className="mt-2 flex items-center justify-center gap-1.5 text-[11px] text-slate-500">
             <span className="h-1.5 w-1.5 rounded-full bg-slate-600" />
             {lastCoveredDate ? `Data through ${formatDate(lastCoveredDate)}` : 'No data loaded'}
           </p>
@@ -229,7 +246,7 @@ export function RangeHistoryScreen({ payload, today, financeMode, error }: Range
           <>
             {/* Empty */}
             {kpis && kpis.coveredDays === 0 && (
-              <EmptyCard from={activeWindow.from} to={activeWindow.to} />
+              <EmptyCard from={effectiveRange.from} to={effectiveRange.to} />
             )}
 
             {kpis && kpis.coveredDays > 0 && (
@@ -260,7 +277,10 @@ export function RangeHistoryScreen({ payload, today, financeMode, error }: Range
                 )}
 
                 {/* §4–§9 Chart placeholder cards */}
-                <ChartPlaceholders hasTariff={kpis.hasTariff} series={filteredSeries} />
+                <ChartPlaceholders
+                  hasTariff={kpis.hasTariff}
+                  series={filteredSeries}
+                />
 
                 {/* §10 — Payback placeholder (financed only) */}
                 {isFinanced && <PaybackPlaceholder />}
@@ -462,19 +482,29 @@ function HardErrorCard() {
 // §4–§9 Chart placeholder cards
 // ---------------------------------------------------------------------------
 
-function ChartPlaceholders({ hasTariff, series }: { hasTariff: boolean; series: RangeSeriesDay[] }) {
+function ChartPlaceholders({
+  hasTariff,
+  series,
+}: {
+  hasTariff: boolean;
+  series: RangeSeriesDay[];
+}) {
+  // Incrementing this key forces both charts to remount, which reliably clears zoom state.
+  const [resetKey, setResetKey] = useState(0);
+  const resetCharts = useCallback(() => setResetKey((k) => k + 1), []);
+
   return (
     <>
-      <ChartCard section="§4" title="Energy trend" icon={<TrendingUp size={14} />}>
-        <EnergyTrendChart series={series} />
+      <ChartCard title="Energy trend" icon={<TrendingUp size={14} />} onReset={resetCharts}>
+        <EnergyTrendChart key={resetKey} series={series} />
       </ChartCard>
-      <ChartCard section="§5" title="Per-day breakdown" icon={<BarChart3 size={14} />}>
-        <PerDayBarChart series={series} />
+      <ChartCard title="Per-day breakdown" icon={<BarChart3 size={14} />} onReset={resetCharts}>
+        <PerDayBarChart key={resetKey} series={series} />
       </ChartCard>
       {hasTariff ? (
         <>
-          <ChartCard section="§6" title="Daily cost vs without solar" icon={<BarChart3 size={14} />} />
-          <ChartCard section="§7" title="Period cost breakdown" icon={<Zap size={14} />} />
+          <ChartCard title="Daily cost vs without solar" icon={<BarChart3 size={14} />} />
+          <ChartCard title="Period cost breakdown" icon={<Zap size={14} />} />
         </>
       ) : (
         <div className="rounded-[28px] border border-dashed border-slate-800 bg-[#111b2b] px-5 py-6 text-center text-xs text-slate-600">
@@ -482,21 +512,21 @@ function ChartPlaceholders({ hasTariff, series }: { hasTariff: boolean; series: 
           <Link href="/tariffs" className="text-indigo-400 hover:underline">Set up tariff →</Link>
         </div>
       )}
-      <ChartCard section="§8" title="Solar coverage" icon={<Zap size={14} />} />
-      <ChartCard section="§9" title="Export ratio" icon={<TrendingUp size={14} />} />
+      <ChartCard title="Solar coverage" icon={<Zap size={14} />} />
+      <ChartCard title="Export ratio" icon={<TrendingUp size={14} />} />
     </>
   );
 }
 
 function ChartCard({
-  section,
   title,
   icon,
+  onReset,
   children,
 }: {
-  section: string;
   title: string;
   icon: React.ReactNode;
+  onReset?: () => void;
   children?: React.ReactNode;
 }) {
   return (
@@ -504,7 +534,16 @@ function ChartCard({
       <div className="mb-4 flex items-center gap-2">
         <span className="text-slate-600">{icon}</span>
         <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">{title}</span>
-        <span className="ml-auto text-[10px] text-slate-800">{section}</span>
+        {onReset && (
+          <button
+            onClick={onReset}
+            title="Reset zoom"
+            className="ml-auto flex items-center gap-1.5 rounded-full border border-slate-700 px-2.5 py-1 text-[11px] text-slate-500 hover:border-slate-600 hover:text-slate-300 transition-colors"
+          >
+            <RotateCcw size={11} />
+            Reset zoom
+          </button>
+        )}
       </div>
       {children ?? (
         <div className="flex h-36 items-center justify-center rounded-2xl border border-dashed border-slate-800/80 text-[11px] text-slate-700">
@@ -525,7 +564,6 @@ function PaybackPlaceholder() {
       <div className="mb-4 flex items-center gap-2">
         <TrendingUp size={14} className="text-slate-600" />
         <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Payback progress</span>
-        <span className="ml-auto text-[10px] text-slate-800">§10</span>
       </div>
       <div className="flex h-16 items-center justify-center rounded-2xl border border-dashed border-slate-800/80 text-[11px] text-slate-700">
         Payback tracker coming in U-044

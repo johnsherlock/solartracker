@@ -24,7 +24,49 @@ const TOOLTIP_BASE = {
   extraCssText: 'border-radius:16px;padding:10px 14px;',
 };
 
-const GRID = { top: 12, right: 12, bottom: 36, left: 44 };
+const GRID = { top: 38, right: 12, bottom: 56, left: 44 };
+
+const DATA_ZOOM = [
+  {
+    type: 'inside',
+    xAxisIndex: 0,
+    filterMode: 'filter' as const,
+  },
+  {
+    type: 'slider',
+    xAxisIndex: 0,
+    filterMode: 'filter' as const,
+    height: 18,
+    bottom: 4,
+    borderColor: 'rgba(51,65,85,0.4)',
+    backgroundColor: 'rgba(15,23,42,0.5)',
+    fillerColor: 'rgba(16,185,129,0.12)',
+    handleStyle: { color: '#10b981', borderColor: '#10b981' },
+    moveHandleStyle: { color: '#10b981' },
+    textStyle: { color: '#475569', fontSize: 9 },
+    showDetail: false,
+  },
+];
+
+// Toolbox: zoom-select icon only (back/undo hidden via empty path), stacked
+// below the legend in the top-right so there is no overlap.
+const TOOLBOX = {
+  right: 8,
+  top: 18,
+  itemSize: 13,
+  iconStyle: { borderColor: '#475569', borderWidth: 1.5, color: 'transparent' },
+  emphasis: { iconStyle: { borderColor: '#94a3b8', color: 'transparent' } },
+  feature: {
+    dataZoom: {
+      yAxisIndex: 'none',
+      title: { zoom: 'Select range', back: '' },
+      icon: {
+        // back icon set to empty path so only the zoom icon is visible
+        back: 'path://',
+      },
+    },
+  },
+};
 
 // ---------------------------------------------------------------------------
 // Colours
@@ -86,7 +128,11 @@ export function buildEnergyTrendOption(series: RangeSeriesDay[]) {
             (p) =>
               `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:5px;"></span>${p.seriesName}: <b>${p.value} kWh</b>`,
           );
-        return `<div style="font-size:11px;color:#94a3b8;margin-bottom:4px">${name}</div>${lines.join('<br>')}`;
+        const header = `<div style="font-size:11px;color:#94a3b8;margin-bottom:4px">${name}</div>`;
+        if (lines.length === 0) {
+          return `${header}<span style="color:#475569;font-size:11px">No data recorded for ${name}</span>`;
+        }
+        return `${header}${lines.join('<br>')}`;
       },
     },
     legend: {
@@ -115,6 +161,8 @@ export function buildEnergyTrendOption(series: RangeSeriesDay[]) {
       name: 'kWh',
       nameTextStyle: { color: '#475569', fontSize: 10 },
     },
+    toolbox: TOOLBOX,
+    dataZoom: DATA_ZOOM,
     series: [
       {
         name: 'Import',
@@ -261,7 +309,9 @@ export function buildPerDayBarOption(series: RangeSeriesDay[], hasBandData: bool
 
   return {
     backgroundColor: 'transparent',
-    grid: { ...GRID, bottom: 40 },
+    grid: { ...GRID, bottom: 60 },
+    toolbox: TOOLBOX,
+    dataZoom: DATA_ZOOM,
     tooltip: {
       ...TOOLTIP_BASE,
       formatter(params: { name: string; seriesName: string; value: number; color: string }[]) {

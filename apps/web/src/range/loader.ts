@@ -5,7 +5,7 @@
  * resolving the correct installationId before calling these functions.
  */
 
-import { and, between, eq, inArray } from 'drizzle-orm';
+import { and, between, eq, inArray, min } from 'drizzle-orm';
 import type { TariffVersion, FixedChargeVersion } from '../domain/billing';
 
 type RangeLoaderDbModule = typeof import('../db/client');
@@ -180,6 +180,21 @@ export type DailySummaryRow = {
   peakImportKwh: number | null;
   freeImportKwh: number | null;
 };
+
+/**
+ * Returns the earliest local_date stored in daily_summaries for the installation,
+ * or null when no summaries exist yet.
+ */
+export async function loadEarliestSummaryDate(
+  installationId: string,
+): Promise<string | null> {
+  const { db, dailySummaries } = await getDbDeps();
+  const rows = await db
+    .select({ earliest: min(dailySummaries.localDate) })
+    .from(dailySummaries)
+    .where(eq(dailySummaries.installationId, installationId));
+  return rows[0]?.earliest ?? null;
+}
 
 /**
  * Load persisted daily summaries for an installation within an inclusive local date range.

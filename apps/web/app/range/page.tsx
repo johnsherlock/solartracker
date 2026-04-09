@@ -3,6 +3,7 @@ import {
   loadTariffVersionsForInstallation,
   loadFixedChargeVersionsForInstallation,
   loadDailySummaryRowsForRange,
+  loadEarliestSummaryDate,
 } from '@/src/range/loader';
 import { allDatesInRange, computeRangeSummary } from '@/src/range/billing';
 import type { RangeSummaryPayload } from '@/src/range/types';
@@ -35,14 +36,24 @@ function offsetDays(isoDate: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export default async function RangePage() {
+type PageProps = {
+  searchParams: Promise<{ mode?: string }>;
+};
+
+export default async function RangePage({ searchParams }: PageProps) {
+  const { mode } = await searchParams;
+
   const installationContext = await loadRangeInstallationContext(SEED_INSTALLATION_ID);
   const timezone = installationContext?.timezone ?? 'Europe/Dublin';
   const currency = installationContext?.currency ?? 'EUR';
   const today = getTodayLocalDate(timezone);
 
-  // Fetch the full 365-day window (Last 12 months) as the single server load.
-  const windowStart = offsetDays(today, -364);
+  const earliestDate = await loadEarliestSummaryDate(SEED_INSTALLATION_ID);
+
+  // For "All" mode, load from the earliest known summary date.
+  // Otherwise fall back to the default 365-day window.
+  const windowStart =
+    mode === 'all' && earliestDate ? earliestDate : offsetDays(today, -364);
   const windowEnd = today;
 
   try {
@@ -67,6 +78,7 @@ export default async function RangePage() {
         timezone,
         currency,
         generatedAt: new Date().toISOString(),
+        earliestDate,
       },
       summary,
       series,
@@ -78,6 +90,7 @@ export default async function RangePage() {
         payload={payload}
         today={today}
         financeMode={installationContext?.financeMode ?? null}
+        initialMode={mode ?? null}
         error={false}
       />
     );
@@ -88,6 +101,7 @@ export default async function RangePage() {
         payload={null}
         today={today}
         financeMode={null}
+        initialMode={mode ?? null}
         error={true}
       />
     );

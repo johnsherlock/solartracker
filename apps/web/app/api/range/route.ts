@@ -4,6 +4,7 @@ import {
   loadTariffVersionsForInstallation,
   loadFixedChargeVersionsForInstallation,
   loadDailySummaryRowsForRange,
+  loadEarliestSummaryDate,
 } from '../../../src/range/loader';
 import { allDatesInRange, computeRangeSummary } from '../../../src/range/billing';
 import type { RangeSummaryPayload } from '../../../src/range/types';
@@ -66,10 +67,11 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const [tariffVersions, fixedCharges, summaryRows] = await Promise.all([
+  const [tariffVersions, fixedCharges, summaryRows, earliestDate] = await Promise.all([
     loadTariffVersionsForInstallation(SEED_INSTALLATION_ID),
     loadFixedChargeVersionsForInstallation(SEED_INSTALLATION_ID),
     loadDailySummaryRowsForRange(SEED_INSTALLATION_ID, from, to),
+    loadEarliestSummaryDate(SEED_INSTALLATION_ID),
   ]);
 
   const allDates = allDatesInRange(from, to);
@@ -87,6 +89,7 @@ export async function GET(request: NextRequest) {
       timezone: installationContext.timezone,
       currency: installationContext.currency,
       generatedAt: new Date().toISOString(),
+      earliestDate,
     },
     summary,
     series,

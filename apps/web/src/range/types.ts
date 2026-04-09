@@ -8,6 +8,8 @@ export type RangeSummaryMeta = {
   timezone: string;
   currency: string;
   generatedAt: string;  // ISO 8601 timestamp
+  /** Earliest local_date in daily_summaries for the installation; null when no data exists */
+  earliestDate: string | null;
 };
 
 export type RangeCostBreakdown = {
