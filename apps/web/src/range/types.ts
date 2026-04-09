@@ -67,6 +67,8 @@ export type RangeSeriesDay = {
   isPartial: boolean;
   /** null when no tariff version covers this day */
   billing: RangeSeriesDayBilling | null;
+  /** ID of the tariff version that covers this day; null when no tariff applies */
+  tariffVersionId: string | null;
   dayImportKwh: number | null;
   nightImportKwh: number | null;
   peakImportKwh: number | null;

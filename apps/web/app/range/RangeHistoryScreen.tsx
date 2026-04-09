@@ -13,7 +13,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import type { RangeSummaryPayload } from '@/src/range/types';
+import type { RangeSummaryPayload, RangeSeriesDay } from '@/src/range/types';
 import {
   type RangePreset,
   type PresetWindow,
@@ -30,6 +30,8 @@ import {
   formatCurrency,
   formatPercent,
 } from '@/src/range/kpi';
+import { EnergyTrendChart } from './EnergyTrendChart';
+import { PerDayBarChart } from './PerDayBarChart';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -62,13 +64,17 @@ export function RangeHistoryScreen({ payload, today, financeMode, error }: Range
     return computePresetWindow(activePreset as RangePreset, today);
   }, [activePreset, customFrom, customTo, today]);
 
-  const kpis = useMemo(() => {
-    if (!payload) return null;
-    const filtered = payload.series.filter(
+  const filteredSeries = useMemo(() => {
+    if (!payload) return [];
+    return payload.series.filter(
       (d) => d.date >= activeWindow.from && d.date <= activeWindow.to,
     );
-    return aggregateKpisFromSeries(filtered, activeWindow.from, activeWindow.to);
   }, [payload, activeWindow]);
+
+  const kpis = useMemo(() => {
+    if (!payload) return null;
+    return aggregateKpisFromSeries(filteredSeries, activeWindow.from, activeWindow.to);
+  }, [payload, filteredSeries, activeWindow]);
 
   const isFinanced = financeMode === 'finance';
 
@@ -85,7 +91,10 @@ export function RangeHistoryScreen({ payload, today, financeMode, error }: Range
   }
 
   const health = payload?.health;
-  const hasTariffChange = health?.hasTariffChange && !tariffCalloutDismissed;
+  const hasTariffChange = useMemo(() => {
+    const ids = new Set(filteredSeries.map((d) => d.tariffVersionId).filter(Boolean));
+    return ids.size > 1 && !tariffCalloutDismissed;
+  }, [filteredSeries, tariffCalloutDismissed]);
   const hasMissing = (kpis?.missingDays ?? 0) > 0;
   const hasPartial = (kpis?.partialDays ?? 0) > 0;
   const showCompletenessBanner = hasMissing || hasPartial;
@@ -235,7 +244,7 @@ export function RangeHistoryScreen({ payload, today, financeMode, error }: Range
                 {/* §3 — Tariff-change callout */}
                 {hasTariffChange && (
                   <TariffChangeCallout
-                    health={health!}
+                    series={filteredSeries}
                     onDismiss={() => setTariffCalloutDismissed(true)}
                   />
                 )}
@@ -251,7 +260,7 @@ export function RangeHistoryScreen({ payload, today, financeMode, error }: Range
                 )}
 
                 {/* §4–§9 Chart placeholder cards */}
-                <ChartPlaceholders hasTariff={kpis.hasTariff} />
+                <ChartPlaceholders hasTariff={kpis.hasTariff} series={filteredSeries} />
 
                 {/* §10 — Payback placeholder (financed only) */}
                 {isFinanced && <PaybackPlaceholder />}
@@ -357,19 +366,20 @@ function KpiCard({
 // ---------------------------------------------------------------------------
 
 function TariffChangeCallout({
-  health,
+  series,
   onDismiss,
 }: {
-  health: RangeSummaryPayload['health'];
+  series: RangeSeriesDay[];
   onDismiss: () => void;
 }) {
+  const versionCount = new Set(series.map((d) => d.tariffVersionId).filter(Boolean)).size;
   return (
     <div className="flex items-start gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/8 px-4 py-3">
       <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-400" />
       <p className="flex-1 text-sm text-amber-300/90">
         <span className="font-semibold text-amber-200">Tariff changed during this period</span>
         {' — '}
-        {health.tariffVersionIds.length} tariff version{health.tariffVersionIds.length !== 1 ? 's' : ''} applied.
+        {versionCount} tariff version{versionCount !== 1 ? 's' : ''} applied.
         Financial totals reflect each day's applicable rate.
       </p>
       <button onClick={onDismiss} className="shrink-0 text-amber-500/50 hover:text-amber-400">
@@ -452,11 +462,15 @@ function HardErrorCard() {
 // §4–§9 Chart placeholder cards
 // ---------------------------------------------------------------------------
 
-function ChartPlaceholders({ hasTariff }: { hasTariff: boolean }) {
+function ChartPlaceholders({ hasTariff, series }: { hasTariff: boolean; series: RangeSeriesDay[] }) {
   return (
     <>
-      <ChartCard section="§4" title="Energy trend" icon={<TrendingUp size={14} />} />
-      <ChartCard section="§5" title="Per-day breakdown" icon={<BarChart3 size={14} />} />
+      <ChartCard section="§4" title="Energy trend" icon={<TrendingUp size={14} />}>
+        <EnergyTrendChart series={series} />
+      </ChartCard>
+      <ChartCard section="§5" title="Per-day breakdown" icon={<BarChart3 size={14} />}>
+        <PerDayBarChart series={series} />
+      </ChartCard>
       {hasTariff ? (
         <>
           <ChartCard section="§6" title="Daily cost vs without solar" icon={<BarChart3 size={14} />} />
@@ -478,10 +492,12 @@ function ChartCard({
   section,
   title,
   icon,
+  children,
 }: {
   section: string;
   title: string;
   icon: React.ReactNode;
+  children?: React.ReactNode;
 }) {
   return (
     <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
@@ -490,9 +506,11 @@ function ChartCard({
         <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">{title}</span>
         <span className="ml-auto text-[10px] text-slate-800">{section}</span>
       </div>
-      <div className="flex h-36 items-center justify-center rounded-2xl border border-dashed border-slate-800/80 text-[11px] text-slate-700">
-        Chart coming in U-042 / U-043 / U-044
-      </div>
+      {children ?? (
+        <div className="flex h-36 items-center justify-center rounded-2xl border border-dashed border-slate-800/80 text-[11px] text-slate-700">
+          Chart coming in U-043 / U-044
+        </div>
+      )}
     </div>
   );
 }

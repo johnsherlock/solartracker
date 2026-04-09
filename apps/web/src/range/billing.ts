@@ -53,11 +53,16 @@ function r2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+type DayBillingResult = {
+  billing: RangeSeriesDay['billing'];
+  tariffVersionId: string | null;
+};
+
 function computeDayBilling(
   row: DailySummaryRow,
   tariffVersions: TariffVersion[],
   fixedChargeVersions: FixedChargeVersion[],
-): RangeSeriesDay['billing'] | null {
+): DayBillingResult {
   try {
     const tariff = resolveTariffVersion(tariffVersions, `${row.localDate}T12:00`);
     const vat = 1 + (tariff.vatRate ?? 0);
@@ -90,9 +95,9 @@ function computeDayBilling(
     const withoutSolarNetCost = r2(withoutSolarCost + fixedCharges);
     const savings = r2(withoutSolarNetCost - actualNetCost);
 
-    return { actualNetCost, savings, exportCredit };
+    return { billing: { actualNetCost, savings, exportCredit }, tariffVersionId: tariff.id };
   } catch {
-    return null;
+    return { billing: null, tariffVersionId: null };
   }
 }
 
@@ -194,11 +199,17 @@ export function computeRangeSummary(
         immersionDivertedKwh: null,
         isPartial: false,
         billing: null,
+        tariffVersionId: null,
         dayImportKwh: null,
         nightImportKwh: null,
         peakImportKwh: null,
       };
     }
+
+    const { billing, tariffVersionId } =
+      tariffVersions.length > 0
+        ? computeDayBilling(row, tariffVersions, fixedCharges)
+        : { billing: null, tariffVersionId: null };
 
     return {
       date,
@@ -209,10 +220,8 @@ export function computeRangeSummary(
       consumedKwh: row.consumedKwh,
       immersionDivertedKwh: row.immersionDivertedKwh,
       isPartial: row.isPartial,
-      billing:
-        tariffVersions.length > 0
-          ? computeDayBilling(row, tariffVersions, fixedCharges)
-          : null,
+      billing,
+      tariffVersionId,
       dayImportKwh: row.dayImportKwh,
       nightImportKwh: row.nightImportKwh,
       peakImportKwh: row.peakImportKwh,

@@ -11,6 +11,7 @@ export type RangePreset =
   | 'last-30-days'
   | 'last-3-months'
   | 'last-12-months'
+  | 'last-year'
   | 'this-month'
   | 'this-year';
 
@@ -24,6 +25,7 @@ export const PRESET_LABELS: Record<RangePreset, string> = {
   'last-30-days': 'Last 30 days',
   'last-3-months': 'Last 3 months',
   'last-12-months': 'Last 12 months',
+  'last-year': 'Last year',
   'this-month': 'This month',
   'this-year': 'This year',
 };
@@ -33,6 +35,7 @@ export const PRESET_ORDER: RangePreset[] = [
   'last-30-days',
   'last-3-months',
   'last-12-months',
+  'last-year',
   'this-month',
   'this-year',
 ];
@@ -62,6 +65,10 @@ export function computePresetWindow(preset: RangePreset, today: string): PresetW
     case 'last-12-months': {
       const from = offsetDate(toDate, -364);
       return { from, to: today };
+    }
+    case 'last-year': {
+      const prevYear = String(parseInt(today.split('-')[0]) - 1);
+      return { from: `${prevYear}-01-01`, to: `${prevYear}-12-31` };
     }
     case 'this-month': {
       const [year, month] = today.split('-');
