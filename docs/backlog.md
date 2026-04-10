@@ -165,8 +165,8 @@ Epic tracking:
 
 ## Current Priorities
 
-1. `FE-005` Plan and implement the rewrite-owned backend spine: direct MyEnergi day reads, nightly summary job, and summary-backed range API.
-2. `Q-010` Define and enforce PR rules for the rewrite branch, including the conventional PR naming expectations we want to keep.
+1. `FE-007` Define the auth and onboarding foundation so real beta users can sign in, connect MyEnergi, and complete first-run setup.
+2. `FE-012` Tighten beta delivery and deployment so the rewrite can be shipped and operated confidently outside local-only use.
 
 ## Active Risks
 
@@ -186,8 +186,16 @@ Epic tracking:
 | FE-001 | Live Single-User Slice | Deliver one end-to-end working Live experience in `apps/web` for a single seeded local user using seeded rewrite DB data plus the temporary V1 minute-data backend. | ✅ | [`docs/features/FE-001.md`](/Users/john/Documents/Projects/pv-manager/docs/features/FE-001.md) | Completed. The seeded Live route now runs end-to-end against rewrite DB context plus the temporary V1 provider bridge, including current-day health, uptime, persistent chart preferences, and real-day navigation. |
 | FE-003 | Historical Day View | Deliver the first dedicated Historical Day experience in `apps/web`, with extracted shared day-analysis components, neutral historical wording, and fast date-to-date browsing on desktop and touch devices. | ✅ | [`docs/features/FE-003.md`](/Users/john/Documents/Projects/pv-manager/docs/features/FE-003.md) | This is the next product slice after the first Live feature: turn existing day-detail data into a real historical-day experience rather than continuing to overload the Live screen. |
 | FE-004 | Live Weather and Solar Context | Extend the Live screen with free-API-backed weather forecast, sunrise/sunset, daylight, and sun-position context using privacy-aware location capture. | ✅ | [`docs/features/FE-004.md`](/Users/john/Documents/Projects/pv-manager/docs/features/FE-004.md) | Free APIs only; no paid Maps dependency. |
-| FE-005 | Direct MyEnergi Backend and Daily Summary APIs | Replace the temporary V1 backend bridge with rewrite-owned MyEnergi day-detail APIs, a Vercel-scheduled daily-summary job, and a summary-backed range API. | Todo | [`docs/features/FE-005.md`](/Users/john/Documents/Projects/pv-manager/docs/features/FE-005.md) | This is the backend spine for the next rewrite phase and assumes the low-cost Vercel hosting path for v1. |
-| FE-002 | Data Health and Coverage Trust | Persist outage/anomaly signals, backfill historical coverage, and surface uptime/trust impact in product reporting and notifications. | Todo | [`docs/features/FE-002.md`](/Users/john/Documents/Projects/pv-manager/docs/features/FE-002.md) | Existing `P-011` covers health-check jobs only; this feature groups the broader product and data-model work needed for outage reporting, historical trust, and confidence-aware savings/payback. |
+| FE-005 | Direct MyEnergi Backend and Daily Summary APIs | Replace the temporary V1 backend bridge with rewrite-owned MyEnergi day-detail APIs, a Vercel-scheduled daily-summary job, and a summary-backed range API. | ✅ | [`docs/features/FE-005.md`](/Users/john/Documents/Projects/pv-manager/docs/features/FE-005.md) | Completed. The rewrite now owns direct MyEnergi day reads, daily-summary generation, and the first summary-backed range API. |
+| FE-006 | Range History Screen | Build the Range History screen in `apps/web`, giving users a period-level view of energy, solar performance, and financial outcomes across a chosen date range. | ✅ | [`docs/features/FE-006.md`](/Users/john/Documents/Projects/pv-manager/docs/features/FE-006.md) | Completed. Range History now has the screen shell, chart set, shared picker/navigation, and a follow-on KPI-clarity cleanup story grouped under the feature. |
+| FE-007 | Auth and Onboarding Foundation | Turn the rewrite into a real account-based beta product with sign-in, first-run onboarding, and secure per-installation MyEnergi credential capture. | Todo | [`docs/features/FE-007.md`](/Users/john/Documents/Projects/pv-manager/docs/features/FE-007.md) | This is the most natural next feature now that the seeded-only backend and Range History work are done. |
+| FE-008 | User Settings and Tariff Management | Give signed-in users the screens needed to maintain tariffs, contract reminders, and other user-editable setup safely. | Todo | [`docs/features/FE-008.md`](/Users/john/Documents/Projects/pv-manager/docs/features/FE-008.md) | User-facing settings/edit flows are grouped separately from admin/operator tooling. |
+| FE-009 | Public and Unauthenticated Experience | Define the public-facing and non-signed-in product surface, starting with beta access request and invite entry paths. | Todo | [`docs/features/FE-009.md`](/Users/john/Documents/Projects/pv-manager/docs/features/FE-009.md) | This gives the welcome/demo/info surface a roadmap home without forcing a full marketing-site scope yet. |
+| FE-010 | Admin Operations Console | Create an operator-only area for user management, approvals, entitlements, diagnostics, and job-facing support tooling. | Todo | [`docs/features/FE-010.md`](/Users/john/Documents/Projects/pv-manager/docs/features/FE-010.md) | Newly added to reflect the need for a real admin section rather than scattered operator controls. |
+| FE-011 | Calendar View | Add a calendar-based history browsing surface that sits cleanly alongside Live, Historical Day, and Range History. | Todo | [`docs/features/FE-011.md`](/Users/john/Documents/Projects/pv-manager/docs/features/FE-011.md) | No detailed stories exist yet, but the feature is now explicitly reserved. |
+| FE-012 | Beta Delivery and Deployment | Make the rewrite shippable and supportable as a beta product through release workflow, deployment, observability, and verification work. | Todo | [`docs/features/FE-012.md`](/Users/john/Documents/Projects/pv-manager/docs/features/FE-012.md) | Groups the previously orphaned delivery and release items into one operational feature. |
+| FE-013 | AOB and Later Product Opportunities | Hold the remaining backlog items that do not yet have a natural home in the active feature set. | Deferred | [`docs/features/FE-013.md`](/Users/john/Documents/Projects/pv-manager/docs/features/FE-013.md) | Temporary holding feature for deferred or not-yet-shaped work such as Overview, annual wrap-up, AI ideas, and provider-tenant considerations. |
+| FE-002 | Data Health and Coverage Trust | Persist outage/anomaly signals, backfill historical coverage, and surface uptime/trust impact in product reporting and notifications. | Deferred | [`docs/features/FE-002.md`](/Users/john/Documents/Projects/pv-manager/docs/features/FE-002.md) | Intentionally deferred for now even though the feature remains important later. |
 
 ## Current Feature Order
 
@@ -195,4 +203,12 @@ Epic tracking:
 2. `FE-003` Historical Day View
 3. `FE-004` Live Weather and Solar Context
 4. `FE-005` Direct MyEnergi Backend and Daily Summary APIs
-5. `FE-002` Data Health and Coverage Trust
+5. `FE-006` Range History Screen
+6. `FE-007` Auth and Onboarding Foundation
+7. `FE-008` User Settings and Tariff Management
+8. `FE-009` Public and Unauthenticated Experience
+9. `FE-010` Admin Operations Console
+10. `FE-011` Calendar View
+11. `FE-012` Beta Delivery and Deployment
+12. `FE-013` AOB and Later Product Opportunities
+13. `FE-002` Data Health and Coverage Trust
