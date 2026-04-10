@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import * as echarts from 'echarts';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -38,6 +37,8 @@ import { PerDayBarChart } from './PerDayBarChart';
 import { CostHistogramChart } from './CostHistogramChart';
 import { PeriodCostDonutChart } from './PeriodCostDonutChart';
 import { RangePickerPopover } from './RangePickerPopover';
+import { SolarCoverageChart } from './SolarCoverageChart';
+import { ExportRatioChart } from './ExportRatioChart';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -47,6 +48,8 @@ export type RangeHistoryScreenProps = {
   payload: RangeSummaryPayload | null;
   today: string;
   financeMode: string | null;
+  monthlyFinancePaymentAmount: number | null;
+  financeTermMonths: number | null;
   initialMode: string | null;
   error: boolean;
 };
@@ -55,7 +58,7 @@ export type RangeHistoryScreenProps = {
 // Root screen
 // ---------------------------------------------------------------------------
 
-export function RangeHistoryScreen({ payload, today, financeMode, initialMode, error }: RangeHistoryScreenProps) {
+export function RangeHistoryScreen({ payload, today, financeMode, monthlyFinancePaymentAmount, financeTermMonths, initialMode, error }: RangeHistoryScreenProps) {
   const router = useRouter();
 
   const earliestDate = payload?.meta.earliestDate ?? null;
@@ -279,7 +282,7 @@ export function RangeHistoryScreen({ payload, today, financeMode, initialMode, e
                   />
                 )}
 
-                {/* §4–§9 Chart placeholder cards */}
+                {/* §4–§9 Charts */}
                 <ChartPlaceholders
                   hasTariff={kpis.hasTariff}
                   series={filteredSeries}
@@ -287,8 +290,16 @@ export function RangeHistoryScreen({ payload, today, financeMode, initialMode, e
                   currency={payload?.meta.currency ?? 'EUR'}
                 />
 
-                {/* §10 — Payback placeholder (financed only) */}
-                {isFinanced && <PaybackPlaceholder />}
+                {/* §10 — Payback tracker (financed installations only) */}
+                {isFinanced && (
+                  <PaybackTracker
+                    periodSavings={kpis.savings}
+                    periodDays={filteredSeries.length}
+                    monthlyPayment={monthlyFinancePaymentAmount}
+                    termMonths={financeTermMonths}
+                    currency={payload?.meta.currency ?? 'EUR'}
+                  />
+                )}
               </>
             )}
           </>
@@ -502,13 +513,11 @@ function ChartPlaceholders({
   const [resetKey, setResetKey] = useState(0);
   const resetCharts = useCallback(() => setResetKey((k) => k + 1), []);
 
-  // Re-connect group after all chart children have set their instance.group.
-  // Parent useEffect runs after all children's useEffects, so by the time
-  // this fires every visible chart instance has its group assigned.
-  useEffect(() => {
-    const id = setTimeout(() => echarts.connect('range-history'), 0);
-    return () => clearTimeout(id);
-  }, [resetKey, hasTariff]);
+  const hasGeneration = useMemo(
+    () => series.some((d) => d.hasSummary && d.generatedKwh > 0),
+    [series],
+  );
+
 
   const periodCostTotals = useMemo(() => {
     let importCost = 0;
@@ -551,13 +560,19 @@ function ChartPlaceholders({
                 currency={currency}
               />
             </ChartCard>
-            <ChartCard title="Export ratio" icon={<TrendingUp size={14} />} />
+            {hasGeneration && (
+              <ChartCard title="Export ratio" icon={<TrendingUp size={14} />} onReset={resetCharts}>
+                <ExportRatioChart key={resetKey} series={series} />
+              </ChartCard>
+            )}
           </div>
         </>
       ) : (
         <NoTariffCard />
       )}
-      <ChartCard title="Solar coverage" icon={<Zap size={14} />} />
+      <ChartCard title="Solar coverage" icon={<Zap size={14} />} onReset={resetCharts}>
+        <SolarCoverageChart key={resetKey} series={series} />
+      </ChartCard>
     </>
   );
 }
@@ -590,7 +605,7 @@ function ChartCard({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
+    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-3 sm:p-5">
       <div className="mb-4 flex items-center gap-2">
         <span className="text-slate-600">{icon}</span>
         <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">{title}</span>
@@ -615,18 +630,74 @@ function ChartCard({
 }
 
 // ---------------------------------------------------------------------------
-// §10 — Payback placeholder (financed installations only)
+// §10 — Payback tracker (financed installations only)
 // ---------------------------------------------------------------------------
 
-function PaybackPlaceholder() {
+const AVG_DAYS_PER_MONTH = 30.4375;
+
+function PaybackTracker({
+  periodSavings,
+  periodDays,
+  monthlyPayment,
+  termMonths,
+  currency,
+}: {
+  periodSavings: number;
+  periodDays: number;
+  monthlyPayment: number | null;
+  termMonths: number | null;
+  currency: string;
+}) {
+  if (!monthlyPayment || monthlyPayment <= 0) return null;
+
+  const periodPayments = Math.round((monthlyPayment * periodDays / AVG_DAYS_PER_MONTH) * 100) / 100;
+  const isPositive = periodSavings >= periodPayments;
+  const fillPct = periodPayments > 0
+    ? Math.min(100, Math.round((periodSavings / periodPayments) * 100))
+    : 0;
+
   return (
-    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
+    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-3 sm:p-5">
       <div className="mb-4 flex items-center gap-2">
         <TrendingUp size={14} className="text-slate-600" />
         <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Payback progress</span>
+        {termMonths && (
+          <span className="ml-auto text-[11px] text-slate-600">
+            {termMonths}-month finance term · {formatCurrency(monthlyPayment, currency)}/mo
+          </span>
+        )}
       </div>
-      <div className="flex h-16 items-center justify-center rounded-2xl border border-dashed border-slate-800/80 text-[11px] text-slate-700">
-        Payback tracker coming in U-044
+
+      {/* Progress bar */}
+      <div className="mb-3 h-3 overflow-hidden rounded-full bg-slate-800">
+        <div
+          className={[
+            'h-full rounded-full transition-all duration-500',
+            isPositive ? 'bg-emerald-500' : 'bg-slate-600',
+          ].join(' ')}
+          style={{ width: `${fillPct}%` }}
+        />
+      </div>
+
+      {/* Labels */}
+      <div className="flex items-baseline justify-between">
+        <p className="text-xs text-slate-400">
+          Solar saved{' '}
+          <span className={isPositive ? 'font-semibold text-emerald-400' : 'font-semibold text-slate-300'}>
+            {formatCurrency(periodSavings, currency)}
+          </span>
+          {' '}of your{' '}
+          <span className="text-slate-300">{formatCurrency(periodPayments, currency)}</span>
+          {' '}in payments this period
+        </p>
+        <span
+          className={[
+            'shrink-0 pl-4 text-xs font-semibold tabular-nums',
+            isPositive ? 'text-emerald-400' : 'text-slate-500',
+          ].join(' ')}
+        >
+          {fillPct}%
+        </span>
       </div>
     </div>
   );

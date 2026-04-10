@@ -90,6 +90,8 @@ export default async function RangePage({ searchParams }: PageProps) {
         payload={payload}
         today={today}
         financeMode={installationContext?.financeMode ?? null}
+        monthlyFinancePaymentAmount={installationContext?.monthlyFinancePaymentAmount ?? null}
+        financeTermMonths={installationContext?.financeTermMonths ?? null}
         initialMode={mode ?? null}
         error={false}
       />
@@ -101,6 +103,8 @@ export default async function RangePage({ searchParams }: PageProps) {
         payload={null}
         today={today}
         financeMode={null}
+        monthlyFinancePaymentAmount={null}
+        financeTermMonths={null}
         initialMode={mode ?? null}
         error={true}
       />

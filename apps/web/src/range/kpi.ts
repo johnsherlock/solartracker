@@ -65,6 +65,11 @@ export function aggregateKpisFromSeries(
     } else {
       tariffGapDays++;
     }
+    if (day.consumedKwh && day.consumedKwh > 0) {
+      const selfConsumed = day.generatedKwh - day.exportKwh;
+      selfConsumptionSum += Math.min(1, Math.max(0, selfConsumed / day.consumedKwh));
+      selfConsumptionCount++;
+    }
   }
 
   // withoutSolarNetCost is not in per-day series — only available in the
@@ -72,9 +77,6 @@ export function aggregateKpisFromSeries(
   // as actualNetCost + savings (savings = withoutSolar - actual).
   withoutSolarNetCost = actualNetCost + savings;
 
-  // Self-consumption ratio: average over days that have generation data.
-  // Not available per-day in the series — charts story will expose it.
-  // For now return null so the KPI card can show a dash rather than 0.
   const avgSelfConsumptionRatio =
     selfConsumptionCount > 0 ? selfConsumptionSum / selfConsumptionCount : null;
 

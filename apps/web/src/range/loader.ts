@@ -44,6 +44,8 @@ export type RangeInstallationContext = {
   timezone: string;
   currency: string;
   financeMode: string | null;
+  monthlyFinancePaymentAmount: number | null;
+  financeTermMonths: number | null;
 };
 
 export async function loadRangeInstallationContext(
@@ -64,6 +66,8 @@ export async function loadRangeInstallationContext(
     timezone: row.timezone,
     currency: row.currencyCode,
     financeMode: row.financeMode,
+    monthlyFinancePaymentAmount: row.monthlyFinancePaymentAmount != null ? Number(row.monthlyFinancePaymentAmount) : null,
+    financeTermMonths: row.financeTermMonths,
   };
 }
 

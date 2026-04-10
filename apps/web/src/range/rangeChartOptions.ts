@@ -24,7 +24,9 @@ const TOOLTIP_BASE = {
   extraCssText: 'border-radius:16px;padding:10px 14px;',
 };
 
-const GRID = { top: 38, right: 12, bottom: 56, left: 44 };
+// containLabel: true lets ECharts fit axis labels within the padding rather
+// than allocating a hardcoded 44px left margin regardless of screen width.
+const GRID = { top: 38, right: 4, bottom: 56, left: 4, containLabel: true };
 
 const DATA_ZOOM = [
   {
@@ -98,6 +100,20 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+/**
+ * Returns rendering hints for line/area charts based on series density.
+ * Above ~90 data points the chart is dense enough on mobile that symbols
+ * add visual noise and thicker lines become illegible.
+ */
+function lineDensityHints(seriesLength: number) {
+  const dense = seriesLength > 90;
+  return {
+    showSymbol: !dense,
+    symbolSize: dense ? 0 : 4,
+    lineWidth: dense ? 1 : 2,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Chart 1 — Energy trend line
 // ---------------------------------------------------------------------------
@@ -110,6 +126,7 @@ function round2(n: number): number {
  */
 export function buildEnergyTrendOption(series: RangeSeriesDay[]) {
   const dates = series.map((d) => shortDate(d.date));
+  const { showSymbol, symbolSize, lineWidth } = lineDensityHints(series.length);
 
   function val(d: RangeSeriesDay, key: 'importKwh' | 'generatedKwh' | 'exportKwh') {
     return d.hasSummary ? round2(d[key]) : null;
@@ -143,7 +160,7 @@ export function buildEnergyTrendOption(series: RangeSeriesDay[]) {
       itemHeight: 8,
       itemGap: 14,
       textStyle: { color: '#94a3b8', fontSize: 11 },
-      selected: { Import: true, Generation: true, Export: false },
+      selected: { Import: true, Generation: true, Export: true },
     },
     xAxis: {
       type: 'category' as const,
@@ -170,10 +187,10 @@ export function buildEnergyTrendOption(series: RangeSeriesDay[]) {
         smooth: true,
         connectNulls: false,
         data: series.map((d) => val(d, 'importKwh')),
-        lineStyle: { color: IMPORT_COLOR, width: 2 },
+        lineStyle: { color: IMPORT_COLOR, width: lineWidth },
         itemStyle: { color: IMPORT_COLOR },
-        symbol: 'circle',
-        symbolSize: 4,
+        showSymbol,
+        symbolSize,
       },
       {
         name: 'Generation',
@@ -181,10 +198,10 @@ export function buildEnergyTrendOption(series: RangeSeriesDay[]) {
         smooth: true,
         connectNulls: false,
         data: series.map((d) => val(d, 'generatedKwh')),
-        lineStyle: { color: GEN_COLOR, width: 2 },
+        lineStyle: { color: GEN_COLOR, width: lineWidth },
         itemStyle: { color: GEN_COLOR },
-        symbol: 'circle',
-        symbolSize: 4,
+        showSymbol,
+        symbolSize,
       },
       {
         name: 'Export',
@@ -192,10 +209,10 @@ export function buildEnergyTrendOption(series: RangeSeriesDay[]) {
         smooth: true,
         connectNulls: false,
         data: series.map((d) => val(d, 'exportKwh')),
-        lineStyle: { color: EXPORT_COLOR, width: 2, type: 'dashed' },
+        lineStyle: { color: EXPORT_COLOR, width: lineWidth },
         itemStyle: { color: EXPORT_COLOR },
-        symbol: 'circle',
-        symbolSize: 4,
+        showSymbol,
+        symbolSize,
       },
     ],
   };
@@ -472,6 +489,169 @@ export function buildCostHistogramOption(series: RangeSeriesDay[], currency = 'E
         data: exportData,
         itemStyle: { color: EXPORT_CREDIT_COLOR, borderRadius: [3, 3, 0, 0] },
         barMaxWidth: 18,
+      },
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Chart 5 — Solar coverage area chart
+// ---------------------------------------------------------------------------
+
+const SOLAR_COVERAGE_COLOR = '#facc15'; // yellow-400
+
+/**
+ * Build an ECharts option for the solar coverage area chart.
+ *
+ * Solar coverage % = (generatedKwh - exportKwh) / consumedKwh per day.
+ * Days with no summary, zero consumedKwh, or null consumedKwh emit null so
+ * ECharts renders a visible break rather than interpolating.
+ */
+export function buildSolarCoverageOption(series: RangeSeriesDay[]) {
+  const dates = series.map((d) => shortDate(d.date));
+  const { showSymbol, symbolSize, lineWidth } = lineDensityHints(series.length);
+
+  const coverageData = series.map((d) => {
+    if (!d.hasSummary || !d.consumedKwh || d.consumedKwh <= 0) return null;
+    const selfConsumed = d.generatedKwh - d.exportKwh;
+    if (selfConsumed <= 0) return 0;
+    return round2(Math.min(100, (selfConsumed / d.consumedKwh) * 100));
+  });
+
+  return {
+    backgroundColor: 'transparent',
+    grid: GRID,
+    tooltip: {
+      ...TOOLTIP_BASE,
+      formatter(params: { name: string; value: number | null; color: string }[]) {
+        const p = params[0];
+        if (!p) return '';
+        if (p.value == null) {
+          return `<div style="font-size:11px;color:#94a3b8;margin-bottom:4px">${p.name}</div><span style="color:#475569;font-size:11px">No data</span>`;
+        }
+        const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:5px;"></span>`;
+        return `<div style="font-size:11px;color:#94a3b8;margin-bottom:4px">${p.name}</div>${dot}Solar coverage: <b>${p.value}%</b>`;
+      },
+    },
+    toolbox: TOOLBOX,
+    dataZoom: DATA_ZOOM,
+    xAxis: {
+      type: 'category' as const,
+      data: dates,
+      axisLabel: { ...AXIS_LABEL, interval: Math.max(0, Math.floor(series.length / 8) - 1) },
+      axisLine: AXIS_LINE,
+      axisTick: AXIS_TICK,
+    },
+    yAxis: {
+      type: 'value' as const,
+      min: 0,
+      max: 100,
+      axisLabel: { ...AXIS_LABEL, formatter: (v: number) => `${v}%` },
+      axisLine: AXIS_LINE,
+      axisTick: AXIS_TICK,
+      splitLine: SPLIT_LINE,
+    },
+    series: [
+      {
+        name: 'Solar coverage',
+        type: 'line',
+        smooth: true,
+        connectNulls: false,
+        data: coverageData,
+        lineStyle: { color: SOLAR_COVERAGE_COLOR, width: lineWidth },
+        itemStyle: { color: SOLAR_COVERAGE_COLOR },
+        showSymbol,
+        symbolSize,
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(250,204,21,0.22)' },
+              { offset: 1, color: 'rgba(250,204,21,0.02)' },
+            ],
+          },
+        },
+      },
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Chart 6 — Export ratio area chart
+// ---------------------------------------------------------------------------
+
+const EXPORT_RATIO_COLOR = '#34d399'; // emerald-400
+
+/**
+ * Build an ECharts option for the export ratio area chart.
+ *
+ * Export ratio % = exportKwh / generatedKwh per day.
+ * Days with zero or absent generation emit null (gap break).
+ */
+export function buildExportRatioOption(series: RangeSeriesDay[]) {
+  const dates = series.map((d) => shortDate(d.date));
+  const { showSymbol, symbolSize, lineWidth } = lineDensityHints(series.length);
+
+  const ratioData = series.map((d) => {
+    if (!d.hasSummary || d.generatedKwh <= 0) return null;
+    return round2(Math.min(100, (d.exportKwh / d.generatedKwh) * 100));
+  });
+
+  return {
+    backgroundColor: 'transparent',
+    grid: GRID,
+    tooltip: {
+      ...TOOLTIP_BASE,
+      formatter(params: { name: string; value: number | null; color: string }[]) {
+        const p = params[0];
+        if (!p) return '';
+        if (p.value == null) {
+          return `<div style="font-size:11px;color:#94a3b8;margin-bottom:4px">${p.name}</div><span style="color:#475569;font-size:11px">No generation data</span>`;
+        }
+        const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:5px;"></span>`;
+        return `<div style="font-size:11px;color:#94a3b8;margin-bottom:4px">${p.name}</div>${dot}Export ratio: <b>${p.value}%</b>`;
+      },
+    },
+    toolbox: TOOLBOX,
+    dataZoom: DATA_ZOOM,
+    xAxis: {
+      type: 'category' as const,
+      data: dates,
+      axisLabel: { ...AXIS_LABEL, interval: Math.max(0, Math.floor(series.length / 8) - 1) },
+      axisLine: AXIS_LINE,
+      axisTick: AXIS_TICK,
+    },
+    yAxis: {
+      type: 'value' as const,
+      min: 0,
+      max: 100,
+      axisLabel: { ...AXIS_LABEL, formatter: (v: number) => `${v}%` },
+      axisLine: AXIS_LINE,
+      axisTick: AXIS_TICK,
+      splitLine: SPLIT_LINE,
+    },
+    series: [
+      {
+        name: 'Export ratio',
+        type: 'line',
+        smooth: true,
+        connectNulls: false,
+        data: ratioData,
+        lineStyle: { color: EXPORT_RATIO_COLOR, width: lineWidth },
+        itemStyle: { color: EXPORT_RATIO_COLOR },
+        showSymbol,
+        symbolSize,
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(52,211,153,0.22)' },
+              { offset: 1, color: 'rgba(52,211,153,0.02)' },
+            ],
+          },
+        },
       },
     ],
   };
