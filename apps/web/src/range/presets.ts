@@ -319,6 +319,10 @@ export function isStepBackwardDisabled(
   return range.from <= earliestDate;
 }
 
+export function buildRangeUrl(range: ActiveRange): string {
+  return `/range?from=${range.from}&to=${range.to}&mode=${range.mode}`;
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------

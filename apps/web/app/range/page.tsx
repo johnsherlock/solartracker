@@ -37,11 +37,11 @@ function offsetDays(isoDate: string, days: number): string {
 }
 
 type PageProps = {
-  searchParams: Promise<{ mode?: string }>;
+  searchParams: Promise<{ mode?: string; from?: string; to?: string }>;
 };
 
 export default async function RangePage({ searchParams }: PageProps) {
-  const { mode } = await searchParams;
+  const { mode, from: initialFrom, to: initialTo } = await searchParams;
 
   const installationContext = await loadRangeInstallationContext(SEED_INSTALLATION_ID);
   const timezone = installationContext?.timezone ?? 'Europe/Dublin';
@@ -93,6 +93,8 @@ export default async function RangePage({ searchParams }: PageProps) {
         monthlyFinancePaymentAmount={installationContext?.monthlyFinancePaymentAmount ?? null}
         financeTermMonths={installationContext?.financeTermMonths ?? null}
         initialMode={mode ?? null}
+        initialFrom={initialFrom ?? null}
+        initialTo={initialTo ?? null}
         error={false}
       />
     );
@@ -106,6 +108,8 @@ export default async function RangePage({ searchParams }: PageProps) {
         monthlyFinancePaymentAmount={null}
         financeTermMonths={null}
         initialMode={mode ?? null}
+        initialFrom={initialFrom ?? null}
+        initialTo={initialTo ?? null}
         error={true}
       />
     );

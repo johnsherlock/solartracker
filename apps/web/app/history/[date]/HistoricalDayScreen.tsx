@@ -1,15 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
   Calendar,
   ChevronLeft,
   ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   Clock,
   WifiOff,
 } from 'lucide-react';
@@ -29,13 +26,7 @@ import {
   applyViewMode,
   applyCostViewMode,
   formatClockTime,
-  parseIsoDate,
   addDays,
-  startOfMonth,
-  shiftMonth,
-  formatMonthYear,
-  getMonthName,
-  getMonthDays,
 } from '@/src/live/chartUtils';
 import type { CostPoint } from '@/src/live/loader';
 import { buildHistoricalNotesModel, type HistoricalNotesModel } from '@/src/live/historicalNotes';
@@ -46,6 +37,9 @@ import {
 import * as dayCache from '@/src/live/dayCache';
 import { extractHistoricalDate, resolveClientNavigation } from '@/src/live/clientNavigation';
 import type { HistoricalDayPayload } from '@/app/api/history/[date]/route';
+import { buildRangeUrl } from '@/src/range/presets';
+import { RangePickerPopover } from '@/src/components/RangePickerPopover';
+import type { NavigationTarget } from '@/src/components/RangePickerPopover';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -430,195 +424,6 @@ function UptimeBadge({
   );
 }
 
-function DatePickerControl({
-  selectedDate,
-  displayDate,
-  today,
-  onSelectDate,
-}: {
-  selectedDate: string;
-  displayDate: string;
-  today: string;
-  onSelectDate: (date: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [visibleMonth, setVisibleMonth] = useState(() => `${selectedDate.slice(0, 7)}-01`);
-  const [popoverTop, setPopoverTop] = useState(0);
-  const [mounted, setMounted] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const popoverRef = useRef<HTMLDivElement | null>(null);
-  const days = useMemo(() => getMonthDays(visibleMonth), [visibleMonth]);
-
-  useEffect(() => { setMounted(true); }, []);
-
-  useEffect(() => {
-    setVisibleMonth(`${selectedDate.slice(0, 7)}-01`);
-  }, [selectedDate]);
-
-  useEffect(() => {
-    if (!open) return;
-    if (triggerRef.current) {
-      const rect = triggerRef.current.getBoundingClientRect();
-      setPopoverTop(rect.bottom + 8);
-    }
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (!triggerRef.current?.contains(target) && !popoverRef.current?.contains(target)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('pointerdown', handlePointerDown);
-    return () => document.removeEventListener('pointerdown', handlePointerDown);
-  }, [open]);
-
-  const popoverContent = open && (
-    <div
-      ref={popoverRef}
-      data-swipe-ignore="true"
-      style={{ top: popoverTop }}
-      className="fixed left-1/2 z-[9999] -translate-x-1/2 w-[calc(100vw-2rem)] rounded-[20px] border border-slate-800 bg-[#111b2b] p-4 shadow-[0_20px_60px_rgba(2,6,23,0.5)] sm:w-[280px]"
-    >
-          <div className="flex items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={() => setVisibleMonth(shiftMonth(visibleMonth, -12))}
-              className="rounded-full p-1 text-slate-400 hover:text-slate-100"
-            >
-              <ChevronsLeft size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setVisibleMonth(shiftMonth(visibleMonth, -1))}
-              className="rounded-full p-1 text-slate-400 hover:text-slate-100"
-            >
-              <ChevronLeft size={14} />
-            </button>
-            <span className="flex-1 text-center text-xs font-semibold text-slate-200">
-              {formatMonthYear(visibleMonth)}
-            </span>
-            <button
-              type="button"
-              onClick={() => setVisibleMonth(shiftMonth(visibleMonth, 1))}
-              disabled={visibleMonth >= `${today.slice(0, 7)}-01`}
-              className="rounded-full p-1 text-slate-400 hover:text-slate-100 disabled:opacity-30"
-            >
-              <ChevronRight size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setVisibleMonth(shiftMonth(visibleMonth, 12))}
-              disabled={visibleMonth >= `${today.slice(0, 7)}-01`}
-              className="rounded-full p-1 text-slate-400 hover:text-slate-100 disabled:opacity-30"
-            >
-              <ChevronsRight size={14} />
-            </button>
-          </div>
-
-          <div className="mt-3 grid grid-cols-7 gap-0.5">
-            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
-              <div
-                key={index}
-                className="py-1 text-center text-[10px] font-semibold text-slate-500"
-              >
-                {day}
-              </div>
-            ))}
-            {days.map((day) => {
-              const isFuture = day.iso > today;
-              const isSelected = day.iso === selectedDate;
-              const isToday = day.iso === today;
-
-              return (
-                <button
-                  key={day.iso}
-                  type="button"
-                  disabled={isFuture || !day.inMonth}
-                  onClick={() => {
-                    onSelectDate(day.iso);
-                    setOpen(false);
-                  }}
-                  className={`rounded-full py-1 text-center text-xs transition-colors ${
-                    !day.inMonth
-                      ? 'text-slate-700'
-                      : isFuture
-                        ? 'cursor-not-allowed text-slate-700'
-                        : isSelected
-                          ? 'bg-amber-300 font-semibold text-slate-950'
-                          : isToday
-                            ? 'border border-slate-600 text-slate-200 hover:bg-slate-800'
-                            : 'text-slate-300 hover:bg-slate-800'
-                  }`}
-                >
-                  {day.dayNumber}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="mt-3 border-t border-slate-800 pt-3">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                {getMonthName(visibleMonth)}
-              </span>
-              <div className="flex gap-1">
-                {Array.from({ length: 7 }, (_, offset) => addDays(today, -6 + offset)).map(
-                  (date) => (
-                    <button
-                      key={date}
-                      type="button"
-                      onClick={() => {
-                        onSelectDate(date);
-                        setOpen(false);
-                      }}
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${
-                        date === selectedDate
-                          ? 'bg-amber-300 text-slate-950'
-                          : 'text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      {date === today
-                        ? 'Today'
-                        : new Intl.DateTimeFormat('en-IE', { weekday: 'short' }).format(
-                            parseIsoDate(date),
-                          )}
-                    </button>
-                  ),
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-1">
-            <button
-              type="button"
-              onClick={() => {
-                onSelectDate(today);
-                setOpen(false);
-              }}
-              className="w-full rounded-full border border-slate-700 py-1.5 text-xs font-semibold text-slate-300 hover:border-slate-500 hover:text-slate-100"
-            >
-              Back to Today
-            </button>
-          </div>
-        </div>
-  );
-
-  return (
-    <div className="relative">
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs font-medium text-slate-300"
-      >
-        <Calendar size={12} />
-        <span>{displayDate}</span>
-      </button>
-      {mounted && createPortal(popoverContent, document.body)}
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
@@ -627,6 +432,7 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
   const { initialLiveTime } = props;
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // ---------------------------------------------------------------------------
   // Per-day display state — initialized from SSR props, updated on cache hits.
@@ -844,6 +650,17 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
     startTransition(() => router.push(`/history/${date}`));
   }
 
+  function handlePickerNavigate(target: NavigationTarget) {
+    setPickerOpen(false);
+    if (target.type === 'live') {
+      startTransition(() => router.push('/live'));
+    } else if (target.type === 'history') {
+      void navigateToDate(target.date);
+    } else {
+      startTransition(() => router.push(buildRangeUrl(target.range)));
+    }
+  }
+
   // Handle browser back/forward so the URL stack remains consistent with
   // client-managed pushState history entries.
   useEffect(() => {
@@ -1035,12 +852,26 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
               <ChevronLeft size={14} />
             </button>
 
-            <DatePickerControl
-              selectedDate={selectedDate}
-              displayDate={displayDate}
-              today={today}
-              onSelectDate={navigateToDate}
-            />
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setPickerOpen((v) => !v)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs font-medium text-slate-300"
+              >
+                <Calendar size={12} />
+                <span>{displayDate}</span>
+              </button>
+              {pickerOpen && (
+                <RangePickerPopover
+                  today={today}
+                  earliestDate={null}
+                  activeRange={null}
+                  activeDate={selectedDate}
+                  onNavigate={handlePickerNavigate}
+                  onClose={() => setPickerOpen(false)}
+                />
+              )}
+            </div>
 
             {/* Next day button */}
             <button
