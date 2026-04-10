@@ -7,10 +7,11 @@ import { buildPeriodCostDonutOption, type PeriodCostTotals } from '@/src/range/r
 type Props = {
   totals: PeriodCostTotals;
   simplified: boolean;
+  currency: string;
 };
 
-export function PeriodCostDonutChart({ totals, simplified }: Props) {
-  const option = useMemo(() => buildPeriodCostDonutOption(totals), [totals]);
+export function PeriodCostDonutChart({ totals, simplified, currency }: Props) {
+  const option = useMemo(() => buildPeriodCostDonutOption(totals, currency), [totals, currency]);
 
   return (
     <div className="space-y-2">

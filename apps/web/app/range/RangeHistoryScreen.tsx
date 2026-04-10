@@ -284,6 +284,7 @@ export function RangeHistoryScreen({ payload, today, financeMode, initialMode, e
                   hasTariff={kpis.hasTariff}
                   series={filteredSeries}
                   note={payload?.summary.note}
+                  currency={payload?.meta.currency ?? 'EUR'}
                 />
 
                 {/* §10 — Payback placeholder (financed only) */}
@@ -490,10 +491,12 @@ function ChartPlaceholders({
   hasTariff,
   series,
   note,
+  currency,
 }: {
   hasTariff: boolean;
   series: RangeSeriesDay[];
   note?: 'banded-daily-rate' | 'simplified-daily-rate';
+  currency: string;
 }) {
   // Incrementing this key forces charts to remount, which reliably clears zoom state.
   const [resetKey, setResetKey] = useState(0);
@@ -538,13 +541,14 @@ function ChartPlaceholders({
       {hasTariff ? (
         <>
           <ChartCard title="Daily cost vs without solar" icon={<BarChart3 size={14} />} onReset={resetCharts}>
-            <CostHistogramChart key={resetKey} series={series} />
+            <CostHistogramChart key={resetKey} series={series} currency={currency} />
           </ChartCard>
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             <ChartCard title="Period cost breakdown" icon={<Zap size={14} />}>
               <PeriodCostDonutChart
                 totals={periodCostTotals}
                 simplified={note === 'simplified-daily-rate'}
+                currency={currency}
               />
             </ChartCard>
             <ChartCard title="Export ratio" icon={<TrendingUp size={14} />} />

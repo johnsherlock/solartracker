@@ -10,11 +10,12 @@ const CHART_GROUP = 'range-history';
 
 type Props = {
   series: RangeSeriesDay[];
+  currency: string;
 };
 
-export function CostHistogramChart({ series }: Props) {
+export function CostHistogramChart({ series, currency }: Props) {
   const chartRef = useRef<EChartsReact>(null);
-  const option = useMemo(() => buildCostHistogramOption(series), [series]);
+  const option = useMemo(() => buildCostHistogramOption(series, currency), [series, currency]);
 
   useEffect(() => {
     const instance = chartRef.current?.getEchartsInstance();

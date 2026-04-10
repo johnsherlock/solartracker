@@ -368,12 +368,17 @@ const EXPORT_CREDIT_COLOR = '#34d399'; // emerald-400
  * Shows actual net cost vs without-solar net cost per day, with export credit
  * as a third series. Days with no tariff (billing === null) render a zero bar.
  */
-export function buildCostHistogramOption(series: RangeSeriesDay[]) {
+export function buildCostHistogramOption(series: RangeSeriesDay[], currency = 'EUR') {
   const dates = series.map((d) => shortDate(d.date));
 
   function fmt(n: number): string {
-    return `€${n.toFixed(2)}`;
+    return new Intl.NumberFormat('en-IE', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
   }
+
+  const currencySymbol = (() => {
+    try { return (0).toLocaleString('en-IE', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).replace(/[\d\s,.]/g, '').trim(); }
+    catch { return currency; }
+  })();
 
   const actualData = series.map((d) => {
     if (!d.hasSummary || !d.billing) return null;
@@ -439,11 +444,11 @@ export function buildCostHistogramOption(series: RangeSeriesDay[]) {
     },
     yAxis: {
       type: 'value' as const,
-      axisLabel: { ...AXIS_LABEL, formatter: (v: number) => `€${v}` },
+      axisLabel: { ...AXIS_LABEL, formatter: (v: number) => `${currencySymbol}${v}` },
       axisLine: AXIS_LINE,
       axisTick: AXIS_TICK,
       splitLine: SPLIT_LINE,
-      name: '€',
+      name: currencySymbol,
       nameTextStyle: { color: '#475569', fontSize: 10 },
     },
     series: [
@@ -492,10 +497,10 @@ const DONUT_FREE_COLOR = '#1e293b';     // slate-800 (inactive placeholder)
 /**
  * Build an ECharts option for the period cost breakdown donut chart.
  */
-export function buildPeriodCostDonutOption(totals: PeriodCostTotals) {
+export function buildPeriodCostDonutOption(totals: PeriodCostTotals, currency = 'EUR') {
   const { importCost, fixedCharges, exportCredit, savings } = totals;
 
-  const fmt = (n: number) => `€${n.toFixed(2)}`;
+  const fmt = (n: number) => new Intl.NumberFormat('en-IE', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
   const data = [
     { value: Math.max(0, importCost), name: 'Import cost', itemStyle: { color: DONUT_IMPORT_COLOR } },
