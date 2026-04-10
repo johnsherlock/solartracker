@@ -839,9 +839,12 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
 
       {/* Control bar */}
       <div className="sticky top-14 z-30 border-b border-slate-800 bg-[#0c1422]/80 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-7xl items-center justify-end gap-2 px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-2 text-xs text-slate-400">
-            {/* Prev day button */}
+        <div className="mx-auto flex max-w-7xl items-center px-4 py-3 sm:px-6">
+          {/* Left spacer */}
+          <div className="flex-1" />
+
+          {/* Center: date navigation */}
+          <div className="relative flex items-center gap-2 text-xs text-slate-400">
             <button
               type="button"
               onClick={handlePrevDay}
@@ -852,28 +855,15 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
               <ChevronLeft size={14} />
             </button>
 
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setPickerOpen((v) => !v)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs font-medium text-slate-300"
-              >
-                <Calendar size={12} />
-                <span>{displayDate}</span>
-              </button>
-              {pickerOpen && (
-                <RangePickerPopover
-                  today={today}
-                  earliestDate={null}
-                  activeRange={null}
-                  activeDate={selectedDate}
-                  onNavigate={handlePickerNavigate}
-                  onClose={() => setPickerOpen(false)}
-                />
-              )}
-            </div>
+            <button
+              type="button"
+              onClick={() => setPickerOpen((v) => !v)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs font-medium text-slate-300"
+            >
+              <Calendar size={12} />
+              <span className="whitespace-nowrap">{displayDate}</span>
+            </button>
 
-            {/* Next day button */}
             <button
               type="button"
               onClick={handleNextDay}
@@ -883,6 +873,20 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
               <ChevronRight size={14} />
             </button>
 
+            {pickerOpen && (
+              <RangePickerPopover
+                today={today}
+                earliestDate={null}
+                activeRange={null}
+                activeDate={selectedDate}
+                onNavigate={handlePickerNavigate}
+                onClose={() => setPickerOpen(false)}
+              />
+            )}
+          </div>
+
+          {/* Right: live time + uptime (desktop only) */}
+          <div className="flex flex-1 items-center justify-end gap-2 text-xs text-slate-400">
             <span className="hidden sm:inline-flex min-w-[92px] justify-center rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5">
               {liveTime}
             </span>

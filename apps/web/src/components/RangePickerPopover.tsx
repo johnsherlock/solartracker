@@ -218,6 +218,15 @@ export function RangePickerPopover({
     }
   }
 
+  const todayYear = todayDate.getFullYear();
+  const todayMonth = todayDate.getMonth();
+  const navFwdDisabled =
+    activeTab === 'months' ? monthsYear >= todayYear :
+    activeTab === 'years' ? decStart >= decadeStart(todayYear) :
+    calYear >= todayYear;
+  const monthFwdDisabled =
+    calYear > todayYear || (calYear === todayYear && calMonth >= todayMonth);
+
   // ---------------------------------------------------------------------------
   // Calendar month navigation (Date + Custom + Weeks tabs)
   // ---------------------------------------------------------------------------
@@ -371,7 +380,7 @@ export function RangePickerPopover({
   return (
     <div
       ref={ref}
-      className="absolute left-0 right-0 top-full z-50 mx-auto mt-1 w-full max-w-sm rounded-2xl border border-slate-700 bg-[#0f1a2b] shadow-2xl sm:left-auto sm:right-auto sm:w-[22rem]"
+      className="absolute left-1/2 top-full z-50 -translate-x-1/2 mt-1 w-[22rem] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-700 bg-[#0f1a2b] shadow-2xl"
       role="dialog"
       aria-label="Date range picker"
     >
@@ -387,7 +396,8 @@ export function RangePickerPopover({
         <span className="text-sm font-semibold text-slate-200">{navigatorLabel()}</span>
         <button
           onClick={navigatorForward}
-          className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+          disabled={navFwdDisabled}
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-400"
           aria-label="Next year"
         >
           <ChevronRight size={14} />
@@ -428,7 +438,8 @@ export function RangePickerPopover({
               <span className="text-xs font-semibold text-slate-300">{calMonthName}</span>
               <button
                 onClick={nextCalMonth}
-                className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                disabled={monthFwdDisabled}
+                className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-400"
                 aria-label="Next month"
               >
                 <ChevronRight size={13} />

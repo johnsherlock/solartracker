@@ -23,7 +23,6 @@ import {
   Cloudy,
   Home,
   Moon,
-  RefreshCw,
   Sun,
   Sunrise,
   Sunset,
@@ -250,7 +249,15 @@ function CapabilityBar({
   );
 }
 
-function NavBar({ screenState }: { screenState: ScreenState }) {
+function NavBar({
+  screenState,
+  health,
+  onOpenDetails,
+}: {
+  screenState: ScreenState;
+  health: LiveScreenProps['health'];
+  onOpenDetails?: () => void;
+}) {
   return (
     <header className="sticky top-0 z-40 border-b border-slate-800 bg-[#101826]">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
@@ -272,12 +279,7 @@ function NavBar({ screenState }: { screenState: ScreenState }) {
         </div>
 
         <div className="flex items-center gap-4">
-          {screenState === 'healthy' && (
-            <span className="hidden items-center gap-1.5 text-xs text-slate-400 sm:flex">
-              <RefreshCw size={11} className="text-emerald-400" />
-              Auto-refreshing
-            </span>
-          )}
+          <TrustBadge screenState={screenState} health={health} onOpenDetails={onOpenDetails} />
           <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-xs font-bold text-slate-200">
             J
           </div>
@@ -1381,7 +1383,14 @@ export function LiveScreen({
         hasCoordinates={hasCoordinates}
         hasCapacity={hasCapacity}
       />
-      <NavBar screenState={displayScreenState} />
+      <NavBar
+        screenState={displayScreenState}
+        health={displayHealth}
+        onOpenDetails={() => {
+          setSelectedIncidentId(primaryActiveIncident?.id ?? health.primaryIncident?.id ?? null);
+          setWarningDetailsOpen(true);
+        }}
+      />
       <WarningBanner
         screenState={displayScreenState}
         health={displayHealth}
@@ -1392,17 +1401,12 @@ export function LiveScreen({
       />
 
       <div className="sticky top-14 z-30 border-b border-slate-800 bg-[#0c1422]/80 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-4 py-3 sm:px-6">
-          <TrustBadge
-            screenState={displayScreenState}
-            health={displayHealth}
-            onOpenDetails={() => {
-              setSelectedIncidentId(primaryActiveIncident?.id ?? health.primaryIncident?.id ?? null);
-              setWarningDetailsOpen(true);
-            }}
-          />
-          <div className="flex items-center gap-2 text-xs text-slate-400">
-            {/* Prev day — navigates to yesterday's history */}
+        <div className="mx-auto flex max-w-7xl items-center px-4 py-3 sm:px-6">
+          {/* Left spacer */}
+          <div className="flex-1" />
+
+          {/* Center: date navigation */}
+          <div className="relative flex items-center gap-2 text-xs text-slate-400">
             <button
               type="button"
               onClick={() => navigateToDate(yesterday)}
@@ -1412,37 +1416,32 @@ export function LiveScreen({
               <ChevronLeft size={14} />
             </button>
 
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setPickerOpen((v) => !v)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs font-medium text-slate-300"
-              >
-                <Calendar size={12} />
-                <span>{displayDate}</span>
-              </button>
-              {pickerOpen && (
-                <RangePickerPopover
-                  today={today}
-                  earliestDate={null}
-                  activeRange={null}
-                  activeDate={today}
-                  onNavigate={handlePickerNavigate}
-                  onClose={() => setPickerOpen(false)}
-                />
-              )}
-            </div>
-
-            {/* Next day — disabled on Live (already on today) */}
             <button
               type="button"
-              disabled
-              title="Already on today"
-              className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-700 bg-slate-900/70 text-slate-300 opacity-30 cursor-not-allowed"
+              onClick={() => setPickerOpen((v) => !v)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs font-medium text-slate-300"
             >
-              <ChevronRight size={14} />
+              <Calendar size={12} />
+              <span className="whitespace-nowrap">{displayDate}</span>
             </button>
 
+            {/* Invisible spacer to balance the left chevron */}
+            <div className="h-7 w-7" aria-hidden="true" />
+
+            {pickerOpen && (
+              <RangePickerPopover
+                today={today}
+                earliestDate={null}
+                activeRange={null}
+                activeDate={today}
+                onNavigate={handlePickerNavigate}
+                onClose={() => setPickerOpen(false)}
+              />
+            )}
+          </div>
+
+          {/* Right: live time + uptime (desktop only) */}
+          <div className="flex flex-1 items-center justify-end gap-2 text-xs text-slate-400">
             <span className="hidden sm:inline-flex min-w-[92px] justify-center rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5">
               {liveTime}
             </span>

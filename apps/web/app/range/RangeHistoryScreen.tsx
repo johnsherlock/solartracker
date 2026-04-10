@@ -250,11 +250,7 @@ export function RangeHistoryScreen({ payload, today, financeMode, monthlyFinance
             )}
           </div>
 
-          {/* Trust strip */}
-          <p className="mt-2 flex items-center justify-center gap-1.5 text-[11px] text-slate-500">
-            <span className="h-1.5 w-1.5 rounded-full bg-slate-600" />
-            {lastCoveredDate ? `Data through ${formatDate(lastCoveredDate)}` : 'No data loaded'}
-          </p>
+
         </div>
       </div>
 
