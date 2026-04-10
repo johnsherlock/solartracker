@@ -95,7 +95,7 @@ function computeDayBilling(
     const withoutSolarNetCost = r2(withoutSolarCost + fixedCharges);
     const savings = r2(withoutSolarNetCost - actualNetCost);
 
-    return { billing: { actualNetCost, savings, exportCredit }, tariffVersionId: tariff.id };
+    return { billing: { actualNetCost, savings, exportCredit, importCost: actualImportCost, fixedCharges }, tariffVersionId: tariff.id };
   } catch {
     return { billing: null, tariffVersionId: null };
   }

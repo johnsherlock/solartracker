@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import * as echarts from 'echarts';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -34,6 +35,8 @@ import {
 } from '@/src/range/kpi';
 import { EnergyTrendChart } from './EnergyTrendChart';
 import { PerDayBarChart } from './PerDayBarChart';
+import { CostHistogramChart } from './CostHistogramChart';
+import { PeriodCostDonutChart } from './PeriodCostDonutChart';
 import { RangePickerPopover } from './RangePickerPopover';
 
 // ---------------------------------------------------------------------------
@@ -280,6 +283,8 @@ export function RangeHistoryScreen({ payload, today, financeMode, initialMode, e
                 <ChartPlaceholders
                   hasTariff={kpis.hasTariff}
                   series={filteredSeries}
+                  note={payload?.summary.note}
+                  currency={payload?.meta.currency ?? 'EUR'}
                 />
 
                 {/* §10 — Payback placeholder (financed only) */}
@@ -485,13 +490,45 @@ function HardErrorCard() {
 function ChartPlaceholders({
   hasTariff,
   series,
+  note,
+  currency,
 }: {
   hasTariff: boolean;
   series: RangeSeriesDay[];
+  note?: 'banded-daily-rate' | 'simplified-daily-rate';
+  currency: string;
 }) {
-  // Incrementing this key forces both charts to remount, which reliably clears zoom state.
+  // Incrementing this key forces charts to remount, which reliably clears zoom state.
   const [resetKey, setResetKey] = useState(0);
   const resetCharts = useCallback(() => setResetKey((k) => k + 1), []);
+
+  // Re-connect group after all chart children have set their instance.group.
+  // Parent useEffect runs after all children's useEffects, so by the time
+  // this fires every visible chart instance has its group assigned.
+  useEffect(() => {
+    const id = setTimeout(() => echarts.connect('range-history'), 0);
+    return () => clearTimeout(id);
+  }, [resetKey, hasTariff]);
+
+  const periodCostTotals = useMemo(() => {
+    let importCost = 0;
+    let fixedCharges = 0;
+    let exportCredit = 0;
+    let savings = 0;
+    for (const d of series) {
+      if (!d.hasSummary || !d.billing) continue;
+      importCost += d.billing.importCost;
+      fixedCharges += d.billing.fixedCharges;
+      exportCredit += d.billing.exportCredit;
+      savings += d.billing.savings;
+    }
+    return {
+      importCost: Math.round(importCost * 100) / 100,
+      fixedCharges: Math.round(fixedCharges * 100) / 100,
+      exportCredit: Math.round(exportCredit * 100) / 100,
+      savings: Math.round(savings * 100) / 100,
+    };
+  }, [series]);
 
   return (
     <>
@@ -503,18 +540,41 @@ function ChartPlaceholders({
       </ChartCard>
       {hasTariff ? (
         <>
-          <ChartCard title="Daily cost vs without solar" icon={<BarChart3 size={14} />} />
-          <ChartCard title="Period cost breakdown" icon={<Zap size={14} />} />
+          <ChartCard title="Daily cost vs without solar" icon={<BarChart3 size={14} />} onReset={resetCharts}>
+            <CostHistogramChart key={resetKey} series={series} currency={currency} />
+          </ChartCard>
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            <ChartCard title="Period cost breakdown" icon={<Zap size={14} />}>
+              <PeriodCostDonutChart
+                totals={periodCostTotals}
+                simplified={note === 'simplified-daily-rate'}
+                currency={currency}
+              />
+            </ChartCard>
+            <ChartCard title="Export ratio" icon={<TrendingUp size={14} />} />
+          </div>
         </>
       ) : (
-        <div className="rounded-[28px] border border-dashed border-slate-800 bg-[#111b2b] px-5 py-6 text-center text-xs text-slate-600">
-          Financial charts (§6, §7) require a tariff.{' '}
-          <Link href="/tariffs" className="text-indigo-400 hover:underline">Set up tariff →</Link>
-        </div>
+        <NoTariffCard />
       )}
       <ChartCard title="Solar coverage" icon={<Zap size={14} />} />
-      <ChartCard title="Export ratio" icon={<TrendingUp size={14} />} />
     </>
+  );
+}
+
+function NoTariffCard() {
+  return (
+    <div className="rounded-[28px] border border-dashed border-slate-800 bg-[#111b2b] px-5 py-8 text-center">
+      <Zap size={20} className="mx-auto mb-3 text-slate-700" />
+      <p className="mb-1 text-sm font-semibold text-slate-400">Add a tariff to see financial breakdowns</p>
+      <p className="mb-4 text-xs text-slate-600">Cost histogram and period breakdown require tariff data.</p>
+      <Link
+        href="/tariffs"
+        className="inline-flex items-center gap-1.5 rounded-full border border-indigo-500/50 bg-indigo-600/80 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-600"
+      >
+        Set up tariff →
+      </Link>
+    </div>
   );
 }
 

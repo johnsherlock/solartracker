@@ -108,6 +108,8 @@ describe('computeRangeSummary — basic billing', () => {
       // actualNetCost = r2(1.64 + 0.50 - 0.3) = r2(1.84) = 1.84
       expect(day.billing!.actualNetCost).toBeCloseTo(1.84, 2);
       expect(day.billing!.exportCredit).toBeCloseTo(0.3, 6);
+      expect(day.billing!.importCost).toBeCloseTo(1.64, 2);
+      expect(day.billing!.fixedCharges).toBeCloseTo(0.5, 6);
     }
   });
 
