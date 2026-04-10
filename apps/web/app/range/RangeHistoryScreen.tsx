@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import * as echarts from 'echarts';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -498,6 +499,14 @@ function ChartPlaceholders({
   const [resetKey, setResetKey] = useState(0);
   const resetCharts = useCallback(() => setResetKey((k) => k + 1), []);
 
+  // Re-connect group after all chart children have set their instance.group.
+  // Parent useEffect runs after all children's useEffects, so by the time
+  // this fires every visible chart instance has its group assigned.
+  useEffect(() => {
+    const id = setTimeout(() => echarts.connect('range-history'), 0);
+    return () => clearTimeout(id);
+  }, [resetKey, hasTariff]);
+
   const periodCostTotals = useMemo(() => {
     let importCost = 0;
     let fixedCharges = 0;
@@ -531,18 +540,20 @@ function ChartPlaceholders({
           <ChartCard title="Daily cost vs without solar" icon={<BarChart3 size={14} />} onReset={resetCharts}>
             <CostHistogramChart key={resetKey} series={series} />
           </ChartCard>
-          <ChartCard title="Period cost breakdown" icon={<Zap size={14} />}>
-            <PeriodCostDonutChart
-              totals={periodCostTotals}
-              simplified={note === 'simplified-daily-rate'}
-            />
-          </ChartCard>
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            <ChartCard title="Period cost breakdown" icon={<Zap size={14} />}>
+              <PeriodCostDonutChart
+                totals={periodCostTotals}
+                simplified={note === 'simplified-daily-rate'}
+              />
+            </ChartCard>
+            <ChartCard title="Export ratio" icon={<TrendingUp size={14} />} />
+          </div>
         </>
       ) : (
         <NoTariffCard />
       )}
       <ChartCard title="Solar coverage" icon={<Zap size={14} />} />
-      <ChartCard title="Export ratio" icon={<TrendingUp size={14} />} />
     </>
   );
 }
