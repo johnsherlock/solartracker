@@ -31,6 +31,7 @@ const SPLIT_LINE = { lineStyle: { color: 'rgba(51,65,85,0.28)' } };
 
 const TOOLTIP_BASE = {
   trigger: 'axis' as const,
+  triggerOn: 'mousemove' as const,
   backgroundColor: '#0f172a',
   borderColor: 'rgba(71,85,105,0.55)',
   borderWidth: 1,

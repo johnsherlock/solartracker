@@ -1115,7 +1115,8 @@ export function LiveScreen({
   const [liveTime, setLiveTime] = useState(initialLiveTime);
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  // Touch state for swipe navigation
+  // Swipe navigation — disabled; charts need free touch for drag/zoom
+  const SWIPE_NAVIGATION_ENABLED = false;
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
 
@@ -1326,8 +1327,9 @@ export function LiveScreen({
 
   const yesterday = addDays(today, -1);
 
-  // Touch swipe handlers — swipe right navigates to yesterday
+  // Touch swipe handlers — kept for future re-enabling via settings
   function handleTouchStart(e: React.TouchEvent<HTMLDivElement>) {
+    if (!SWIPE_NAVIGATION_ENABLED) return;
     const target = e.target as Element;
     if (e.touches.length !== 1 || shouldIgnoreSwipeTarget(target)) {
       touchStartX.current = null;
@@ -1339,6 +1341,7 @@ export function LiveScreen({
   }
 
   function handleTouchEnd(e: React.TouchEvent<HTMLDivElement>) {
+    if (!SWIPE_NAVIGATION_ENABLED) return;
     if (touchStartX.current === null || touchStartY.current === null) return;
     const deltaX = e.changedTouches[0].clientX - touchStartX.current;
     const deltaY = e.changedTouches[0].clientY - touchStartY.current;
@@ -1352,6 +1355,7 @@ export function LiveScreen({
   }
 
   function handleTouchCancel() {
+    if (!SWIPE_NAVIGATION_ENABLED) return;
     touchStartX.current = null;
     touchStartY.current = null;
   }

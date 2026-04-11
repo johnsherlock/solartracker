@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { EChart } from '@/src/live/EChartsWrapper';
 import { ChevronRight, Eye, EyeOff } from 'lucide-react';
 import type { CostPoint, FinancialEstimate, LivePoint } from '@/src/live/loader';
@@ -117,6 +117,10 @@ export function DayTrendChart({
 }) {
   const [hoveredSeries, setHoveredSeries] = useState<SeriesKey | null>(null);
   const isStale = screenState === 'stale' || screenState === 'warning';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const energyChartRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const costChartRef = useRef<any>(null);
 
   const eyebrow = mode === 'historical' ? 'Day' : 'Today';
   const title = mode === 'historical' ? 'Energy trend' : 'Live trend';
@@ -202,13 +206,17 @@ export function DayTrendChart({
         })}
       </div>
 
-      <div className="mt-4 h-[260px] sm:h-[400px] rounded-[24px] border border-slate-800 bg-[#0b1321] p-3">
+      <div
+        className="mt-4 h-[260px] sm:h-[400px] rounded-[24px] border border-slate-800 bg-[#0b1321] p-3"
+        onClick={() => energyChartRef.current?.getEchartsInstance().dispatchAction({ type: 'hideTip' })}
+      >
         {data.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-slate-500">
             {emptyLabel}
           </div>
         ) : (
           <EChart
+            ref={energyChartRef}
             key={resolution}
             option={energyOption}
             style={{ height: '100%', width: '100%' }}
@@ -226,13 +234,17 @@ export function DayTrendChart({
             Half-hour import cost, solar savings, and export value through the day.
           </p>
         </div>
-        <div className="h-[220px] sm:h-[330px] rounded-[24px] border border-slate-800 bg-[#0b1321] p-3">
+        <div
+          className="h-[220px] sm:h-[330px] rounded-[24px] border border-slate-800 bg-[#0b1321] p-3"
+          onClick={() => costChartRef.current?.getEchartsInstance().dispatchAction({ type: 'hideTip' })}
+        >
           {costData.length === 0 ? (
             <div className="flex h-full items-center justify-center text-sm text-slate-500">
               No tariff-backed value data available
             </div>
           ) : (
             <EChart
+              ref={costChartRef}
               option={costOption}
               style={{ height: '100%', width: '100%' }}
               notMerge={true}
