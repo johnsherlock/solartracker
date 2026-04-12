@@ -4,150 +4,110 @@
 
 This repository contains a rewrite of a solar energy analysis application.
 
-- The rewrite app lives in: `apps/web`
-- The legacy app exists at the repo root and MUST NOT be modified
-- The rewrite uses:
-  - Next.js
-  - Postgres (via Drizzle)
-  - Domain-driven structure under `apps/web/src`
+- The rewrite app lives in `apps/web`
+- The legacy app exists at the repo root and must not be modified for rewrite
+  work
+- The rewrite uses Next.js, Postgres, Drizzle, and app-owned server-side logic
 
-## Source of Truth
+## Default Reading Order
 
-Before making changes, you MUST read:
+Before planning or implementing a story, read:
 
-- `docs/backlog.md` (task selection and priorities)
-- `docs/architecture.md` (system design and data model)
-- `docs/calculation-spec.md` (financial logic)
+1. `CLAUDE.md`
+2. `docs/implementation-context.md`
+3. the requested story file
+4. the relevant feature file
+5. only the decision records and deeper docs that are clearly relevant
 
-If implementing a specific story, also read:
+Do not load the full architecture history or every decision record by default.
+Use deeper docs only when the story actually needs them.
 
-- `docs/features/<story-id>.md` (if present)
+## Scope Control
 
-## Execution Rules
+- Work only on the requested story unless the user expands scope
+- Do not refactor unrelated code
+- Prefer the rewrite app under `apps/web`
+- Do not modify the legacy root app unless explicitly instructed
 
-## Feature Planning Workflow
+## Architecture Guardrails
 
-When asked to plan or pull in a feature story (for example P-021), prefer the `/plan-feature <story-id>` skill.
+- The browser must never call provider APIs directly
+- Live and single-day detail are fetched from the provider through our backend
+- Multi-day/range history reads from persisted `daily_summaries`
+- Scheduled summary work runs through app-owned server-side job entrypoints
+- Provider-specific logic must stay out of shared domain/product-facing logic
+- Provider credentials must remain server-side and must not be exposed to the
+  browser
 
-If a user asks in natural language to "pull in", "plan", or "create a plan for" a feature, interpret that as:
-- read `docs/features/<story-id>.md`
-- remain in plan-only mode
-- do not write code
-- produce:
-  1. likely files to create or modify
-  2. ambiguities and assumptions
-  3. a scoped implementation plan for that feature only
+## Auth And Access Guardrails
 
+- Real-user auth is third-party OAuth only; do not introduce app-stored
+  passwords
+- The current beta model uses Google sign-in, approval state, and a required
+  provider-setup gate before normal app entry
+- Admin/operator behavior, demo mode, and normal end-user flows should stay
+  clearly separated
 
-### Scope Control
+## Planning Workflow
 
-- Only work on the requested story (e.g. P-020)
-- Do NOT expand scope unless explicitly asked
-- Do NOT refactor unrelated code
+When asked to plan a story:
 
-### Code Boundaries
+- remain in plan-only mode until the user confirms
+- produce a scoped implementation plan for that story only
+- call out assumptions and ambiguities explicitly
+- do not start coding before the plan is confirmed
 
-- NEVER modify legacy root app code
-- ONLY work inside `apps/web` unless instructed otherwise
+## Code Boundaries
 
-### Architecture Expectations
+- Prefer existing app structure and patterns in `apps/web`
+- Keep business logic in app/domain/server modules rather than pushing logic
+  into client components
+- Keep changes minimal, scoped, and consistent with accepted decisions
 
-- Follow existing domain structure:
-  - `src/domain` for business logic
-  - `src/db` for schema
-  - `src/app` for routes/pages
-- Keep provider-specific logic OUT of core domain logic
-- Use canonical data models as defined in architecture docs
+## UI Guidance
 
-## MCP Servers
+- Follow the established UI patterns already used in `apps/web` unless the story
+  is explicitly about design exploration
+- Prefer the project’s existing component and styling approach over introducing
+  a new UI library
+- Do not assume old stack choices documented in earlier planning are still
+  correct without checking the current codebase
 
-### 21st.dev Magic
-- **Installation**: 21st.dev magic
-- **Configuration**: "API_KEY": "your-21st-dev-api-key"
-- **Description**: Create crafted UI components inspired by the best 21st.dev design engineers.
+## Testing
 
-## Preferred UI Stack
+- Add or update focused tests when changing domain or server-side behavior
+- Prefer small, targeted tests over broad, brittle test coverage
+- Do not remove existing tests unless they are incorrect and you are replacing
+  them intentionally
 
-For all new UI work in `apps/web`, the baseline implementation stack is:
+## Seed / Fixture Data
 
-- Next.js App Router
-- Tailwind CSS for styling
-- shadcn/ui for UI components
-- lucide-react for icons
-- Recharts for charts
-- React Hook Form + Zod for forms and validation
+- Keep seed data small, deterministic, and easy to inspect manually
+- Do not commit real credentials, private user data, or opaque fixture blobs
+  without a clear need
 
-Rules:
-- Prefer existing shadcn/ui components before building custom primitives
-- Do not introduce a second UI component library unless explicitly requested
-- Keep styling in Tailwind utilities unless there is a strong reason not to
-- Prefer server-side data loading where appropriate for the current app structure
-- Optimise for clean information hierarchy, readability, and simple layouts over decorative design
+## Git Workflow
 
-## UI Tooling Modes
+- The active rewrite branch line is `v2`, not `main`
+- Work on a feature/story branch when implementing
+- Keep commits small and logical
+- PRs should target `v2`, not `main`
+- Follow the repo’s current PR/title conventions rather than assuming older
+  workflow notes are still correct
 
-There are two valid ways to implement UI work in this repo. Use the one the user asks for.
+## When Unsure
 
-### 1. Baseline Mode
+- Ask a question if the ambiguity materially affects implementation
+- Otherwise state the assumption clearly in the plan or final summary
+- Do not guess silently when the choice could create churn
 
-Use the baseline implementation stack above.
+## Definition Of Done
 
-This is the default when the user asks to implement a UI story without naming a specific external UI tool.
+A story is complete when:
 
-### 2. Tool-First Mode
-
-If the user explicitly asks to use external UI tooling such as `ui-ux-pro-max-skill` or 21st.dev Magic, use those tools as the primary source of UI direction during implementation.
-
-Rules for Tool-First Mode:
-- Follow the chosen tool's workflow and recommendations for UI implementation
-- Keep all implementation inside `apps/web` unless instructed otherwise
-- Prefer outputs that still fit the current app structure and routing model
-- If the generated result would introduce a major architectural shift or a second UI component library, pause and confirm before committing to it
-
-Planning rule:
-- If the user asks to "pull in", "plan", or "create a plan for" a feature, remain in plan-only mode first
-- Tool choice mainly affects the implementation phase, not the initial planning phase, unless the user explicitly asks for tool-assisted design exploration during planning
-
-### Testing
-
-- All new domain logic must have unit tests (Vitest)
-- Prefer small, focused tests over large integration tests
-- Do not remove existing tests unless incorrect
-
-### Data Safety
-
-- Seed data must be:
-  - Small
-  - Deterministic
-  - Easy to inspect manually
-
-### Git Workflow
-
-- The current default branch of the repo is v2, not main. Main still runs the old v1 site.
-- Work on a feature branch
-- Make small, logical commits
-- Commit changes to the feature branch as you go
-- Once a feature is complete, open a PR with a summary of the work done and the backlog item(s) it addresses
-- When opening PRs use the pr naming convetions from https://www.conventionalcommits.org/en/v1.0.0/
-- PRs get opened against v2, NOT MAIN!
-
-### When Unsure
-
-If something is unclear:
-- Ask a question OR
-- State assumption clearly in the plan
-
-Do NOT guess silently.
-
-## Definition of Done
-
-A task is complete when:
-
-- Acceptance criteria are satisfied
-- Code compiles and runs
-- Tests pass
-- Changes are minimal and scoped
-- No unintended side effects introduced
-- Changes are committed and a PR opened, reviewed and merged
-- docs/backlog.md has been updated to reflect the state of the completed item(s)
-- Accompanying feature md files have been moved from docs/features/todo to docs/features/complete
+- the acceptance criteria are satisfied
+- the implementation is scoped and coherent
+- code compiles or runs where relevant
+- tests pass, or any unrun/blocked verification is called out clearly
+- no unintended side effects were introduced
+- the relevant docs are updated if the story changes the documented behavior
