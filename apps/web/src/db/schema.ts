@@ -18,7 +18,12 @@ export const users = pgTable('users', {
   authUserId: uuid('auth_user_id').notNull(),
   email: text('email').notNull(),
   displayName: text('display_name'),
-  status: text('status').notNull().default('active'),
+  // role: 'user' | 'admin'
+  role: text('role').notNull().default('user'),
+  // status: 'awaiting_approval' | 'approved' | 'suspended'
+  status: text('status').notNull().default('awaiting_approval'),
+  approvedAt: timestamp('approved_at', { withTimezone: true }),
+  termsAcceptedAt: timestamp('terms_accepted_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({

@@ -15,6 +15,7 @@ import {
 // ---------------------------------------------------------------------------
 
 const USER_ID                = '00000000-0000-0000-0000-000000000001';
+const ADMIN_USER_ID          = '00000000-0000-0000-0000-000000000009';
 const INSTALLATION_ID        = '00000000-0000-0000-0000-000000000002';
 const PROVIDER_CONNECTION_ID = '00000000-0000-0000-0000-000000000003';
 const TARIFF_PLAN_ID         = '00000000-0000-0000-0000-000000000004';
@@ -132,9 +133,48 @@ async function seed() {
       authUserId: '00000000-0000-0000-0000-000000000099',
       email: 'dev-fixture@example.com',
       displayName: 'Dev Fixture User',
-      status: 'active',
-    }).onConflictDoNothing();
-    console.log('  users: ok');
+      role: 'user',
+      status: 'approved',
+      approvedAt: new Date('2026-01-01T00:00:00Z'),
+      termsAcceptedAt: new Date('2026-01-01T00:00:00Z'),
+    }).onConflictDoUpdate({
+      target: users.id,
+      set: {
+        role: sql`excluded.role`,
+        status: sql`excluded.status`,
+        approvedAt: sql`excluded.approved_at`,
+        termsAcceptedAt: sql`excluded.terms_accepted_at`,
+      },
+    });
+
+    // Admin seed — requires ADMIN_EMAIL in the environment.
+    // Skipped in local dev when the env var is absent.
+    const adminEmail = process.env.ADMIN_EMAIL;
+    if (adminEmail) {
+      await tx.insert(users).values({
+        id: ADMIN_USER_ID,
+        authUserId: '00000000-0000-0000-0000-000000000098',
+        email: adminEmail,
+        displayName: 'Admin',
+        role: 'admin',
+        status: 'approved',
+        approvedAt: new Date('2026-01-01T00:00:00Z'),
+        termsAcceptedAt: new Date('2026-01-01T00:00:00Z'),
+      }).onConflictDoUpdate({
+        target: users.id,
+        set: {
+          email: sql`excluded.email`,
+          role: sql`excluded.role`,
+          status: sql`excluded.status`,
+          approvedAt: sql`excluded.approved_at`,
+          termsAcceptedAt: sql`excluded.terms_accepted_at`,
+        },
+      });
+      console.log(`  admin user: ok (${adminEmail})`);
+    } else {
+      console.log('  admin user: skipped (ADMIN_EMAIL not set)');
+    }
+    console.log('  fixture user: ok');
 
     await tx.insert(installations).values({
       id: INSTALLATION_ID,

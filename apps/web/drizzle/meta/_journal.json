@@ -36,6 +36,13 @@
       "when": 1775496726838,
       "tag": "0004_petite_bill_hollister",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1776029756246,
+      "tag": "0005_premium_hydra",
+      "breakpoints": true
     }
   ]
 }
