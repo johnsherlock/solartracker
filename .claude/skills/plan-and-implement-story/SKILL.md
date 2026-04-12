@@ -12,7 +12,7 @@ Feature: $2
 
 Workflow:
 1. Read `CLAUDE.md`
-2. Read `docs/architecture.md`
+2. Read `docs/implementation-context.md`
 3. Read any docs in `docs/decision/`
 4. Read `docs/stories/$1.md` (e.g. `docs/stories/P-021.md`)
 5. Read the relevant feature doc in `docs/features/$2.md` (e.g. `docs/features/FE-001.md`)
