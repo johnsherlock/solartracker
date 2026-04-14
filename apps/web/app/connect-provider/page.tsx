@@ -1,11 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { SignOutButton } from '@/src/components/SignOutButton';
 
 export default function ConnectProviderPage() {
-  // Auth middleware routes approved users without a provider connection here.
-  // Credentials form and server-side validation are built in P-038 / U-048.
-
   return (
     <div className="min-h-screen font-sans text-slate-100 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.06),_transparent_30%),linear-gradient(180deg,#050b14_0%,#0b1220_100%)]">
       <header className="sticky top-0 z-40 border-b border-slate-800 bg-[#101826]">
@@ -94,10 +92,7 @@ export default function ConnectProviderPage() {
             </div>
 
             <div className="mt-8 border-t border-slate-800 pt-6">
-              {/* Sign-out — placeholder until NextAuth is wired (P-040) */}
-              <a href="#" className="text-sm text-slate-500 underline underline-offset-2 hover:text-slate-300">
-                Sign out
-              </a>
+              <SignOutButton />
             </div>
           </div>
         </div>

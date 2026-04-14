@@ -1,6 +1,9 @@
-export default function WaitingPage() {
-  // In production the signed-in user's email is read from session.
-  const userEmail = 'you@example.com';
+import { getSession } from '@/src/auth-helpers';
+import { SignOutButton } from '@/src/components/SignOutButton';
+
+export default async function WaitingPage() {
+  const session = await getSession();
+  const userEmail = session?.user?.email ?? '';
 
   return (
     <div className="min-h-screen font-sans text-slate-100 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.06),_transparent_30%),linear-gradient(180deg,#050b14_0%,#0b1220_100%)]">
@@ -59,10 +62,7 @@ export default function WaitingPage() {
             </div>
 
             <div className="mt-8 border-t border-slate-800 pt-6">
-              {/* Sign-out — placeholder until NextAuth is wired (P-040) */}
-              <a href="#" className="text-sm text-slate-500 underline underline-offset-2 hover:text-slate-300">
-                Sign out
-              </a>
+              <SignOutButton />
             </div>
           </div>
         </div>

@@ -1,3 +1,7 @@
+'use client';
+
+import { signIn } from 'next-auth/react';
+
 export default function SignInPage() {
   return (
     <div className="min-h-screen font-sans text-slate-100 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.06),_transparent_30%),linear-gradient(180deg,#050b14_0%,#0b1220_100%)]">
@@ -62,18 +66,14 @@ export default function SignInPage() {
               connect after approval.
             </p>
 
-            {/* Sign-in CTA — placeholder until NextAuth / Google OAuth is wired (P-040) */}
             <button
               type="button"
-              disabled
-              className="mt-6 flex w-full items-center justify-center gap-2.5 rounded-full bg-amber-300 px-5 py-3 text-sm font-semibold text-slate-950 opacity-40 cursor-not-allowed"
+              onClick={() => signIn('google', { callbackUrl: '/live' })}
+              className="mt-6 flex w-full items-center justify-center gap-2.5 rounded-full bg-amber-300 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-amber-200 transition-colors cursor-pointer"
             >
               <GoogleIcon />
               Sign in with Google
             </button>
-            <p className="mt-2 text-center text-xs text-slate-600">
-              Sign-in will be enabled when beta access opens.
-            </p>
 
             <p className="mt-6 text-center text-xs leading-relaxed text-slate-600">
               By continuing, you agree to our{' '}
