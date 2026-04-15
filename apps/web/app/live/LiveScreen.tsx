@@ -10,6 +10,7 @@ import {
   ArrowUpFromLine,
   Calendar,
   CheckCircle2,
+  Settings,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -282,8 +283,15 @@ function NavBar({
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <TrustBadge screenState={screenState} health={health} onOpenDetails={onOpenDetails} />
+          <Link
+            href="/settings"
+            title="Settings"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-400 hover:border-slate-600 hover:text-slate-200 transition-colors"
+          >
+            <Settings size={14} />
+          </Link>
           <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-xs font-bold text-slate-200">
             J
           </div>

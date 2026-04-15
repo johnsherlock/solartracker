@@ -12,6 +12,7 @@ import {
   Info,
   RefreshCw,
   RotateCcw,
+  Settings,
   TrendingUp,
   X,
   Zap,
@@ -190,8 +191,17 @@ export function RangeHistoryScreen({ payload, today, financeMode, monthlyFinance
               <span className="text-sm font-semibold text-slate-100">Range History</span>
             </div>
           </div>
-          <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-xs font-bold text-slate-200">
-            J
+          <div className="flex items-center gap-3">
+            <Link
+              href="/settings"
+              title="Settings"
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-400 hover:border-slate-600 hover:text-slate-200 transition-colors"
+            >
+              <Settings size={14} />
+            </Link>
+            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-xs font-bold text-slate-200">
+              J
+            </div>
           </div>
         </div>
       </header>
@@ -345,7 +355,7 @@ function KpiRow({ kpis, currency, note }: KpiRowProps) {
           Energy charts are still available below. Financial data requires a tariff to be configured.
         </p>
         <Link
-          href="/tariffs"
+          href="/settings/tariffs"
           className="inline-flex items-center gap-1.5 rounded-full border border-indigo-500/50 bg-indigo-600/80 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-600"
         >
           Set up tariff →
@@ -359,7 +369,7 @@ function KpiRow({ kpis, currency, note }: KpiRowProps) {
       {kpis.tariffGapDays > 0 && (
         <p className="text-xs text-slate-500">
           Financial data covers {kpis.coveredDays - kpis.tariffGapDays} of {kpis.coveredDays} days.{' '}
-          <Link href="/tariffs" className="text-indigo-400 hover:underline">
+          <Link href="/settings/tariffs" className="text-indigo-400 hover:underline">
             Add tariff history to extend coverage.
           </Link>
         </p>
@@ -601,7 +611,7 @@ function NoTariffCard() {
       <p className="mb-1 text-sm font-semibold text-slate-400">Add a tariff to see financial breakdowns</p>
       <p className="mb-4 text-xs text-slate-600">Cost histogram and period breakdown require tariff data.</p>
       <Link
-        href="/tariffs"
+        href="/settings/tariffs"
         className="inline-flex items-center gap-1.5 rounded-full border border-indigo-500/50 bg-indigo-600/80 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-600"
       >
         Set up tariff →
