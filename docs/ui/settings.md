@@ -54,6 +54,7 @@ Settings is **not** accessible in:
 | `/settings/provider` | Provider connection management |
 | `/settings/finance` | Finance details (placeholder until built) |
 | `/settings/solar` | Solar installation details (placeholder until built) |
+| `/settings/location` | Location and timezone (placeholder until built) |
 | `/settings/notifications` | Notification preferences (placeholder until built) |
 
 ### Desktop layout
@@ -77,6 +78,7 @@ The sidebar is always visible on desktop. The active section is highlighted.
 │  ✓ Provider  │                                       │
 │  · Finance   │                                       │
 │  · Solar     │                                       │
+│  · Location  │                                       │
 │  · Notifs    │                                       │
 │              │                                       │
 └──────────────┴──────────────────────────────────────┘
@@ -102,6 +104,7 @@ No sidebar is shown on mobile — the section list is the navigation.
 │  ✓ Provider         →     │
 │  · Finance          →     │
 │  · Solar            →     │
+│  · Location         →     │
 │  · Notifications    →     │
 │                           │
 └───────────────────────────┘
@@ -149,6 +152,10 @@ Each card has:
 
 ```
 Setup progress ━━━━━━━━━━░░░░░░░░ 2 of 5 optional sections complete
+```
+(Tariffs, Provider, Finance, Solar, Location count toward the denominator.
+Notifications is `coming-soon` and excluded from both numerator and denominator.)
+```
 
 ┌─────────────────────────┐  ┌─────────────────────────┐
 │ ✓  Tariffs              │  │ ✓  Provider              │
@@ -174,9 +181,11 @@ Setup progress ━━━━━━━━━━░░░░░░░░ 2 of 5 opt
 
 ### Progress indicator
 
-A progress bar or fraction ("2 of 5 optional sections complete") appears at
-the top of the home. It counts `complete` sections only; `coming-soon`
-sections do not count toward either numerator or denominator.
+A progress bar or fraction (e.g. "2 of 5 optional sections complete") appears
+at the top of the home. It counts `complete` sections only; `coming-soon`
+sections do not count toward either numerator or denominator. With the current
+section set (Tariffs, Provider, Finance, Solar, Location as actionable;
+Notifications as coming-soon), the denominator is 5.
 
 This indicator communicates progress without manufacturing urgency. It should
 not say "incomplete" or "required" for optional sections.
@@ -272,6 +281,22 @@ comparison views."
 **Placeholder treatment:** Same as Finance — actionable card on home;
 coming-soon screen at `/settings/solar`.
 
+### Location
+
+**Status in FE-008:** Placeholder. Built in a future feature.
+
+**What it is:** Installation location (for future weather correlation and
+solar yield context) and timezone/locale preferences.
+
+**Completion signal:** `complete` when location data is configured on the
+installation.
+
+**Setup-completion value line:** "Improves solar yield context and local
+weather correlation."
+
+**Placeholder treatment:** Same as Finance and Solar — actionable card on
+home; coming-soon screen at `/settings/location`.
+
 ### Notifications
 
 **Status in FE-008:** Placeholder. Explicitly deferred in FE-008 feature
@@ -333,7 +358,7 @@ The Settings home shows:
 
 - Provider card: `complete`
 - All other cards: `actionable` or `coming-soon`
-- Progress: "1 of 4 optional sections complete" (counting provider)
+- Progress: "1 of 5 optional sections complete" (counting provider)
 - A brief welcoming copy block: "Your provider is connected. Add a tariff
   to start seeing savings and cost data."
 
@@ -347,8 +372,8 @@ The Settings home shows:
 
 ### All actionable sections complete
 
-Progress shows "4 of 4 optional sections complete" (or however many are
-currently implemented). No manufactured next-step prompt is added; the home
+Progress shows "5 of 5 optional sections complete" (or however many are
+currently actionable). No manufactured next-step prompt is added; the home
 simply reflects the complete state.
 
 ---
