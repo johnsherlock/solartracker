@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from 'react';
+import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   Activity,
@@ -262,11 +263,14 @@ function NavBar({
     <header className="sticky top-0 z-40 border-b border-slate-800 bg-[#101826]">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 text-xs text-slate-400">
+          <Link
+            href="/live"
+            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+          >
             <ChevronLeft size={14} />
             <Home size={13} />
             <span className="hidden sm:inline">Overview</span>
-          </div>
+          </Link>
           <span className="text-slate-700">/</span>
           <div className="flex items-center gap-2">
             {screenState === 'healthy' ? (
@@ -361,6 +365,7 @@ function WarningBanner({
       title: 'Live data is delayed',
       body: 'Last-known values are still useful for context, but they may no longer reflect the current home state.',
       cta: 'Review Data Health',
+      href: undefined as string | undefined,
       className: 'border-orange-500/20 bg-orange-500/10 text-orange-200',
       icon: <Clock size={15} className="mt-0.5 shrink-0" />,
     },
@@ -370,6 +375,7 @@ function WarningBanner({
         health.primaryIncident?.message ??
         'A recent interval contains an unusual gap or missing live readings.',
       cta: 'Review details',
+      href: undefined as string | undefined,
       className: 'border-orange-500/20 bg-orange-500/10 text-orange-200',
       icon: <AlertTriangle size={15} className="mt-0.5 shrink-0" />,
     },
@@ -377,10 +383,13 @@ function WarningBanner({
       title: 'Provider connection needs attention',
       body: 'Live telemetry has stopped. Reconnecting the provider is the next action.',
       cta: 'Reconnect provider',
+      href: '/connect-provider' as string | undefined,
       className: 'border-rose-500/20 bg-rose-500/10 text-rose-200',
       icon: <WifiOff size={15} className="mt-0.5 shrink-0" />,
     },
   }[screenState];
+
+  const ctaClassName = 'text-xs font-semibold underline underline-offset-4';
 
   return (
     <div className={`border-b px-4 py-3 ${config.className}`}>
@@ -390,13 +399,19 @@ function WarningBanner({
           <p className="text-sm font-semibold">{config.title}</p>
           <p className="mt-0.5 text-sm text-inherit/80">{config.body}</p>
         </div>
-        <button
-          type="button"
-          onClick={screenState === 'warning' ? onOpenDetails : undefined}
-          className="text-xs font-semibold underline underline-offset-4"
-        >
-          {config.cta}
-        </button>
+        {config.href ? (
+          <Link href={config.href} className={ctaClassName}>
+            {config.cta}
+          </Link>
+        ) : (
+          <button
+            type="button"
+            onClick={screenState === 'warning' ? onOpenDetails : undefined}
+            className={ctaClassName}
+          >
+            {config.cta}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -1065,9 +1080,12 @@ function DisconnectedState() {
         configuration issue. The page will show live data once the provider feed resumes.
       </p>
       <div className="mt-6 flex flex-wrap justify-center gap-3">
-        <button className="rounded-full bg-rose-400 px-4 py-2 text-sm font-semibold text-slate-950">
+        <Link
+          href="/connect-provider"
+          className="rounded-full bg-rose-400 px-4 py-2 text-sm font-semibold text-slate-950"
+        >
           Reconnect provider
-        </button>
+        </Link>
         <button className="rounded-full border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200">
           Review Data Health
         </button>

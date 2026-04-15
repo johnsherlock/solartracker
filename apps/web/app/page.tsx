@@ -17,6 +17,24 @@ export default function HomePage() {
         </ul>
         <div style={{ marginTop: '28px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
           <Link
+            href="/sign-in"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '10px 18px',
+              background: '#1e3a5f',
+              color: '#fff',
+              borderRadius: '10px',
+              fontFamily: 'system-ui, sans-serif',
+              fontSize: '0.92rem',
+              fontWeight: 600,
+              textDecoration: 'none',
+            }}
+          >
+            Sign in →
+          </Link>
+          <Link
             href="/live"
             style={{
               display: 'inline-flex',

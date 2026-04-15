@@ -1,9 +1,13 @@
 import { redirect } from 'next/navigation';
-import { fetchMinuteData } from '@/src/providers/v1/adapter';
+import { fetchDayRecords } from '@/src/providers/myenergi/client';
+import { normaliseEddiRecords } from '@/src/providers/myenergi/adapter';
+import { resolveMyEnergiCredentials } from '@/src/providers/myenergi/credentials';
 import { buildDayDetail } from '@/src/live/normalizer';
+import type { MinuteReading } from '@/src/live/types';
 import {
   loadInstallationContext,
   loadTariffContext,
+  loadProviderConnection,
   computeFinancialEstimate,
   deriveScreenState,
   getMinutesStale,
@@ -74,12 +78,25 @@ export default async function LivePage({
   const selectedDate = resolveSelectedDate(params?.date, today);
   const fetchedAt = now.toISOString();
 
-  // Load tariff and provider data once the installation timezone is known.
-  const [tariffContext, minuteData, weatherResult] = await Promise.all([
+  // Load tariff, provider credentials, and weather in parallel.
+  const [tariffContext, providerConnection, weatherResult] = await Promise.all([
     loadTariffContext(SEED_INSTALLATION_ID, selectedDate),
-    fetchMinuteData(selectedDate, effectiveTimezone),
+    loadProviderConnection(SEED_INSTALLATION_ID),
     getLiveWeatherContext(SEED_INSTALLATION_ID),
   ]);
+
+  // Fetch live minute data from MyEnergi via the rewrite-owned adapter.
+  const credentials = resolveMyEnergiCredentials(providerConnection?.credentialRef);
+  let minuteData: MinuteReading[] = [];
+  if (credentials) {
+    const fetchResult = await fetchDayRecords(selectedDate, effectiveTimezone, credentials);
+    if (fetchResult.ok) {
+      minuteData = normaliseEddiRecords(fetchResult.records, selectedDate, effectiveTimezone);
+    } else if (fetchResult.kind === 'empty-day') {
+      minuteData = normaliseEddiRecords([], selectedDate, effectiveTimezone);
+    }
+    // auth-failure and upstream-error leave minuteData empty → disconnected screen state
+  }
 
   // Build the normalised day-detail from raw minute readings.
   const dayDetail = buildDayDetail(selectedDate, minuteData, fetchedAt, effectiveTimezone);

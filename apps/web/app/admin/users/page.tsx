@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import { db } from '@/src/db/client';
 import { users } from '@/src/db/schema';
 import { desc } from 'drizzle-orm';
@@ -27,7 +28,7 @@ export default async function AdminUsersPage() {
     <div className="min-h-screen font-sans text-slate-100 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.06),_transparent_30%),linear-gradient(180deg,#050b14_0%,#0b1220_100%)]">
       <header className="sticky top-0 z-40 border-b border-slate-800 bg-[#101826]">
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-3 px-4 sm:px-6">
-          <span className="text-sm font-semibold text-slate-100">Solar Tracker</span>
+          <Link href="/live" className="text-sm font-semibold text-slate-100 hover:text-slate-300 transition-colors">Solar Tracker</Link>
           <span className="text-slate-700">/</span>
           <span className="text-sm text-slate-400">Admin</span>
           <span className="text-slate-700">/</span>

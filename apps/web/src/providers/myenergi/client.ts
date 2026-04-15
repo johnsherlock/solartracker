@@ -80,6 +80,43 @@ function buildUrl(serialNumber: string, utcStartMs: number, minutes: number): st
   return `${MYENERGI_ENDPOINT}/cgi-jday-E${serialNumber}-${isoDate}-${utcHour}-${utcMinute}-${minutes}`;
 }
 
+export type ValidateCredentialsResult =
+  | { valid: true }
+  | { valid: false; reason: 'auth-failure' | 'upstream-error'; detail: string };
+
+/**
+ * Probe the MyEnergi API to confirm credentials are accepted.
+ *
+ * Uses a lightweight hub-status request rather than a full day fetch.
+ * A 200-range response means authentication succeeded; 401 means invalid
+ * credentials; anything else is treated as an upstream error.
+ */
+export async function validateMyEnergiCredentials(
+  credentials: MyEnergiCredentials,
+): Promise<ValidateCredentialsResult> {
+  // Use the wildcard status endpoint — works regardless of device type (MySolar, Zappi, Eddi, etc.)
+  const url = `${MYENERGI_ENDPOINT}/cgi-jstatus-*`;
+
+  let response: Response;
+  try {
+    response = await digestGet(url, credentials.serialNumber, credentials.password);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error(`[myenergi-client] Credential validation probe failed: ${detail}`);
+    return { valid: false, reason: 'upstream-error', detail };
+  }
+
+  if (response.status === 401) {
+    return { valid: false, reason: 'auth-failure', detail: 'Invalid MyEnergi credentials' };
+  }
+
+  if (!response.ok) {
+    return { valid: false, reason: 'upstream-error', detail: `HTTP ${response.status}` };
+  }
+
+  return { valid: true };
+}
+
 export type FetchDayResult =
   | { ok: true; records: EddiRecord[] }
   | { ok: false; kind: 'auth-failure' | 'empty-day' | 'upstream-error'; detail: string };

@@ -176,11 +176,14 @@ export function RangeHistoryScreen({ payload, today, financeMode, monthlyFinance
       <header className="sticky top-0 z-40 border-b border-slate-800 bg-[#101826]">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 text-xs text-slate-400">
+            <Link
+              href="/live"
+              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+            >
               <ChevronLeft size={14} />
               <Home size={13} />
               <span className="hidden sm:inline">Overview</span>
-            </div>
+            </Link>
             <span className="text-slate-700">/</span>
             <div className="flex items-center gap-2">
               <BarChart3 size={14} className="text-indigo-400" />

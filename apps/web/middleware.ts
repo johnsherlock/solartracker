@@ -23,8 +23,15 @@ export default withAuth(
       return NextResponse.redirect(new URL('/suspended', req.url));
     }
 
-    // Approved users: /connect-provider and the main app are both reachable.
-    // Provider-connection check is enforced in P-038.
+    // Approved users without a valid provider connection must complete setup first.
+    if (
+      status === UserStatus.Approved &&
+      token?.providerStatus !== 'active' &&
+      pathname !== '/connect-provider'
+    ) {
+      return NextResponse.redirect(new URL('/connect-provider', req.url));
+    }
+
     return NextResponse.next();
   },
   {

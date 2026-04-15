@@ -49,3 +49,5 @@ src/**/*.d.ts
 .playwright-cli/
 output/playwright/
 apps/**/.next/
+apps/client_secret_*.json
+*.env.local

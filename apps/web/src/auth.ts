@@ -1,12 +1,37 @@
 import GoogleProvider from 'next-auth/providers/google';
 import type { NextAuthOptions } from 'next-auth';
 import { db } from '@/src/db/client';
-import { users } from '@/src/db/schema';
+import { users, installations, providerConnections } from '@/src/db/schema';
 import { eq, or } from 'drizzle-orm';
 import { UserRole, UserStatus } from '@/src/user-constants';
 
 // Populated by signIn, consumed once by jwt — avoids a second DB round-trip per sign-in.
 const signInCache = new Map<string, { id: string; role: string; status: string }>();
+
+/**
+ * Query whether a user has an active provider connection.
+ * Returns 'active' if found, 'none' otherwise.
+ */
+async function resolveProviderStatus(userId: string): Promise<string> {
+  const installationRows = await db
+    .select({ id: installations.id })
+    .from(installations)
+    .where(eq(installations.userId, userId))
+    .limit(1);
+
+  if (installationRows.length === 0) return 'none';
+
+  const connectionRows = await db
+    .select({ id: providerConnections.id })
+    .from(providerConnections)
+    .where(
+      eq(providerConnections.installationId, installationRows[0].id),
+    )
+    .limit(1);
+
+  const active = connectionRows.find((r) => r.id);
+  return active ? 'active' : 'none';
+}
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -57,15 +82,20 @@ export const authOptions: NextAuthOptions = {
       return true;
     },
 
-    async jwt({ token, account }) {
+    async jwt({ token, account, trigger }) {
+      // Initial sign-in: populate all user claims from DB.
       if (account) {
         const googleSub = account.providerAccountId;
         const cached = signInCache.get(googleSub);
+        let userId: string;
+        let role: string;
+        let status: string;
+
         if (cached) {
           signInCache.delete(googleSub);
-          token.userId = cached.id;
-          token.role = cached.role;
-          token.status = cached.status;
+          userId = cached.id;
+          role = cached.role;
+          status = cached.status;
         } else {
           // Fallback for edge cases where signIn cache was missed
           const rows = await db
@@ -73,13 +103,23 @@ export const authOptions: NextAuthOptions = {
             .from(users)
             .where(eq(users.authUserId, googleSub))
             .limit(1);
-          if (rows[0]) {
-            token.userId = rows[0].id;
-            token.role = rows[0].role;
-            token.status = rows[0].status;
-          }
+          if (!rows[0]) return token;
+          userId = rows[0].id;
+          role = rows[0].role;
+          status = rows[0].status;
         }
+
+        token.userId = userId;
+        token.role = role;
+        token.status = status;
+        token.providerStatus = await resolveProviderStatus(userId);
       }
+
+      // Session update triggered by client (e.g. after connecting provider credentials).
+      if (trigger === 'update' && token.userId) {
+        token.providerStatus = await resolveProviderStatus(token.userId);
+      }
+
       return token;
     },
 
@@ -87,6 +127,7 @@ export const authOptions: NextAuthOptions = {
       session.userId = token.userId as string;
       session.role = token.role as string;
       session.status = token.status as string;
+      session.providerStatus = (token.providerStatus ?? 'none') as string;
       return session;
     },
   },

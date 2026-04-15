@@ -5,6 +5,7 @@ declare module 'next-auth' {
     userId: string;
     role: string;
     status: string;
+    providerStatus: string;
   }
 }
 
@@ -13,5 +14,7 @@ declare module 'next-auth/jwt' {
     userId?: string;
     role?: string;
     status?: string;
+    /** 'active' if the user has a verified provider connection; 'none' otherwise. */
+    providerStatus?: string;
   }
 }
