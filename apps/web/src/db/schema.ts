@@ -7,6 +7,7 @@ import {
   jsonb,
   numeric,
   pgTable,
+  smallint,
   text,
   time,
   timestamp,
@@ -94,10 +95,35 @@ export const tariffPlanVersions = pgTable('tariff_plan_versions', {
   peakEndLocalTime: time('peak_end_local_time'),
   freeImportRuleJson: jsonb('free_import_rule_json'),
   isActiveDefault: boolean('is_active_default').notNull().default(false),
+  // Schedule-based tariff model. When present, weeklyScheduleJson is a
+  // 336-element JSON array (7 days × 48 half-hours, Mon=0) where each element
+  // is a tariff_price_periods.id. Supersedes the simple night/peak window fields
+  // when populated. The window fields are kept for backward compatibility.
+  weeklyScheduleJson: jsonb('weekly_schedule_json'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
   tariffPlanDateIdx: index('tariff_plan_versions_plan_date_idx').on(table.tariffPlanId, table.validFromLocalDate),
+}));
+
+// User-defined price periods for a tariff version. One or more periods can be
+// created per version. The weekly schedule assigns each half-hour slot to one
+// of these periods by ID.
+export const tariffPricePeriods = pgTable('tariff_price_periods', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tariffPlanVersionId: uuid('tariff_plan_version_id').notNull().references(() => tariffPlanVersions.id, { onDelete: 'cascade' }),
+  periodLabel: text('period_label').notNull(),
+  ratePerKwh: numeric('rate_per_kwh', { precision: 12, scale: 6 }).notNull(),
+  isFreeImport: boolean('is_free_import').notNull().default(false),
+  // Display order in the UI (0-based). Does not affect billing resolution.
+  sortOrder: smallint('sort_order').notNull().default(0),
+  // Hex colour used to render this period in the weekly schedule grid (e.g. '#3b82f6').
+  // Null until set by the user in the tariff editor.
+  colourHex: text('colour_hex'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  versionSortIdx: index('tariff_price_periods_version_sort_idx').on(table.tariffPlanVersionId, table.sortOrder),
 }));
 
 export const tariffFixedChargeVersions = pgTable('tariff_fixed_charge_versions', {
@@ -164,6 +190,10 @@ export const dailySummaries = pgTable('daily_summaries', {
   nightImportKwh: numeric('night_import_kwh', { precision: 14, scale: 6 }),
   peakImportKwh: numeric('peak_import_kwh', { precision: 14, scale: 6 }),
   freeImportKwh: numeric('free_import_kwh', { precision: 14, scale: 6 }),
+  // Schedule-based per-period import breakdown: { [pricePeriodId]: kWh }.
+  // Populated when a schedule-based tariff version is active during summary
+  // derivation. Null for rows derived under the simple window model.
+  bandBreakdownJson: jsonb('band_breakdown_json'),
   isPartial: boolean('is_partial').notNull().default(false),
   rebuiltAt: timestamp('rebuilt_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({

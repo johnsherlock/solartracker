@@ -1,0 +1,1 @@
+ALTER TABLE "tariff_price_periods" ADD COLUMN "colour_hex" text;

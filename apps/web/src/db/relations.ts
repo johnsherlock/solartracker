@@ -10,6 +10,7 @@ import {
   tariffFixedChargeVersions,
   tariffPlanVersions,
   tariffPlans,
+  tariffPricePeriods,
   users,
 } from './schema';
 
@@ -46,11 +47,19 @@ export const tariffPlanVersionsRelations = relations(tariffPlanVersions, ({ one,
     references: [tariffPlans.id],
   }),
   fixedChargeVersions: many(tariffFixedChargeVersions),
+  pricePeriods: many(tariffPricePeriods),
 }));
 
 export const tariffFixedChargeVersionsRelations = relations(tariffFixedChargeVersions, ({ one }) => ({
   tariffPlanVersion: one(tariffPlanVersions, {
     fields: [tariffFixedChargeVersions.tariffPlanVersionId],
+    references: [tariffPlanVersions.id],
+  }),
+}));
+
+export const tariffPricePeriodsRelations = relations(tariffPricePeriods, ({ one }) => ({
+  tariffPlanVersion: one(tariffPlanVersions, {
+    fields: [tariffPricePeriods.tariffPlanVersionId],
     references: [tariffPlanVersions.id],
   }),
 }));

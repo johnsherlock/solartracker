@@ -6,7 +6,7 @@
  */
 
 import type { MinuteReading } from '../live/types';
-import { inWindow } from '../domain/billing';
+import { inWindow, resolveSlotIndex, type BandBreakdown, type TariffPricePeriod, type WeeklySchedule } from '../domain/billing';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -220,5 +220,146 @@ export function deriveDailySummaryFields(
     nightImportKwh: roundedNight,
     peakImportKwh: roundedPeak,
     freeImportKwh: null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Schedule-based band derivation
+// ---------------------------------------------------------------------------
+
+export type DailySummaryFieldsScheduled = DailySummaryFields & {
+  /**
+   * Per-period import kWh totals keyed by TariffPricePeriod id.
+   * Null when no schedule was provided (simple-window path).
+   */
+  bandBreakdownJson: BandBreakdown | null;
+  /**
+   * Total free-import kWh for the day (sum of all isFreeImport periods).
+   * Replaces the fixed freeImportKwh field for schedule-based rows.
+   */
+  freeImportKwh: number | null;
+};
+
+/**
+ * Classify one minute reading's import kWh into its price period.
+ *
+ * @param hour     Reading hour (0–23)
+ * @param minute   Reading minute (0–59)
+ * @param localDate  YYYY-MM-DD local date (needed for day-of-week resolution)
+ * @param schedule   WeeklySchedule (336-element period-id array)
+ * @returns the price period id for this minute
+ */
+function periodIdForMinute(
+  hour: number,
+  minute: number,
+  localDate: string,
+  schedule: WeeklySchedule,
+): string {
+  // Build a minimal datetime string that resolveSlotIndex can parse
+  const hh = String(hour).padStart(2, '0');
+  const mm = String(minute).padStart(2, '0');
+  return schedule[resolveSlotIndex(`${localDate}T${hh}:${mm}`)];
+}
+
+/**
+ * Derive a BandBreakdown from minute readings using a weekly schedule.
+ *
+ * Each minute's importKwh is accumulated into its price period bucket.
+ * Returns both the full breakdown and the total free-import kWh.
+ */
+export function deriveBandBreakdown(
+  readings: MinuteReading[],
+  localDate: string,
+  schedule: WeeklySchedule,
+  periods: TariffPricePeriod[],
+): { breakdown: BandBreakdown; freeImportKwh: number } {
+  const breakdown: BandBreakdown = {};
+  let freeImportKwh = 0;
+
+  for (const m of readings) {
+    const periodId = periodIdForMinute(m.hour, m.minute, localDate, schedule);
+    if (!periodId) continue;
+    breakdown[periodId] = (breakdown[periodId] ?? 0) + m.importKwh;
+    const period = periods.find((p) => p.id === periodId);
+    if (period?.isFreeImport) {
+      freeImportKwh += m.importKwh;
+    }
+  }
+
+  // Round all period totals to 6 decimal places
+  for (const id of Object.keys(breakdown)) {
+    breakdown[id] = r6(breakdown[id]);
+  }
+
+  return { breakdown, freeImportKwh: r6(freeImportKwh) };
+}
+
+/**
+ * Derive daily summary fields using a schedule-based tariff.
+ *
+ * Produces the same energy totals as deriveDailySummaryFields but populates
+ * bandBreakdownJson instead of the fixed day/night/peak band columns, which
+ * remain null. The freeImportKwh field reflects the sum of all free-period
+ * import kWh.
+ *
+ * @param readings        MinuteReading[] for the local calendar day
+ * @param expectedMinutes Expected minute count for the day (from expectedMinutesForDay)
+ * @param localDate       YYYY-MM-DD local date string (needed for day-of-week)
+ * @param schedule        WeeklySchedule (336-element period-id array)
+ * @param periods         TariffPricePeriod[] for this tariff version
+ */
+export function deriveDailySummaryFieldsScheduled(
+  readings: MinuteReading[],
+  expectedMinutes: number,
+  localDate: string,
+  schedule: WeeklySchedule,
+  periods: TariffPricePeriod[],
+): DailySummaryFieldsScheduled {
+  let importKwh = 0;
+  let exportKwh = 0;
+  let generatedKwh = 0;
+  let consumedKwh = 0;
+  let immersionDivertedKwh = 0;
+  let immersionBoostedKwh = 0;
+
+  for (const m of readings) {
+    importKwh += m.importKwh;
+    exportKwh += m.exportKwh;
+    generatedKwh += m.generatedKwh;
+    consumedKwh += m.consumedKwh;
+    immersionDivertedKwh += m.immersionDivertedKwh;
+    immersionBoostedKwh += m.immersionBoostedKwh;
+  }
+
+  importKwh = r6(importKwh);
+  exportKwh = r6(exportKwh);
+  generatedKwh = r6(generatedKwh);
+  consumedKwh = r6(consumedKwh);
+  immersionDivertedKwh = r6(immersionDivertedKwh);
+  immersionBoostedKwh = r6(immersionBoostedKwh);
+
+  const solarConsumed = Math.max(0, consumedKwh - importKwh);
+  const selfConsumptionRatio = consumedKwh > 0 ? solarConsumed / consumedKwh : null;
+  const gridDependenceRatio = consumedKwh > 0 ? importKwh / consumedKwh : null;
+  const isPartial = readings.length < expectedMinutes;
+
+  const { breakdown, freeImportKwh } = deriveBandBreakdown(readings, localDate, schedule, periods);
+
+  return {
+    importKwh,
+    exportKwh,
+    generatedKwh,
+    consumedKwh,
+    immersionDivertedKwh,
+    immersionBoostedKwh,
+    selfConsumptionRatio,
+    gridDependenceRatio,
+    isPartial,
+    // Fixed band fields are null — schedule-based rows use bandBreakdownJson
+    dayImportKwh: null,
+    nightImportKwh: null,
+    peakImportKwh: null,
+    freeImportKwh: freeImportKwh > 0 ? freeImportKwh : null,
+    bandBreakdownJson: breakdown,
   };
 }

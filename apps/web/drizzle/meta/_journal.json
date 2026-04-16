@@ -57,6 +57,20 @@
       "when": 1776194964107,
       "tag": "0007_warm_lorna_dane",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1776376438313,
+      "tag": "0008_black_smasher",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1776379306210,
+      "tag": "0009_parallel_overlord",
+      "breakpoints": true
     }
   ]
 }
