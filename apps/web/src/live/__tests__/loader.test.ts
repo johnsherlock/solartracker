@@ -52,7 +52,12 @@ function makeHealth(overrides: Partial<DayDetailResponse['health']> = {}): DayDe
     recordCount: 0,
     isPartialDay: false,
     completenessRatio: 0,
+    expectedMinutes: 1440,
+    coveredMinutes: 1440,
+    uptimePercent: 100,
     hasSuspiciousReadings: false,
+    incidents: [],
+    primaryIncident: null,
     fetchedAt: '2024-06-01T10:00:00Z',
     ...overrides,
   };

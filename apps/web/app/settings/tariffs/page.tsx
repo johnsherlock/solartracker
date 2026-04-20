@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import {
   Receipt,
@@ -7,7 +8,6 @@ import {
   ArrowRight,
   CheckCircle2,
   History,
-  X,
 } from 'lucide-react';
 import { loadTariffOverview } from '@/src/tariffs/loader';
 import type {
@@ -16,10 +16,10 @@ import type {
   ContractInfo,
   PricePeriod,
 } from '@/src/tariffs/loader';
+import { getSession } from '@/src/auth-helpers';
+import { loadInstallationId } from '@/src/installation-helpers';
 
 export const dynamic = 'force-dynamic';
-
-const SEED_INSTALLATION_ID = '00000000-0000-0000-0000-000000000002';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -130,7 +130,7 @@ function TariffSchemeBlock({ scheme }: { scheme: TariffScheme }) {
   const INACTIVE_SLOT_FILL = '#27324a';
   const INACTIVE_SLOT_BORDER = 'rgba(255,255,255,0.06)';
 
-  const renderPeriodControls = (period: PricePeriod) => (
+  const renderPeriodDisplay = (period: PricePeriod) => (
     <>
       <div className="relative">
         <span
@@ -141,16 +141,9 @@ function TariffSchemeBlock({ scheme }: { scheme: TariffScheme }) {
           {period.periodLabel}
         </div>
       </div>
-      <div className="flex h-9 min-w-[82px] items-center justify-between rounded-xl border border-slate-700 bg-slate-950/70 px-3 text-sm font-medium text-slate-100 tabular-nums shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-        <span>{formatRate(period.ratePerKwh, period.isFreeImport)}</span>
+      <div className="flex h-9 min-w-[82px] items-center rounded-xl border border-slate-700 bg-slate-950/70 px-3 text-sm font-medium text-slate-100 tabular-nums shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+        {formatRate(period.ratePerKwh, period.isFreeImport)}
       </div>
-      <button
-        type="button"
-        aria-label={`Remove ${period.periodLabel}`}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-700 bg-slate-950/70 text-slate-400 transition-colors hover:border-slate-500 hover:text-slate-200"
-      >
-        <X size={14} />
-      </button>
     </>
   );
 
@@ -199,13 +192,13 @@ function TariffSchemeBlock({ scheme }: { scheme: TariffScheme }) {
               <div key={period.id}>
                 {/* Mobile controls */}
                 <div className="mb-2 flex items-center gap-2 md:hidden">
-                  {renderPeriodControls(period)}
+                  {renderPeriodDisplay(period)}
                 </div>
 
                 <div className="flex items-center gap-3">
                   {/* Desktop-only left label */}
                   <div className="hidden md:flex shrink-0 items-center gap-2" style={{ width: DESKTOP_LABEL_WIDTH }}>
-                    {renderPeriodControls(period)}
+                    {renderPeriodDisplay(period)}
                   </div>
 
                   {/* Activity bar with deterministic slot geometry and 2-hour markers */}
@@ -294,17 +287,6 @@ function TariffSchemeBlock({ scheme }: { scheme: TariffScheme }) {
         </div>
       </div>
 
-      <div className="mt-4">
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 text-sm font-medium text-emerald-400 transition-colors hover:text-emerald-300"
-        >
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border-2 border-emerald-400">
-            <Plus size={16} />
-          </span>
-          <span>Add price period</span>
-        </button>
-      </div>
     </div>
   );
 }
@@ -666,7 +648,13 @@ function EmptyState() {
 // ---------------------------------------------------------------------------
 
 export default async function TariffsPage() {
-  const data = await loadTariffOverview(SEED_INSTALLATION_ID);
+  const session = await getSession();
+  if (!session?.userId) redirect('/api/auth/signin');
+
+  const installationId = await loadInstallationId(session.userId);
+  if (!installationId) redirect('/settings');
+
+  const data = await loadTariffOverview(installationId);
   const isEmpty = !data.plan || data.allVersions.length === 0;
 
   return (
@@ -688,7 +676,7 @@ export default async function TariffsPage() {
         )}
       </div>
 
-      <p className="text-sm text-slate-400 leading-relaxed max-w-prose mb-8">
+      <p className="text-sm text-slate-400 leading-relaxed mb-8">
         Manage your electricity tariff history — import rates, export rates, standing charges,
         and contract dates. Tariff data is required for all cost and savings calculations.
       </p>

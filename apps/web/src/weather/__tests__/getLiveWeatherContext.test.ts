@@ -43,7 +43,7 @@ function setDbRows(rows: object[]) {
   const limitMock = vi.fn().mockResolvedValue(rows);
   const whereMock = vi.fn(() => ({ limit: limitMock }));
   const fromMock  = vi.fn(() => ({ where: whereMock }));
-  vi.mocked(db.select).mockReturnValue({ from: fromMock } as ReturnType<typeof db.select>);
+  vi.mocked(db.select).mockReturnValue({ from: fromMock } as unknown as ReturnType<typeof db.select>);
 }
 
 // ---------------------------------------------------------------------------
