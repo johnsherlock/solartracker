@@ -40,3 +40,14 @@ export async function loadInstallationId(userId: string): Promise<string | null>
     .limit(1);
   return rows[0]?.id ?? null;
 }
+
+/**
+ * Resolves the installation ID for the effective user (impersonated or real session user).
+ * Returns null if there is no authenticated user or no installation for that user.
+ */
+export async function resolveEffectiveInstallationId(): Promise<string | null> {
+  const { resolveEffectiveUserId } = await import('./auth-helpers');
+  const userId = await resolveEffectiveUserId();
+  if (!userId) return null;
+  return loadInstallationId(userId);
+}

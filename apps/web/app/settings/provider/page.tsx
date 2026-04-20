@@ -1,10 +1,10 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { Plug, CheckCircle2, AlertTriangle, ArrowRight, Clock } from 'lucide-react';
 import { loadSettingsCompletionState } from '@/src/settings/loader';
+import { resolveEffectiveInstallationId } from '@/src/installation-helpers';
 
 export const dynamic = 'force-dynamic';
-
-const SEED_INSTALLATION_ID = '00000000-0000-0000-0000-000000000002';
 
 function formatProviderName(type: string): string {
   if (type === 'myenergi') return 'MyEnergi';
@@ -24,7 +24,9 @@ function formatSyncTime(date: Date | null): string {
 }
 
 export default async function ProviderPage() {
-  const completion = await loadSettingsCompletionState(SEED_INSTALLATION_ID);
+  const installationId = await resolveEffectiveInstallationId();
+  if (!installationId) redirect('/api/auth/signin');
+  const completion = await loadSettingsCompletionState(installationId);
 
   const isConnected = completion.provider === 'complete';
   const providerDisplayName = completion.providerName

@@ -19,13 +19,9 @@ import {
 } from '@/src/live/loader';
 import { getLiveWeatherContext } from '@/src/weather/getLiveWeatherContext';
 import { LiveScreen } from './LiveScreen';
+import { resolveEffectiveInstallationId } from '@/src/installation-helpers';
 
 export const dynamic = 'force-dynamic';
-
-// ---------------------------------------------------------------------------
-// Single-user seed path — no auth or user selection for the local-dev slice.
-// ---------------------------------------------------------------------------
-const SEED_INSTALLATION_ID = '00000000-0000-0000-0000-000000000002';
 
 function getTodayLocalDate(timezone: string): string {
   // Returns "YYYY-MM-DD" in the installation timezone.
@@ -65,7 +61,9 @@ export default async function LivePage({
   searchParams?: Promise<{ date?: string }>;
 }) {
   const now = new Date();
-  const installationContext = await loadInstallationContext(SEED_INSTALLATION_ID);
+  const installationId = await resolveEffectiveInstallationId();
+  if (!installationId) redirect('/connect-provider');
+  const installationContext = await loadInstallationContext(installationId);
   const effectiveTimezone = installationContext?.timezone ?? 'Europe/Dublin';
   const today = getTodayLocalDate(effectiveTimezone);
   const params = await searchParams;
@@ -80,9 +78,9 @@ export default async function LivePage({
 
   // Load tariff, provider credentials, and weather in parallel.
   const [tariffContext, providerConnection, weatherResult] = await Promise.all([
-    loadTariffContext(SEED_INSTALLATION_ID, selectedDate),
-    loadProviderConnection(SEED_INSTALLATION_ID),
-    getLiveWeatherContext(SEED_INSTALLATION_ID),
+    loadTariffContext(installationId, selectedDate),
+    loadProviderConnection(installationId),
+    getLiveWeatherContext(installationId),
   ]);
 
   // Fetch live minute data from MyEnergi via the rewrite-owned adapter.

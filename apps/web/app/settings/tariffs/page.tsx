@@ -16,8 +16,7 @@ import type {
   ContractInfo,
   PricePeriod,
 } from '@/src/tariffs/loader';
-import { getSession } from '@/src/auth-helpers';
-import { loadInstallationId } from '@/src/installation-helpers';
+import { resolveEffectiveInstallationId } from '@/src/installation-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -648,11 +647,8 @@ function EmptyState() {
 // ---------------------------------------------------------------------------
 
 export default async function TariffsPage() {
-  const session = await getSession();
-  if (!session?.userId) redirect('/api/auth/signin');
-
-  const installationId = await loadInstallationId(session.userId);
-  if (!installationId) redirect('/settings');
+  const installationId = await resolveEffectiveInstallationId();
+  if (!installationId) redirect('/api/auth/signin');
 
   const data = await loadTariffOverview(installationId);
   const isEmpty = !data.plan || data.allVersions.length === 0;

@@ -17,11 +17,7 @@ import { fetchDayRecords } from '../../../../src/providers/myenergi/client';
 import { normaliseEddiRecords } from '../../../../src/providers/myenergi/adapter';
 import { resolveMyEnergiCredentials } from '../../../../src/providers/myenergi/credentials';
 import type { HealthIncident } from '../../../../src/live/types';
-
-// ---------------------------------------------------------------------------
-// Single-user seed path — no auth or user selection for the local-dev slice.
-// ---------------------------------------------------------------------------
-const SEED_INSTALLATION_ID = '00000000-0000-0000-0000-000000000002';
+import { resolveEffectiveInstallationId } from '../../../../src/installation-helpers';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -94,8 +90,11 @@ export async function GET(
     return Response.json({ error: 'Invalid date format. Expected YYYY-MM-DD.' }, { status: 400 });
   }
 
+  const installationId = await resolveEffectiveInstallationId();
+  if (!installationId) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+
   const now = new Date();
-  const installationContext = await loadInstallationContext(SEED_INSTALLATION_ID);
+  const installationContext = await loadInstallationContext(installationId);
   const effectiveTimezone = installationContext?.timezone ?? 'Europe/Dublin';
   const today = getTodayLocalDate(effectiveTimezone);
 
@@ -108,7 +107,7 @@ export async function GET(
 
   const fetchedAt = now.toISOString();
 
-  const providerConnection = await loadProviderConnection(SEED_INSTALLATION_ID);
+  const providerConnection = await loadProviderConnection(installationId);
   const credentials = resolveMyEnergiCredentials(providerConnection?.credentialRef);
 
   if (!credentials) {
@@ -119,7 +118,7 @@ export async function GET(
   }
 
   const [tariffContext, fetchResult] = await Promise.all([
-    loadTariffContext(SEED_INSTALLATION_ID, date),
+    loadTariffContext(installationId, date),
     fetchDayRecords(date, effectiveTimezone, credentials),
   ]);
 

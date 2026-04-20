@@ -11,13 +11,9 @@ import {
   periodDataToCostPoints,
 } from '@/src/live/loader';
 import { HistoricalDayScreen } from './HistoricalDayScreen';
+import { resolveEffectiveInstallationId } from '@/src/installation-helpers';
 
 export const dynamic = 'force-dynamic';
-
-// ---------------------------------------------------------------------------
-// Single-user seed path — no auth or user selection for the local-dev slice.
-// ---------------------------------------------------------------------------
-const SEED_INSTALLATION_ID = '00000000-0000-0000-0000-000000000002';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -65,7 +61,9 @@ export default async function HistoricalDayPage({
     redirect('/live');
   }
 
-  const installationContext = await loadInstallationContext(SEED_INSTALLATION_ID);
+  const installationId = await resolveEffectiveInstallationId();
+  if (!installationId) redirect('/connect-provider');
+  const installationContext = await loadInstallationContext(installationId);
   const effectiveTimezone = installationContext?.timezone ?? 'Europe/Dublin';
   const today = getTodayLocalDate(effectiveTimezone);
 
@@ -77,7 +75,7 @@ export default async function HistoricalDayPage({
   const fetchedAt = now.toISOString();
 
   const [tariffContext, minuteData] = await Promise.all([
-    loadTariffContext(SEED_INSTALLATION_ID, date),
+    loadTariffContext(installationId, date),
     fetchMinuteData(date, effectiveTimezone),
   ]);
 

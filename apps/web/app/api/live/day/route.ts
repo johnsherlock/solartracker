@@ -4,9 +4,7 @@ import { loadInstallationContext, loadProviderConnection } from '../../../../src
 import { fetchDayRecords } from '../../../../src/providers/myenergi/client';
 import { normaliseEddiRecords } from '../../../../src/providers/myenergi/adapter';
 import { resolveMyEnergiCredentials } from '../../../../src/providers/myenergi/credentials';
-
-// Single-user seed path — no auth or user selection for the local-dev slice.
-const SEED_INSTALLATION_ID = '00000000-0000-0000-0000-000000000002';
+import { resolveEffectiveInstallationId } from '../../../../src/installation-helpers';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -23,7 +21,10 @@ export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const dateParam = searchParams.get('date');
 
-  const installationContext = await loadInstallationContext(SEED_INSTALLATION_ID);
+  const installationId = await resolveEffectiveInstallationId();
+  if (!installationId) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const installationContext = await loadInstallationContext(installationId);
   const timezone = installationContext?.timezone ?? 'Europe/Dublin';
   const date = dateParam ?? todayInTimezone(timezone);
 
@@ -31,7 +32,7 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: 'Invalid date format. Expected YYYY-MM-DD.' }, { status: 400 });
   }
 
-  const providerConnection = await loadProviderConnection(SEED_INSTALLATION_ID);
+  const providerConnection = await loadProviderConnection(installationId);
   const credentials = resolveMyEnergiCredentials(providerConnection?.credentialRef);
 
   if (!credentials) {

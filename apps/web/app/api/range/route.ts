@@ -8,11 +8,7 @@ import {
 } from '../../../src/range/loader';
 import { allDatesInRange, computeRangeSummary } from '../../../src/range/billing';
 import type { RangeSummaryPayload } from '../../../src/range/types';
-
-// ---------------------------------------------------------------------------
-// Single-user seed path — no auth for the current local-dev slice.
-// ---------------------------------------------------------------------------
-const SEED_INSTALLATION_ID = '00000000-0000-0000-0000-000000000002';
+import { resolveEffectiveInstallationId } from '../../../src/installation-helpers';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -59,7 +55,10 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const installationContext = await loadRangeInstallationContext(SEED_INSTALLATION_ID);
+  const installationId = await resolveEffectiveInstallationId();
+  if (!installationId) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const installationContext = await loadRangeInstallationContext(installationId);
   if (!installationContext) {
     return Response.json(
       { error: 'Installation not found.' },
@@ -68,10 +67,10 @@ export async function GET(request: NextRequest) {
   }
 
   const [tariffVersions, fixedCharges, summaryRows, earliestDate] = await Promise.all([
-    loadTariffVersionsForInstallation(SEED_INSTALLATION_ID),
-    loadFixedChargeVersionsForInstallation(SEED_INSTALLATION_ID),
-    loadDailySummaryRowsForRange(SEED_INSTALLATION_ID, from, to),
-    loadEarliestSummaryDate(SEED_INSTALLATION_ID),
+    loadTariffVersionsForInstallation(installationId),
+    loadFixedChargeVersionsForInstallation(installationId),
+    loadDailySummaryRowsForRange(installationId, from, to),
+    loadEarliestSummaryDate(installationId),
   ]);
 
   const allDates = allDatesInRange(from, to);

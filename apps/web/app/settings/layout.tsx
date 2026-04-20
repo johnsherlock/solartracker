@@ -2,10 +2,10 @@ import Link from 'next/link';
 import { ChevronLeft, Settings, CheckCircle2, Circle, Lock } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { loadSettingsCompletionState } from '@/src/settings/loader';
+import { redirect } from 'next/navigation';
+import { resolveEffectiveInstallationId } from '@/src/installation-helpers';
 
 export const dynamic = 'force-dynamic';
-
-const SEED_INSTALLATION_ID = '00000000-0000-0000-0000-000000000002';
 
 const SECTIONS = [
   { label: 'Tariffs', href: '/settings/tariffs', key: 'tariffs' as const },
@@ -46,7 +46,9 @@ function SidebarItem({
 }
 
 export default async function SettingsLayout({ children }: { children: ReactNode }) {
-  const completion = await loadSettingsCompletionState(SEED_INSTALLATION_ID);
+  const installationId = await resolveEffectiveInstallationId();
+  if (!installationId) redirect('/api/auth/signin');
+  const completion = await loadSettingsCompletionState(installationId);
   const statusMap: Record<SectionKey, SectionStatus> = {
     tariffs: completion.tariffs,
     provider: completion.provider,

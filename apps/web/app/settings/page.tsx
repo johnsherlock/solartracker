@@ -1,8 +1,8 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { CheckCircle2, Circle, Lock, ChevronRight, ArrowRight } from 'lucide-react';
 import { loadSettingsCompletionState } from '@/src/settings/loader';
-
-const SEED_INSTALLATION_ID = '00000000-0000-0000-0000-000000000002';
+import { resolveEffectiveInstallationId } from '@/src/installation-helpers';
 
 type SectionStatus = 'complete' | 'actionable' | 'coming-soon';
 
@@ -241,7 +241,9 @@ function resolveStatusLine(
 }
 
 export default async function SettingsHomePage() {
-  const completion = await loadSettingsCompletionState(SEED_INSTALLATION_ID);
+  const installationId = await resolveEffectiveInstallationId();
+  if (!installationId) redirect('/api/auth/signin');
+  const completion = await loadSettingsCompletionState(installationId);
 
   return (
     <>

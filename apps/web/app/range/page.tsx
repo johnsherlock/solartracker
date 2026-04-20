@@ -8,6 +8,8 @@ import {
 import { allDatesInRange, computeRangeSummary } from '@/src/range/billing';
 import type { RangeSummaryPayload } from '@/src/range/types';
 import { RangeHistoryScreen } from './RangeHistoryScreen';
+import { redirect } from 'next/navigation';
+import { resolveEffectiveInstallationId } from '@/src/installation-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,11 +17,6 @@ export const metadata = {
   title: 'Range History — PV Manager',
   description: 'Energy, solar, and financial performance over time',
 };
-
-// ---------------------------------------------------------------------------
-// Single-user seed path — no auth for the current local-dev slice.
-// ---------------------------------------------------------------------------
-const SEED_INSTALLATION_ID = '00000000-0000-0000-0000-000000000002';
 
 function getTodayLocalDate(timezone: string): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -43,12 +40,14 @@ type PageProps = {
 export default async function RangePage({ searchParams }: PageProps) {
   const { mode, from: initialFrom, to: initialTo } = await searchParams;
 
-  const installationContext = await loadRangeInstallationContext(SEED_INSTALLATION_ID);
+  const installationId = await resolveEffectiveInstallationId();
+  if (!installationId) redirect('/connect-provider');
+  const installationContext = await loadRangeInstallationContext(installationId);
   const timezone = installationContext?.timezone ?? 'Europe/Dublin';
   const currency = installationContext?.currency ?? 'EUR';
   const today = getTodayLocalDate(timezone);
 
-  const earliestDate = await loadEarliestSummaryDate(SEED_INSTALLATION_ID);
+  const earliestDate = await loadEarliestSummaryDate(installationId);
 
   // For "All" mode, load from the earliest known summary date.
   // Otherwise fall back to the default 365-day window.
@@ -58,9 +57,9 @@ export default async function RangePage({ searchParams }: PageProps) {
 
   try {
     const [tariffVersions, fixedCharges, summaryRows] = await Promise.all([
-      loadTariffVersionsForInstallation(SEED_INSTALLATION_ID),
-      loadFixedChargeVersionsForInstallation(SEED_INSTALLATION_ID),
-      loadDailySummaryRowsForRange(SEED_INSTALLATION_ID, windowStart, windowEnd),
+      loadTariffVersionsForInstallation(installationId),
+      loadFixedChargeVersionsForInstallation(installationId),
+      loadDailySummaryRowsForRange(installationId, windowStart, windowEnd),
     ]);
 
     const allDates = allDatesInRange(windowStart, windowEnd);
