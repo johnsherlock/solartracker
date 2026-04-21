@@ -373,20 +373,82 @@ function LegacyRateBands({ version }: { version: TariffVersionDetail }) {
 }
 
 // ---------------------------------------------------------------------------
-// Contract reminder banner
+// Tariff validity banner (calculation-critical)
+// Fires when the active version's validToLocalDate has passed or is near.
+// This is separate from contract reminders — an expired validity means
+// financial calculations since that date may be incorrect.
+// ---------------------------------------------------------------------------
+
+function TariffValidityBanner({ version }: { version: TariffVersionDetail }) {
+  if (!version.validToLocalDate) return null;
+
+  const days = daysUntil(version.validToLocalDate);
+  const isExpired = days < 0;
+  const isExpiringSoon = !isExpired && days <= 30;
+
+  if (!isExpired && !isExpiringSoon) return null;
+
+  return (
+    <div
+      className={[
+        'flex items-start gap-3 rounded-2xl border px-4 py-3.5',
+        isExpired ? 'border-red-800/40 bg-red-950/30' : 'border-amber-700/30 bg-amber-950/20',
+      ].join(' ')}
+    >
+      <AlertTriangle
+        size={15}
+        className={['mt-0.5 shrink-0', isExpired ? 'text-red-400' : 'text-amber-400'].join(' ')}
+      />
+      <div className="flex-1 min-w-0">
+        {isExpired ? (
+          <>
+            <p className="text-sm font-medium text-red-300">Tariff out of date</p>
+            <p className="mt-0.5 text-xs text-slate-400">
+              Your active tariff ended on {formatDate(version.validToLocalDate)}.
+              Financial calculations since that date may be incorrect.
+              Add a new tariff version to restore accuracy.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-medium text-amber-300">
+              Tariff expires in {days} day{days !== 1 ? 's' : ''}
+            </p>
+            <p className="mt-0.5 text-xs text-slate-400">
+              Add a new tariff version before {formatDate(version.validToLocalDate)} to keep
+              calculations accurate.
+            </p>
+          </>
+        )}
+      </div>
+      <Link
+        href="#"
+        className="shrink-0 inline-flex items-center gap-1 rounded-full border border-slate-700 px-3 py-1 text-xs font-medium text-slate-300 hover:border-slate-500 hover:text-slate-100 transition-colors"
+      >
+        Update <ArrowRight size={10} />
+      </Link>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Contract reminder banner (metadata only — does not affect calculations)
+// Fires when contractEndDate is approaching/past, or expectedReviewDate is near.
+// Both messages show together when both apply; review-due is suppressed when
+// the contract end state is already urgent.
 // ---------------------------------------------------------------------------
 
 function ContractBanner({ contract }: { contract: ContractInfo }) {
   const reviewDays = contract.expectedReviewDate ? daysUntil(contract.expectedReviewDate) : null;
   const endDays    = contract.contractEndDate    ? daysUntil(contract.contractEndDate)    : null;
 
-  const isExpired   = endDays !== null && endDays < 0;
-  const endingSoon  = !isExpired && endDays !== null && endDays <= 90;
-  const reviewSoon  = !isExpired && reviewDays !== null && reviewDays >= 0 && reviewDays <= 60;
+  const isExpired      = endDays !== null && endDays < 0;
+  const isUrgent       = isExpired || (endDays !== null && endDays <= 30);
+  const endingSoon     = !isExpired && endDays !== null && endDays <= 90;
+  // Suppress review-due when contract state is already urgent (expired or ≤30 days)
+  const reviewDue      = !isUrgent && reviewDays !== null && reviewDays >= 0 && reviewDays <= 60;
 
-  if (!isExpired && !endingSoon && !reviewSoon) return null;
-
-  const isUrgent = isExpired || (endDays !== null && endDays <= 30);
+  if (!isExpired && !endingSoon && !reviewDue) return null;
 
   return (
     <div
@@ -400,6 +462,9 @@ function ContractBanner({ contract }: { contract: ContractInfo }) {
         className={['mt-0.5 shrink-0', isUrgent ? 'text-red-400' : 'text-amber-400'].join(' ')}
       />
       <div className="flex-1 min-w-0">
+        <p className={['text-xs font-semibold uppercase tracking-wide mb-1', isUrgent ? 'text-red-500' : 'text-amber-600'].join(' ')}>
+          Contract reminder
+        </p>
         {isExpired && (
           <p className="text-sm font-medium text-red-300">Contract expired</p>
         )}
@@ -408,16 +473,18 @@ function ContractBanner({ contract }: { contract: ContractInfo }) {
             Contract ends in {endDays} day{endDays !== 1 ? 's' : ''}
           </p>
         )}
-        {!isExpired && !endingSoon && reviewSoon && reviewDays !== null && (
+        {reviewDue && reviewDays !== null && (
           <p className="text-sm font-medium text-amber-300">
-            Tariff review due in {reviewDays} day{reviewDays !== 1 ? 's' : ''}
+            Rate review reminder in {reviewDays} day{reviewDays !== 1 ? 's' : ''}
           </p>
         )}
         <p className="mt-0.5 text-xs text-slate-400">
           {contract.contractEndDate
             ? `Contract end date: ${formatDate(contract.contractEndDate)}.`
-            : ''}{' '}
-          {contract.notes && <span className="text-slate-500">{contract.notes}</span>}
+            : ''}
+          {contract.notes && (
+            <span className="text-slate-500"> {contract.notes}</span>
+          )}
         </p>
       </div>
       <Link
@@ -681,6 +748,7 @@ export default async function TariffsPage() {
         <EmptyState />
       ) : (
         <div className="flex flex-col gap-6">
+          {data.activeVersion && <TariffValidityBanner version={data.activeVersion} />}
           {data.contract && <ContractBanner contract={data.contract} />}
 
           {data.activeVersion && (
