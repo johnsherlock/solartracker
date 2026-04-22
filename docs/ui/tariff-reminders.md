@@ -226,3 +226,24 @@ not as the source of any reminder state logic.
 - Email or push notification delivery (can be layered on later)
 - Admin reminder tooling
 - Outage or anomaly notifications
+
+## Charges Not Yet Modelled
+
+### PSO Levy (Ireland)
+
+The Public Service Obligation (PSO) levy is a fixed monthly charge on Irish
+electricity bills (currently ~€1.46/month). It appears in the sub-total before
+VAT, so the standard VAT rate applies to it. At ~€17.52/year it does not
+significantly affect calculations if omitted.
+
+It is not modelled in the current tariff schema. When it is added, it should
+be treated as an additional recurring standing charge (monthly unit), subject
+to the same VAT rate as other charges.
+
+### Other Recurring Charges
+
+For users outside Ireland, equivalent levies or recurring charges may apply
+under different names. The tariff editor should eventually support a generic
+"additional recurring charges" section so these can be captured without
+requiring country-specific fields. This is deferred until a concrete story
+addresses it.

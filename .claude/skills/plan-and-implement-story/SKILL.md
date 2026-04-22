@@ -24,7 +24,7 @@ Then produce:
 3. A scoped implementation plan for this story only
 4. Follow the steps in the plan precisely, without expanding scope or modifying unrelated code
 5. Promt for confirmation before writing any code, and only proceed once the plan is confirmed
-6. After confirmation create a branch for the story (e.g. `stories/P-021`) and switch to it
+6. After confirmation, ensure you are on `v2` (`git checkout v2 && git pull origin v2`), then create a branch for the story from `v2` (e.g. `stories/P-021`) and switch to it
 7. Implement the story according to the confirmed plan
 8. Once implementation is complete, create a pull request using the pr naming convetions from https://www.conventionalcommits.org/en/v1.0.0/
 9. Address any review feedback and iterate until the PR is approved
