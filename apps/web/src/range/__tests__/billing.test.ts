@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { allDatesInRange, computeRangeSummary } from '../billing';
-import type { TariffVersion, FixedChargeVersion } from '../../domain/billing';
+import type { ScheduledTariffVersion, FixedChargeVersion } from '../../domain/billing';
 import type { DailySummaryRow } from '../loader';
 
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
 
-const baseTariff: TariffVersion = {
+const baseTariff: ScheduledTariffVersion = {
   id: 'tariff-v1',
   validFromLocalDate: '2024-01-01',
   validToLocalDate: null,
@@ -22,6 +22,8 @@ const baseTariff: TariffVersion = {
   nightEndLocalTime: null,
   peakStartLocalTime: null,
   peakEndLocalTime: null,
+  pricePeriods: [],
+  weeklySchedule: null,
 };
 
 const standingCharge: FixedChargeVersion = {
@@ -48,6 +50,7 @@ function makeRow(localDate: string, overrides?: Partial<DailySummaryRow>): Daily
     nightImportKwh: null,
     peakImportKwh: null,
     freeImportKwh: null,
+    bandBreakdown: null,
     ...overrides,
   };
 }
@@ -165,14 +168,14 @@ describe('computeRangeSummary — basic billing', () => {
 // ---------------------------------------------------------------------------
 
 describe('computeRangeSummary — tariff version change', () => {
-  const tariffV1: TariffVersion = {
+  const tariffV1: ScheduledTariffVersion = {
     ...baseTariff,
     id: 'tariff-v1',
     validFromLocalDate: '2024-11-01',
     validToLocalDate: '2024-11-02',
     dayRate: 0.25,
   };
-  const tariffV2: TariffVersion = {
+  const tariffV2: ScheduledTariffVersion = {
     ...baseTariff,
     id: 'tariff-v2',
     validFromLocalDate: '2024-11-03',
@@ -295,7 +298,7 @@ describe('computeRangeSummary — no tariff', () => {
 
 describe('computeRangeSummary — rows outside tariff coverage', () => {
   // Tariff only covers from 2024-11-03 onward; rows 01-02 are outside.
-  const partialTariff: TariffVersion = {
+  const partialTariff: ScheduledTariffVersion = {
     ...baseTariff,
     id: 'tariff-partial',
     validFromLocalDate: '2024-11-03',
@@ -338,13 +341,13 @@ describe('computeRangeSummary — rows outside tariff coverage', () => {
 describe('computeRangeSummary — tariff change on missing day', () => {
   // v1 covers 11-01 to 11-02, v2 covers 11-03 onward.
   // Only 11-01 and 11-03 have summary rows; 11-02 (the change boundary) is missing.
-  const tariffV1: TariffVersion = {
+  const tariffV1: ScheduledTariffVersion = {
     ...baseTariff,
     id: 'tariff-v1',
     validFromLocalDate: '2024-11-01',
     validToLocalDate: '2024-11-02',
   };
-  const tariffV2: TariffVersion = {
+  const tariffV2: ScheduledTariffVersion = {
     ...baseTariff,
     id: 'tariff-v2',
     validFromLocalDate: '2024-11-03',
@@ -382,6 +385,7 @@ describe('calculateBillingFromDailySummaries — withoutSolarImport clamped', ()
       nightImportKwh: null,
       peakImportKwh: null,
       freeImportKwh: null,
+      bandBreakdown: null,
     };
     const allDates = allDatesInRange('2024-11-01', '2024-11-01');
     const { summary } = computeRangeSummary([badRow], allDates, [baseTariff], []);
@@ -424,5 +428,51 @@ describe('computeRangeSummary — partial days', () => {
     const allDates = allDatesInRange('2024-11-01', '2024-11-03');
     const { health } = computeRangeSummary(rows, allDates, [baseTariff], []);
     expect(health.partialDays).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeRangeSummary — schedule-based band breakdown billing
+// ---------------------------------------------------------------------------
+
+describe('computeRangeSummary — schedule-based billing', () => {
+  const pDay = { id: 'pd', tariffPlanVersionId: 'tariff-v1', periodLabel: 'Day', ratePerKwh: 0.3, isFreeImport: false, sortOrder: 0 };
+  const pNight = { id: 'pn', tariffPlanVersionId: 'tariff-v1', periodLabel: 'Night', ratePerKwh: 0.1, isFreeImport: false, sortOrder: 1 };
+  const pFree = { id: 'pf', tariffPlanVersionId: 'tariff-v1', periodLabel: 'Free', ratePerKwh: 0, isFreeImport: true, sortOrder: 2 };
+
+  const scheduledTariff: ScheduledTariffVersion = {
+    ...baseTariff,
+    nightRate: null,
+    peakRate: null,
+    pricePeriods: [pDay, pNight, pFree],
+    weeklySchedule: null,
+  };
+
+  it('uses per-period rates from bandBreakdown when present', () => {
+    // 2 kWh day (0.3), 2 kWh night (0.1), 1 kWh free (0)
+    // rawCost = (2×0.3 + 2×0.1 + 1×0) × 1.09 = 0.8 × 1.09 = 0.872
+    const row = makeRow('2024-11-01', {
+      importKwh: 5,
+      bandBreakdown: { pd: 2, pn: 2, pf: 1 },
+    });
+    const allDates = allDatesInRange('2024-11-01', '2024-11-01');
+    const { series, summary } = computeRangeSummary([row], allDates, [scheduledTariff], []);
+    expect(series[0].billing!.importCost).toBeCloseTo(0.872, 2);
+    expect(summary.actual.importCost).toBeCloseTo(0.872, 2);
+  });
+
+  it('returns banded-daily-rate note when all rows have a bandBreakdown', () => {
+    const row = makeRow('2024-11-01', { bandBreakdown: { pd: 5 } });
+    const allDates = allDatesInRange('2024-11-01', '2024-11-01');
+    const { summary } = computeRangeSummary([row], allDates, [scheduledTariff], []);
+    expect(summary.note).toBe('banded-daily-rate');
+  });
+
+  it('treats isFreeImport periods as zero-rate in both per-day and overall billing', () => {
+    const row = makeRow('2024-11-01', { importKwh: 3, bandBreakdown: { pf: 3 } });
+    const allDates = allDatesInRange('2024-11-01', '2024-11-01');
+    const { series, summary } = computeRangeSummary([row], allDates, [scheduledTariff], []);
+    expect(series[0].billing!.importCost).toBeCloseTo(0, 6);
+    expect(summary.actual.importCost).toBeCloseTo(0, 6);
   });
 });

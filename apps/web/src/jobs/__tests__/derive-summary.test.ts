@@ -459,4 +459,15 @@ describe('deriveDailySummaryFieldsScheduled', () => {
     expect(scheduled.generatedKwh).toBeCloseTo(simple.generatedKwh, 4);
     expect(scheduled.consumedKwh).toBeCloseTo(simple.consumedKwh, 4);
   });
+
+  it('band breakdown totals sum to total importKwh', () => {
+    const readings = [
+      makeReading({ hour: 0, minute: 0, importKwh: 0.5 }),   // night
+      makeReading({ hour: 12, minute: 0, importKwh: 1.0 }),  // free
+      makeReading({ hour: 14, minute: 0, importKwh: 2.0 }),  // day
+    ];
+    const result = deriveDailySummaryFieldsScheduled(readings, 1440, monday, testSchedule, testPeriods);
+    const bandTotal = Object.values(result.bandBreakdownJson ?? {}).reduce((a, b) => a + b, 0);
+    expect(bandTotal).toBeCloseTo(result.importKwh, 5);
+  });
 });

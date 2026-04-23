@@ -19,15 +19,20 @@ import {
   jobRuns,
   tariffPlans,
   tariffPlanVersions,
+  tariffPricePeriods,
 } from '../db/schema';
 import { fetchDayRecords } from '../providers/myenergi/client';
 import { normaliseEddiRecords } from '../providers/myenergi/adapter';
 import { resolveMyEnergiCredentials } from '../providers/myenergi/credentials';
+import type { TariffPricePeriod, WeeklySchedule } from '../domain/billing';
 import {
   getPreviousLocalDate,
   isAfterMidnightBuffer,
   expectedMinutesForDay,
   deriveDailySummaryFields,
+  deriveDailySummaryFieldsScheduled,
+  type DailySummaryFields,
+  type DailySummaryFieldsScheduled,
   type TariffWindows,
 } from './derive-summary';
 
@@ -86,13 +91,26 @@ async function loadActiveInstallations(): Promise<ActiveInstallation[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Tariff window loader
+// Tariff context loader
 // ---------------------------------------------------------------------------
 
-async function loadTariffWindowsForDate(
+type ScheduledTariffContext = {
+  kind: 'scheduled';
+  schedule: WeeklySchedule;
+  periods: TariffPricePeriod[];
+};
+
+type LegacyTariffContext = {
+  kind: 'legacy';
+  windows: TariffWindows;
+};
+
+type TariffContext = ScheduledTariffContext | LegacyTariffContext | null;
+
+async function loadTariffContextForDate(
   installationId: string,
   localDate: string,
-): Promise<TariffWindows | null> {
+): Promise<TariffContext> {
   const planRows = await db
     .select({ id: tariffPlans.id })
     .from(tariffPlans)
@@ -104,6 +122,8 @@ async function loadTariffWindowsForDate(
 
   const versionRows = await db
     .select({
+      id: tariffPlanVersions.id,
+      weeklyScheduleJson: tariffPlanVersions.weeklyScheduleJson,
       nightStartLocalTime: tariffPlanVersions.nightStartLocalTime,
       nightEndLocalTime: tariffPlanVersions.nightEndLocalTime,
       peakStartLocalTime: tariffPlanVersions.peakStartLocalTime,
@@ -128,13 +148,43 @@ async function loadTariffWindowsForDate(
   if (versionRows.length === 0) return null;
 
   const v = versionRows[0];
+
+  if (v.weeklyScheduleJson) {
+    const periodRows = await db
+      .select({
+        id: tariffPricePeriods.id,
+        tariffPlanVersionId: tariffPricePeriods.tariffPlanVersionId,
+        periodLabel: tariffPricePeriods.periodLabel,
+        ratePerKwh: tariffPricePeriods.ratePerKwh,
+        isFreeImport: tariffPricePeriods.isFreeImport,
+        sortOrder: tariffPricePeriods.sortOrder,
+      })
+      .from(tariffPricePeriods)
+      .where(eq(tariffPricePeriods.tariffPlanVersionId, v.id))
+      .orderBy(tariffPricePeriods.sortOrder);
+
+    const periods: TariffPricePeriod[] = periodRows.map((p) => ({
+      id: p.id,
+      tariffPlanVersionId: p.tariffPlanVersionId,
+      periodLabel: p.periodLabel,
+      ratePerKwh: parseFloat(p.ratePerKwh),
+      isFreeImport: p.isFreeImport,
+      sortOrder: p.sortOrder,
+    }));
+
+    return { kind: 'scheduled', schedule: v.weeklyScheduleJson as WeeklySchedule, periods };
+  }
+
   if (!v.nightStartLocalTime || !v.nightEndLocalTime) return null;
 
   return {
-    nightStartLocalTime: v.nightStartLocalTime,
-    nightEndLocalTime: v.nightEndLocalTime,
-    peakStartLocalTime: v.peakStartLocalTime ?? null,
-    peakEndLocalTime: v.peakEndLocalTime ?? null,
+    kind: 'legacy',
+    windows: {
+      nightStartLocalTime: v.nightStartLocalTime,
+      nightEndLocalTime: v.nightEndLocalTime,
+      peakStartLocalTime: v.peakStartLocalTime ?? null,
+      peakEndLocalTime: v.peakEndLocalTime ?? null,
+    },
   };
 }
 
@@ -145,9 +195,10 @@ async function loadTariffWindowsForDate(
 async function upsertDailySummary(
   installationId: string,
   localDate: string,
-  fields: ReturnType<typeof deriveDailySummaryFields>,
+  fields: DailySummaryFields | DailySummaryFieldsScheduled,
 ): Promise<{ written: boolean }> {
   const now = new Date();
+  const bandBreakdown = 'bandBreakdownJson' in fields ? fields.bandBreakdownJson : null;
 
   const values = {
     installationId,
@@ -166,6 +217,7 @@ async function upsertDailySummary(
     nightImportKwh: fields.nightImportKwh != null ? String(fields.nightImportKwh) : null,
     peakImportKwh: fields.peakImportKwh != null ? String(fields.peakImportKwh) : null,
     freeImportKwh: fields.freeImportKwh != null ? String(fields.freeImportKwh) : null,
+    bandBreakdownJson: bandBreakdown ?? null,
     isPartial: fields.isPartial,
     rebuiltAt: now,
   };
@@ -188,6 +240,7 @@ async function upsertDailySummary(
         nightImportKwh: values.nightImportKwh,
         peakImportKwh: values.peakImportKwh,
         freeImportKwh: values.freeImportKwh,
+        bandBreakdownJson: values.bandBreakdownJson,
         isPartial: values.isPartial,
         rebuiltAt: values.rebuiltAt,
       },
@@ -231,8 +284,12 @@ async function summariseInstallation(
 
   const readings = normaliseEddiRecords(fetchResult.records, targetDate, inst.timezone);
   const expected = expectedMinutesForDay(targetDate, inst.timezone);
-  const tariffWindows = await loadTariffWindowsForDate(inst.installationId, targetDate);
-  const fields = deriveDailySummaryFields(readings, expected, tariffWindows);
+  const tariffContext = await loadTariffContextForDate(inst.installationId, targetDate);
+
+  const fields =
+    tariffContext?.kind === 'scheduled'
+      ? deriveDailySummaryFieldsScheduled(readings, expected, targetDate, tariffContext.schedule, tariffContext.periods)
+      : deriveDailySummaryFields(readings, expected, tariffContext?.kind === 'legacy' ? tariffContext.windows : null);
 
   await upsertDailySummary(inst.installationId, targetDate, fields);
 

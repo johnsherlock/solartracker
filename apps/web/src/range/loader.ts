@@ -6,7 +6,7 @@
  */
 
 import { and, between, eq, inArray, min } from 'drizzle-orm';
-import type { TariffVersion, FixedChargeVersion } from '../domain/billing';
+import type { TariffPricePeriod, ScheduledTariffVersion, FixedChargeVersion } from '../domain/billing';
 
 type RangeLoaderDbModule = typeof import('../db/client');
 type RangeLoaderSchemaModule = typeof import('../db/schema');
@@ -17,6 +17,7 @@ let _dbDeps:
       installations: RangeLoaderSchemaModule['installations'];
       tariffPlans: RangeLoaderSchemaModule['tariffPlans'];
       tariffPlanVersions: RangeLoaderSchemaModule['tariffPlanVersions'];
+      tariffPricePeriods: RangeLoaderSchemaModule['tariffPricePeriods'];
       tariffFixedChargeVersions: RangeLoaderSchemaModule['tariffFixedChargeVersions'];
       dailySummaries: RangeLoaderSchemaModule['dailySummaries'];
     }>
@@ -30,6 +31,7 @@ async function getDbDeps() {
         installations: schema.installations,
         tariffPlans: schema.tariffPlans,
         tariffPlanVersions: schema.tariffPlanVersions,
+        tariffPricePeriods: schema.tariffPricePeriods,
         tariffFixedChargeVersions: schema.tariffFixedChargeVersions,
         dailySummaries: schema.dailySummaries,
       }),
@@ -77,8 +79,8 @@ export async function loadRangeInstallationContext(
  */
 export async function loadTariffVersionsForInstallation(
   installationId: string,
-): Promise<TariffVersion[]> {
-  const { db, tariffPlans, tariffPlanVersions } = await getDbDeps();
+): Promise<ScheduledTariffVersion[]> {
+  const { db, tariffPlans, tariffPlanVersions, tariffPricePeriods } = await getDbDeps();
 
   const planRows = await db
     .select({ id: tariffPlans.id })
@@ -98,6 +100,33 @@ export async function loadTariffVersionsForInstallation(
         : inArray(tariffPlanVersions.tariffPlanId, planIds),
     );
 
+  if (versionRows.length === 0) return [];
+
+  const versionIds = versionRows.map((v) => v.id);
+  const periodRows = await db
+    .select()
+    .from(tariffPricePeriods)
+    .where(
+      versionIds.length === 1
+        ? eq(tariffPricePeriods.tariffPlanVersionId, versionIds[0])
+        : inArray(tariffPricePeriods.tariffPlanVersionId, versionIds),
+    )
+    .orderBy(tariffPricePeriods.sortOrder);
+
+  const periodsByVersionId = new Map<string, TariffPricePeriod[]>();
+  for (const p of periodRows) {
+    const list = periodsByVersionId.get(p.tariffPlanVersionId) ?? [];
+    list.push({
+      id: p.id,
+      tariffPlanVersionId: p.tariffPlanVersionId,
+      periodLabel: p.periodLabel,
+      ratePerKwh: Number(p.ratePerKwh),
+      isFreeImport: p.isFreeImport,
+      sortOrder: p.sortOrder,
+    });
+    periodsByVersionId.set(p.tariffPlanVersionId, list);
+  }
+
   return versionRows.map((v) => ({
     id: v.id,
     validFromLocalDate: v.validFromLocalDate,
@@ -113,6 +142,8 @@ export async function loadTariffVersionsForInstallation(
     nightEndLocalTime: v.nightEndLocalTime ?? null,
     peakStartLocalTime: v.peakStartLocalTime ?? null,
     peakEndLocalTime: v.peakEndLocalTime ?? null,
+    pricePeriods: periodsByVersionId.get(v.id) ?? [],
+    weeklySchedule: v.weeklyScheduleJson as string[] | null,
   }));
 }
 
@@ -183,6 +214,7 @@ export type DailySummaryRow = {
   nightImportKwh: number | null;
   peakImportKwh: number | null;
   freeImportKwh: number | null;
+  bandBreakdown: Record<string, number> | null;
 };
 
 /**
@@ -233,5 +265,6 @@ export async function loadDailySummaryRowsForRange(
     nightImportKwh: r.nightImportKwh != null ? Number(r.nightImportKwh) : null,
     peakImportKwh: r.peakImportKwh != null ? Number(r.peakImportKwh) : null,
     freeImportKwh: r.freeImportKwh != null ? Number(r.freeImportKwh) : null,
+    bandBreakdown: r.bandBreakdownJson as Record<string, number> | null,
   }));
 }

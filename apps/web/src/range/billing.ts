@@ -9,12 +9,12 @@
  */
 
 import {
-  calculateBillingFromDailySummaries,
+  calculateBillingFromDailySummariesScheduled,
   fixedChargeContributionForDate,
   resolveTariffVersion,
-  type TariffVersion,
+  type ScheduledTariffVersion,
   type FixedChargeVersion,
-  type DailySummaryForBilling,
+  type DailySummaryForBillingScheduled,
 } from '../domain/billing';
 import type {
   RangeSummarySection,
@@ -60,18 +60,27 @@ type DayBillingResult = {
 
 function computeDayBilling(
   row: DailySummaryRow,
-  tariffVersions: TariffVersion[],
+  tariffVersions: ScheduledTariffVersion[],
   fixedChargeVersions: FixedChargeVersion[],
 ): DayBillingResult {
   try {
-    const tariff = resolveTariffVersion(tariffVersions, `${row.localDate}T12:00`);
+    const tariff = resolveTariffVersion(tariffVersions, `${row.localDate}T12:00`) as ScheduledTariffVersion;
     const vat = 1 + (tariff.vatRate ?? 0);
     const discount = tariff.discountRuleType === 'percentage' && tariff.discountValue != null
       ? 1 - tariff.discountValue
       : 1;
 
     let rawImportCost: number;
-    if (row.dayImportKwh != null && row.nightImportKwh != null && row.peakImportKwh != null) {
+    if (row.bandBreakdown && tariff.pricePeriods.length > 0) {
+      const periodMap = new Map(tariff.pricePeriods.map((p) => [p.id, p]));
+      let rawCost = 0;
+      for (const [periodId, kwh] of Object.entries(row.bandBreakdown)) {
+        const period = periodMap.get(periodId);
+        const rate = period ? (period.isFreeImport ? 0 : period.ratePerKwh) : tariff.dayRate;
+        rawCost += kwh * rate;
+      }
+      rawImportCost = rawCost * discount * vat;
+    } else if (row.dayImportKwh != null && row.nightImportKwh != null && row.peakImportKwh != null) {
       const dayBand   = row.dayImportKwh  * tariff.dayRate;
       const nightBand = row.nightImportKwh * (tariff.nightRate ?? tariff.dayRate);
       const peakBand  = row.peakImportKwh  * (tariff.peakRate  ?? tariff.dayRate);
@@ -89,8 +98,8 @@ function computeDayBilling(
       row.importKwh + row.generatedKwh - row.exportKwh - (row.immersionDivertedKwh ?? 0),
     );
     // No-solar baseline always uses day rate: we cannot know how a higher
-    // counterfactual load would have split across night/peak bands, so the
-    // day rate is used as a documented, accepted simplification.
+    // counterfactual load would have split across bands, so day rate is used
+    // as a documented, accepted simplification.
     const withoutSolarCost = r2(withoutSolarImport * tariff.dayRate * discount * vat);
     const withoutSolarNetCost = r2(withoutSolarCost + fixedCharges);
     const savings = r2(withoutSolarNetCost - actualNetCost);
@@ -108,7 +117,7 @@ function computeDayBilling(
 function deriveHealth(
   allDates: string[],
   summaryMap: Map<string, DailySummaryRow>,
-  tariffVersions: TariffVersion[],
+  tariffVersions: ScheduledTariffVersion[],
 ): RangeSummaryHealth {
   const missingDayDates: string[] = [];
   let partialDays = 0;
@@ -180,7 +189,7 @@ export type RangeComputeResult = {
 export function computeRangeSummary(
   rows: DailySummaryRow[],
   allDates: string[],
-  tariffVersions: TariffVersion[],
+  tariffVersions: ScheduledTariffVersion[],
   fixedCharges: FixedChargeVersion[],
 ): RangeComputeResult {
   const summaryMap = new Map(rows.map((r) => [r.localDate, r]));
@@ -231,7 +240,7 @@ export function computeRangeSummary(
   // Overall billing — only over days that have summary rows AND tariff coverage.
   // Filtering to tariff-covered days prevents calculateBillingFromDailySummaries
   // from throwing when a row falls outside all tariff version date windows.
-  const summariesForBilling: DailySummaryForBilling[] = rows
+  const summariesForBilling: DailySummaryForBillingScheduled[] = rows
     .filter((r) => {
       try {
         resolveTariffVersion(tariffVersions, `${r.localDate}T12:00`);
@@ -250,17 +259,20 @@ export function computeRangeSummary(
       dayImportKwh: r.dayImportKwh,
       nightImportKwh: r.nightImportKwh,
       peakImportKwh: r.peakImportKwh,
+      bandBreakdown: r.bandBreakdown,
     }));
 
   const allBillingDaysHaveBandData =
     summariesForBilling.length > 0 &&
     summariesForBilling.every(
-      (s) => s.dayImportKwh != null && s.nightImportKwh != null && s.peakImportKwh != null,
+      (s) =>
+        s.bandBreakdown != null ||
+        (s.dayImportKwh != null && s.nightImportKwh != null && s.peakImportKwh != null),
     );
 
   const billing =
     tariffVersions.length > 0 && summariesForBilling.length > 0
-      ? calculateBillingFromDailySummaries(summariesForBilling, tariffVersions, fixedCharges)
+      ? calculateBillingFromDailySummariesScheduled(summariesForBilling, tariffVersions, fixedCharges)
       : null;
 
   const zeroCostBreakdown = {

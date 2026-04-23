@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { allDatesInRange, computeRangeSummary } from '../billing';
-import type { TariffVersion, FixedChargeVersion } from '../../domain/billing';
+import type { ScheduledTariffVersion, FixedChargeVersion } from '../../domain/billing';
 import type { DailySummaryRow } from '../loader';
 
 // ---------------------------------------------------------------------------
@@ -28,7 +28,7 @@ const FIXED_CHARGE_V2_ID  = '00000000-0000-0000-0000-000000000008';
  * V1: valid 2025-02-28 → 2025-10-09 (day rate 0.3451, export 0.2000, VAT 9%)
  * V2: valid 2025-10-10 → open     (day rate 0.3865, export 0.1850, VAT 9%)
  */
-const seedTariffVersions: TariffVersion[] = [
+const seedTariffVersions: ScheduledTariffVersion[] = [
   {
     id: TARIFF_VERSION_1_ID,
     validFromLocalDate: '2025-02-28',
@@ -44,6 +44,8 @@ const seedTariffVersions: TariffVersion[] = [
     nightEndLocalTime: '08:00',
     peakStartLocalTime: '17:00',
     peakEndLocalTime: '19:00',
+    pricePeriods: [],
+    weeklySchedule: null,
   },
   {
     id: TARIFF_VERSION_2_ID,
@@ -60,6 +62,8 @@ const seedTariffVersions: TariffVersion[] = [
     nightEndLocalTime: '08:00',
     peakStartLocalTime: '17:00',
     peakEndLocalTime: '19:00',
+    pricePeriods: [],
+    weeklySchedule: null,
   },
 ];
 
@@ -97,7 +101,7 @@ function bandSplit(importKwh: number) {
   const night = r4(importKwh * 0.35);
   const peak  = r4(importKwh * 0.10);
   const day   = r4(importKwh - night - peak);
-  return { dayImportKwh: day, nightImportKwh: night, peakImportKwh: peak, freeImportKwh: null };
+  return { dayImportKwh: day, nightImportKwh: night, peakImportKwh: peak, freeImportKwh: null, bandBreakdown: null };
 }
 
 /**
