@@ -42,6 +42,7 @@ export const installations = pgTable('installations', {
   currencyCode: text('currency_code').notNull().default('EUR'),
   arrayCapacityKw: numeric('array_capacity_kw', { precision: 8, scale: 2 }),
   financeMode: text('finance_mode'),
+  financeInvestmentDate: date('finance_investment_date'),
   installCostAmount: numeric('install_cost_amount', { precision: 12, scale: 2 }),
   monthlyFinancePaymentAmount: numeric('monthly_finance_payment_amount', { precision: 12, scale: 2 }),
   financeTermMonths: integer('finance_term_months'),

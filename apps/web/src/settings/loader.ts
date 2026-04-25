@@ -67,7 +67,7 @@ export async function loadSettingsCompletionState(
   const [installation, providerConnection, tariffVersion] = await Promise.all([
     db
       .select({
-        financeMode: installations.financeMode,
+        financeInvestmentDate: installations.financeInvestmentDate,
         arrayCapacityKw: installations.arrayCapacityKw,
         locationLatitude: installations.locationLatitude,
       })
@@ -100,7 +100,7 @@ export async function loadSettingsCompletionState(
   const tariffsStatus: SectionStatus = tariffVersion ? 'complete' : 'actionable';
   const providerStatus: SectionStatus =
     providerConnection?.status === 'active' ? 'complete' : 'actionable';
-  const financeStatus: SectionStatus = installation?.financeMode ? 'complete' : 'actionable';
+  const financeStatus: SectionStatus = installation?.financeInvestmentDate ? 'complete' : 'actionable';
   const solarStatus: SectionStatus = installation?.arrayCapacityKw ? 'complete' : 'actionable';
   const locationStatus: SectionStatus = installation?.locationLatitude ? 'complete' : 'actionable';
 
