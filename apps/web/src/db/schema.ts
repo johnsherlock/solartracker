@@ -1,6 +1,8 @@
+import { sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import {
   boolean,
+  check,
   date,
   index,
   integer,
@@ -226,6 +228,26 @@ export const dataHealthEvents = pgTable('data_health_events', {
   summary: text('summary').notNull(),
   detailsJson: jsonb('details_json'),
 });
+
+export const systemAdditions = pgTable('system_additions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  installationId: uuid('installation_id').notNull().references(() => installations.id, { onDelete: 'cascade' }),
+  label: text('label').notNull(),
+  additionDate: date('addition_date').notNull(),
+  capacityAddedKw: numeric('capacity_added_kw', { precision: 8, scale: 2 }),
+  upfrontPayment: numeric('upfront_payment', { precision: 12, scale: 2 }),
+  monthlyRepayment: numeric('monthly_repayment', { precision: 12, scale: 2 }),
+  repaymentDurationMonths: integer('repayment_duration_months'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  installationIdIdx: index('system_additions_installation_id_idx').on(table.installationId),
+  // At least one payment field is required; monthly repayment requires a duration.
+  financeDetailsCheck: check(
+    'system_additions_finance_details_check',
+    sql`(${table.upfrontPayment} IS NOT NULL OR ${table.monthlyRepayment} IS NOT NULL) AND (${table.monthlyRepayment} IS NULL OR ${table.repaymentDurationMonths} IS NOT NULL)`,
+  ),
+}));
 
 export const deletionRequests = pgTable('deletion_requests', {
   id: uuid('id').defaultRandom().primaryKey(),

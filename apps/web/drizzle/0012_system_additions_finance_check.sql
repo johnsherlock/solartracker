@@ -1,0 +1,1 @@
+ALTER TABLE "system_additions" ADD CONSTRAINT "system_additions_finance_details_check" CHECK (("system_additions"."upfront_payment" IS NOT NULL OR "system_additions"."monthly_repayment" IS NOT NULL) AND ("system_additions"."monthly_repayment" IS NULL OR "system_additions"."repayment_duration_months" IS NOT NULL));

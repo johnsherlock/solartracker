@@ -1,4 +1,4 @@
-import { and, eq, isNotNull } from 'drizzle-orm';
+import { and, count, eq, isNotNull, isNull, or } from 'drizzle-orm';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -36,6 +36,7 @@ let _dbDeps:
       providerConnections: SettingsLoaderSchemaModule['providerConnections'];
       tariffPlans: SettingsLoaderSchemaModule['tariffPlans'];
       tariffPlanVersions: SettingsLoaderSchemaModule['tariffPlanVersions'];
+      systemAdditions: SettingsLoaderSchemaModule['systemAdditions'];
     }>
   | null = null;
 
@@ -48,6 +49,7 @@ async function getDbDeps() {
         providerConnections: schema.providerConnections,
         tariffPlans: schema.tariffPlans,
         tariffPlanVersions: schema.tariffPlanVersions,
+        systemAdditions: schema.systemAdditions,
       }),
     );
   }
@@ -61,13 +63,12 @@ async function getDbDeps() {
 export async function loadSettingsCompletionState(
   installationId: string,
 ): Promise<SettingsCompletionState> {
-  const { db, installations, providerConnections, tariffPlans, tariffPlanVersions } =
+  const { db, installations, providerConnections, tariffPlans, tariffPlanVersions, systemAdditions } =
     await getDbDeps();
 
-  const [installation, providerConnection, tariffVersion] = await Promise.all([
+  const [installation, providerConnection, tariffVersion, systemAdditionCount] = await Promise.all([
     db
       .select({
-        financeInvestmentDate: installations.financeInvestmentDate,
         arrayCapacityKw: installations.arrayCapacityKw,
         locationLatitude: installations.locationLatitude,
       })
@@ -95,12 +96,33 @@ export async function loadSettingsCompletionState(
       .where(eq(tariffPlans.installationId, installationId))
       .limit(1)
       .then((rows) => rows[0] ?? null),
+
+    // Finance is complete when at least one record with valid finance details exists.
+    // Mirrors the rules in validateSystemAdditionInputs: at least one payment field
+    // required, and monthly repayment requires a duration.
+    db
+      .select({ n: count() })
+      .from(systemAdditions)
+      .where(
+        and(
+          eq(systemAdditions.installationId, installationId),
+          or(
+            isNotNull(systemAdditions.upfrontPayment),
+            isNotNull(systemAdditions.monthlyRepayment),
+          ),
+          or(
+            isNull(systemAdditions.monthlyRepayment),
+            isNotNull(systemAdditions.repaymentDurationMonths),
+          ),
+        ),
+      )
+      .then((rows) => rows[0]?.n ?? 0),
   ]);
 
   const tariffsStatus: SectionStatus = tariffVersion ? 'complete' : 'actionable';
   const providerStatus: SectionStatus =
     providerConnection?.status === 'active' ? 'complete' : 'actionable';
-  const financeStatus: SectionStatus = installation?.financeInvestmentDate ? 'complete' : 'actionable';
+  const financeStatus: SectionStatus = systemAdditionCount > 0 ? 'complete' : 'actionable';
   const solarStatus: SectionStatus = installation?.arrayCapacityKw ? 'complete' : 'actionable';
   const locationStatus: SectionStatus = installation?.locationLatitude ? 'complete' : 'actionable';
 
