@@ -7,6 +7,10 @@ import {
 } from '@/src/range/loader';
 import { allDatesInRange, computeRangeSummary } from '@/src/range/billing';
 import type { RangeSummaryPayload } from '@/src/range/types';
+import {
+  computeAllTimeSavings,
+  type RangeFinanceContext,
+} from '@/src/range/recovery';
 import { RangeHistoryScreen } from './RangeHistoryScreen';
 import { redirect } from 'next/navigation';
 import { resolveEffectiveInstallationId } from '@/src/installation-helpers';
@@ -55,11 +59,17 @@ export default async function RangePage({ searchParams }: PageProps) {
     mode === 'all' && earliestDate ? earliestDate : offsetDays(today, -364);
   const windowEnd = today;
 
+  const needsAllTimeLoad =
+    installationContext?.totalSystemInvestment != null && earliestDate != null;
+
   try {
-    const [tariffVersions, fixedCharges, summaryRows] = await Promise.all([
+    const [tariffVersions, fixedCharges, summaryRows, allTimeRows] = await Promise.all([
       loadTariffVersionsForInstallation(installationId),
       loadFixedChargeVersionsForInstallation(installationId),
       loadDailySummaryRowsForRange(installationId, windowStart, windowEnd),
+      needsAllTimeLoad && earliestDate !== windowStart
+        ? loadDailySummaryRowsForRange(installationId, earliestDate!, today)
+        : Promise.resolve(null),
     ]);
 
     const allDates = allDatesInRange(windowStart, windowEnd);
@@ -69,6 +79,32 @@ export default async function RangePage({ searchParams }: PageProps) {
       tariffVersions,
       fixedCharges,
     );
+
+    let financeContext: RangeFinanceContext | null = null;
+    if (
+      installationContext?.totalSystemInvestment != null &&
+      installationContext.earliestAdditionDate != null &&
+      earliestDate != null
+    ) {
+      // Use windowed rows when they already cover all history (mode=all), else use the dedicated all-time load
+      const rowsForAllTime = allTimeRows ?? summaryRows;
+      const allTimeDates = allDatesInRange(earliestDate, today);
+      const { series: allTimeSeries } = computeRangeSummary(
+        rowsForAllTime,
+        allTimeDates,
+        tariffVersions,
+        fixedCharges,
+      );
+      const { savings, coveredDays } = computeAllTimeSavings(allTimeSeries);
+
+      financeContext = {
+        totalSystemInvestment: installationContext.totalSystemInvestment,
+        earliestAdditionDate: installationContext.earliestAdditionDate,
+        allTimeSavings: savings,
+        allTimeCoveredDays: coveredDays,
+        activeMonthlyRepayment: installationContext.activeMonthlyRepayment,
+      };
+    }
 
     const payload: RangeSummaryPayload = {
       meta: {
@@ -88,7 +124,7 @@ export default async function RangePage({ searchParams }: PageProps) {
       <RangeHistoryScreen
         payload={payload}
         today={today}
-        activeMonthlyRepayment={installationContext?.activeMonthlyRepayment ?? null}
+        financeContext={financeContext}
         initialMode={mode ?? null}
         initialFrom={initialFrom ?? null}
         initialTo={initialTo ?? null}
@@ -101,7 +137,7 @@ export default async function RangePage({ searchParams }: PageProps) {
       <RangeHistoryScreen
         payload={null}
         today={today}
-        activeMonthlyRepayment={null}
+        financeContext={null}
         initialMode={mode ?? null}
         initialFrom={initialFrom ?? null}
         initialTo={initialTo ?? null}

@@ -19,6 +19,10 @@ import {
 } from 'lucide-react';
 import type { RangeSummaryPayload, RangeSeriesDay } from '@/src/range/types';
 import {
+  computePayoffOutlook,
+  type RangeFinanceContext,
+} from '@/src/range/recovery';
+import {
   type ActiveRange,
   type RangeMode,
   formatRangeLabel,
@@ -50,7 +54,7 @@ import { ExportRatioChart } from './ExportRatioChart';
 export type RangeHistoryScreenProps = {
   payload: RangeSummaryPayload | null;
   today: string;
-  activeMonthlyRepayment: number | null;
+  financeContext: RangeFinanceContext | null;
   initialMode: string | null;
   initialFrom: string | null;
   initialTo: string | null;
@@ -61,7 +65,7 @@ export type RangeHistoryScreenProps = {
 // Root screen
 // ---------------------------------------------------------------------------
 
-export function RangeHistoryScreen({ payload, today, activeMonthlyRepayment, initialMode, initialFrom, initialTo, error }: RangeHistoryScreenProps) {
+export function RangeHistoryScreen({ payload, today, financeContext, initialMode, initialFrom, initialTo, error }: RangeHistoryScreenProps) {
   const router = useRouter();
 
   const earliestDate = payload?.meta.earliestDate ?? null;
@@ -313,12 +317,14 @@ export function RangeHistoryScreen({ payload, today, activeMonthlyRepayment, ini
                   currency={payload?.meta.currency ?? 'EUR'}
                 />
 
-                {/* §10 — Payback tracker (installations with active repayments) */}
-                {activeMonthlyRepayment != null && (
-                  <PaybackTracker
+                {/* §10 — Investment insights (recovery, repayment coverage, payoff outlook) */}
+                {kpis.hasTariff && (
+                  <InvestmentInsightsPanel
+                    financeContext={financeContext}
                     periodSavings={kpis.savings}
                     periodDays={filteredSeries.length}
-                    monthlyPayment={activeMonthlyRepayment}
+                    earliestSummaryDate={payload?.meta.earliestDate ?? null}
+                    today={today}
                     currency={payload?.meta.currency ?? 'EUR'}
                   />
                 )}
@@ -652,12 +658,112 @@ function ChartCard({
 }
 
 // ---------------------------------------------------------------------------
-// §10 — Payback tracker
+// §10 — Investment insights panel
 // ---------------------------------------------------------------------------
 
 const AVG_DAYS_PER_MONTH = 30.4375;
 
-function PaybackTracker({
+function InvestmentInsightsPanel({
+  financeContext,
+  periodSavings,
+  periodDays,
+  earliestSummaryDate,
+  today,
+  currency,
+}: {
+  financeContext: RangeFinanceContext | null;
+  periodSavings: number;
+  periodDays: number;
+  earliestSummaryDate: string | null;
+  today: string;
+  currency: string;
+}) {
+  const payoffOutlook = financeContext ? computePayoffOutlook(financeContext, today) : null;
+
+  if (!financeContext) {
+    return (
+      <div className="rounded-[28px] border border-dashed border-slate-700 bg-[#111b2b] p-5 text-center">
+        <TrendingUp size={20} className="mx-auto mb-3 text-slate-700" />
+        <p className="mb-1 text-sm font-semibold text-slate-400">Track your investment recovery</p>
+        <p className="mb-4 text-xs text-slate-500">
+          Add your system investment details to see how your solar savings are recovering your costs.
+        </p>
+        <Link
+          href="/settings/finance"
+          className="inline-flex items-center gap-1.5 rounded-full border border-indigo-500/50 bg-indigo-600/80 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-600"
+        >
+          Set up investment →
+        </Link>
+      </div>
+    );
+  }
+
+  const { totalSystemInvestment, earliestAdditionDate, allTimeSavings, allTimeCoveredDays, activeMonthlyRepayment } = financeContext;
+  const recoveryPct = totalSystemInvestment > 0
+    ? Math.min(100, Math.round((allTimeSavings / totalSystemInvestment) * 100))
+    : 0;
+  const hasPartialHistory =
+    earliestSummaryDate != null && earliestAdditionDate < earliestSummaryDate;
+
+  return (
+    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-3 sm:p-5 space-y-5">
+      <div className="flex items-center gap-2">
+        <TrendingUp size={14} className="text-slate-600" />
+        <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Investment recovery</span>
+      </div>
+
+      {/* Recovered so far */}
+      <div>
+        <div className="mb-1.5 flex items-baseline justify-between">
+          <span className="text-xs font-medium text-slate-400">Recovered so far</span>
+          <span className="text-xs font-semibold tabular-nums text-emerald-400">
+            {formatCurrency(allTimeSavings, currency)}{' '}
+            <span className="font-normal text-slate-500">of {formatCurrency(totalSystemInvestment, currency)}</span>
+          </span>
+        </div>
+        <div className="h-2.5 overflow-hidden rounded-full bg-slate-800">
+          <div
+            className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+            style={{ width: `${recoveryPct}%` }}
+          />
+        </div>
+        <div className="mt-1.5 flex items-center justify-between">
+          {hasPartialHistory ? (
+            <p className="text-[11px] text-slate-600">
+              Based on {allTimeCoveredDays} day{allTimeCoveredDays !== 1 ? 's' : ''} of recorded history.
+              History begins after your addition date — earlier savings are not included.
+            </p>
+          ) : (
+            <p className="text-[11px] text-slate-600">
+              From {allTimeCoveredDays} day{allTimeCoveredDays !== 1 ? 's' : ''} of recorded history
+            </p>
+          )}
+          <span className="shrink-0 pl-4 text-[11px] font-semibold tabular-nums text-slate-500">{recoveryPct}%</span>
+        </div>
+      </div>
+
+      {/* Period repayment coverage — only for financed additions */}
+      {activeMonthlyRepayment != null && activeMonthlyRepayment > 0 && (
+        <PeriodRepaymentCoverage
+          periodSavings={periodSavings}
+          periodDays={periodDays}
+          monthlyPayment={activeMonthlyRepayment}
+          currency={currency}
+        />
+      )}
+
+      {/* Approximate payoff outlook */}
+      {payoffOutlook && (
+        <PayoffOutlookRow
+          outlook={payoffOutlook}
+          currency={currency}
+        />
+      )}
+    </div>
+  );
+}
+
+function PeriodRepaymentCoverage({
   periodSavings,
   periodDays,
   monthlyPayment,
@@ -675,16 +781,12 @@ function PaybackTracker({
     : 0;
 
   return (
-    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-3 sm:p-5">
-      <div className="mb-4 flex items-center gap-2">
-        <TrendingUp size={14} className="text-slate-600" />
-        <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Payback progress</span>
-        <span className="ml-auto text-[11px] text-slate-600">
-          {formatCurrency(monthlyPayment, currency)}/mo in repayments
-        </span>
+    <div className="border-t border-slate-800/80 pt-4">
+      <div className="mb-1.5 flex items-baseline justify-between">
+        <span className="text-xs font-medium text-slate-400">Repayment coverage this period</span>
+        <span className="text-[11px] text-slate-500">{formatCurrency(monthlyPayment, currency)}/mo</span>
       </div>
-
-      <div className="mb-3 h-3 overflow-hidden rounded-full bg-slate-800">
+      <div className="mb-1.5 h-2.5 overflow-hidden rounded-full bg-slate-800">
         <div
           className={[
             'h-full rounded-full transition-all duration-500',
@@ -693,25 +795,51 @@ function PaybackTracker({
           style={{ width: `${fillPct}%` }}
         />
       </div>
-
       <div className="flex items-baseline justify-between">
-        <p className="text-xs text-slate-400">
+        <p className="text-[11px] text-slate-500">
           Solar saved{' '}
-          <span className={isPositive ? 'font-semibold text-emerald-400' : 'font-semibold text-slate-300'}>
+          <span className={isPositive ? 'font-medium text-emerald-400' : 'font-medium text-slate-300'}>
             {formatCurrency(periodSavings, currency)}
           </span>
-          {' '}of your{' '}
-          <span className="text-slate-300">{formatCurrency(periodPayments, currency)}</span>
-          {' '}in payments this period
+          {' '}of{' '}
+          <span className="text-slate-400">{formatCurrency(periodPayments, currency)}</span>
+          {' '}due
         </p>
         <span
           className={[
-            'shrink-0 pl-4 text-xs font-semibold tabular-nums',
+            'shrink-0 pl-4 text-[11px] font-semibold tabular-nums',
             isPositive ? 'text-emerald-400' : 'text-slate-500',
           ].join(' ')}
         >
           {fillPct}%
         </span>
+      </div>
+    </div>
+  );
+}
+
+function PayoffOutlookRow({
+  outlook,
+  currency,
+}: {
+  outlook: ReturnType<typeof computePayoffOutlook> & {};
+  currency: string;
+}) {
+  const year = new Date(`${outlook.estimatedPayoffDate}T12:00:00`).getFullYear();
+  return (
+    <div className="border-t border-slate-800/80 pt-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-medium text-slate-400">Approximate payoff outlook</p>
+          <p className="mt-0.5 text-[11px] text-slate-600">
+            Based on {formatCurrency(outlook.avgDailySavings, currency)}/day average savings —
+            guidance only, will change as more data arrives
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-sm font-semibold text-slate-200">~{year}</p>
+          <p className="text-[11px] text-slate-500">{outlook.estimatedDaysRemaining.toLocaleString()} days</p>
+        </div>
       </div>
     </div>
   );
