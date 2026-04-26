@@ -42,13 +42,23 @@ async function getDbDeps() {
   return _dbDeps;
 }
 
+export type RepaymentScheduleEntry = {
+  additionDate: string;
+  monthlyRepayment: number;
+  repaymentDurationMonths: number;
+};
+
 export type RangeInstallationContext = {
   id: string;
   name: string;
   timezone: string;
   currency: string;
-  /** Sum of monthly repayments across all additions with remaining schedule, or null if none. */
-  activeMonthlyRepayment: number | null;
+  /** Sum of all system addition investment totals (upfront + monthly × duration), or null when no additions recorded. */
+  totalSystemInvestment: number | null;
+  /** ISO date of the earliest system addition, or null when no additions recorded. */
+  earliestAdditionDate: string | null;
+  /** Raw repayment schedules for period-aware coverage calculation. Empty when no financed additions. */
+  repaymentSchedules: RepaymentScheduleEntry[];
 };
 
 export async function loadRangeInstallationContext(
@@ -61,6 +71,7 @@ export async function loadRangeInstallationContext(
     db
       .select({
         additionDate: systemAdditions.additionDate,
+        upfrontPayment: systemAdditions.upfrontPayment,
         monthlyRepayment: systemAdditions.monthlyRepayment,
         repaymentDurationMonths: systemAdditions.repaymentDurationMonths,
       })
@@ -71,19 +82,27 @@ export async function loadRangeInstallationContext(
   if (installationRows.length === 0) return null;
   const row = installationRows[0];
 
-  const now = new Date();
-  const nowYear = now.getUTCFullYear();
-  const nowMonth = now.getUTCMonth() + 1;
+  let totalInvestment = 0;
+  let earliestAdditionDate: string | null = null;
+  const repaymentSchedules: RepaymentScheduleEntry[] = [];
 
-  let totalMonthly = 0;
   for (const a of additionRows) {
-    if (!a.monthlyRepayment || !a.repaymentDurationMonths) continue;
-    const monthly = Number(a.monthlyRepayment);
-    if (monthly <= 0) continue;
-    const [fromYear, fromMonth] = a.additionDate.split('-').map(Number);
-    const elapsed = Math.max(0, (nowYear - fromYear) * 12 + (nowMonth - fromMonth));
-    const remaining = Math.max(0, a.repaymentDurationMonths - elapsed);
-    if (remaining > 0) totalMonthly += monthly;
+    if (earliestAdditionDate === null || a.additionDate < earliestAdditionDate) {
+      earliestAdditionDate = a.additionDate;
+    }
+
+    const upfront = a.upfrontPayment != null ? Number(a.upfrontPayment) : 0;
+    const monthly = a.monthlyRepayment != null ? Number(a.monthlyRepayment) : 0;
+    const duration = a.repaymentDurationMonths ?? 0;
+    totalInvestment += upfront + monthly * duration;
+
+    if (monthly > 0 && a.repaymentDurationMonths != null) {
+      repaymentSchedules.push({
+        additionDate: a.additionDate,
+        monthlyRepayment: monthly,
+        repaymentDurationMonths: a.repaymentDurationMonths,
+      });
+    }
   }
 
   return {
@@ -91,7 +110,9 @@ export async function loadRangeInstallationContext(
     name: row.name,
     timezone: row.timezone,
     currency: row.currencyCode,
-    activeMonthlyRepayment: totalMonthly > 0 ? totalMonthly : null,
+    totalSystemInvestment: additionRows.length > 0 ? Math.round(totalInvestment * 100) / 100 : null,
+    earliestAdditionDate,
+    repaymentSchedules,
   };
 }
 

@@ -7,6 +7,10 @@ import {
 } from '@/src/range/loader';
 import { allDatesInRange, computeRangeSummary } from '@/src/range/billing';
 import type { RangeSummaryPayload } from '@/src/range/types';
+import {
+  computeAllTimeSavings,
+  type RangeFinanceContext,
+} from '@/src/range/recovery';
 import { RangeHistoryScreen } from './RangeHistoryScreen';
 import { redirect } from 'next/navigation';
 import { resolveEffectiveInstallationId } from '@/src/installation-helpers';
@@ -50,16 +54,31 @@ export default async function RangePage({ searchParams }: PageProps) {
   const earliestDate = await loadEarliestSummaryDate(installationId);
 
   // For "All" mode, load from the earliest known summary date.
+  // When a specific from date is in the URL that predates the default window,
+  // extend the window to cover it so historical range selections work.
   // Otherwise fall back to the default 365-day window.
+  const defaultWindowStart = offsetDays(today, -364);
   const windowStart =
-    mode === 'all' && earliestDate ? earliestDate : offsetDays(today, -364);
+    mode === 'all' && earliestDate ? earliestDate
+    : initialFrom && initialFrom < defaultWindowStart ? initialFrom
+    : defaultWindowStart;
   const windowEnd = today;
 
+  // Load all-time rows only when: (a) finance context exists, (b) there are summaries,
+  // and (c) the current window doesn't already cover all history (mode=all).
+  const hasFinanceContext =
+    installationContext?.totalSystemInvestment != null &&
+    installationContext?.earliestAdditionDate != null;
+  const needsAllTimeLoad = hasFinanceContext && earliestDate != null && earliestDate !== windowStart;
+
   try {
-    const [tariffVersions, fixedCharges, summaryRows] = await Promise.all([
+    const [tariffVersions, fixedCharges, summaryRows, allTimeRows] = await Promise.all([
       loadTariffVersionsForInstallation(installationId),
       loadFixedChargeVersionsForInstallation(installationId),
       loadDailySummaryRowsForRange(installationId, windowStart, windowEnd),
+      needsAllTimeLoad
+        ? loadDailySummaryRowsForRange(installationId, earliestDate!, today)
+        : Promise.resolve(null),
     ]);
 
     const allDates = allDatesInRange(windowStart, windowEnd);
@@ -69,6 +88,37 @@ export default async function RangePage({ searchParams }: PageProps) {
       tariffVersions,
       fixedCharges,
     );
+
+    // Build finance context whenever investment records exist — even when no summaries are
+    // available yet.  In that case allTimeSavings/coveredDays are 0 and the panel shows a
+    // "waiting for data" state rather than the misleading "Set up investment" prompt.
+    let financeContext: RangeFinanceContext | null = null;
+    if (hasFinanceContext) {
+      let allTimeSavings = 0;
+      let allTimeCoveredDays = 0;
+
+      if (earliestDate != null) {
+        // Use windowed rows when they already cover all history (mode=all).
+        const rowsForAllTime = allTimeRows ?? summaryRows;
+        const allTimeDates = allDatesInRange(earliestDate, today);
+        const { series: allTimeSeries } = computeRangeSummary(
+          rowsForAllTime,
+          allTimeDates,
+          tariffVersions,
+          fixedCharges,
+        );
+        ({ savings: allTimeSavings, coveredDays: allTimeCoveredDays } =
+          computeAllTimeSavings(allTimeSeries));
+      }
+
+      financeContext = {
+        totalSystemInvestment: installationContext!.totalSystemInvestment!,
+        earliestAdditionDate: installationContext!.earliestAdditionDate!,
+        allTimeSavings,
+        allTimeCoveredDays,
+        repaymentSchedules: installationContext!.repaymentSchedules,
+      };
+    }
 
     const payload: RangeSummaryPayload = {
       meta: {
@@ -88,7 +138,7 @@ export default async function RangePage({ searchParams }: PageProps) {
       <RangeHistoryScreen
         payload={payload}
         today={today}
-        activeMonthlyRepayment={installationContext?.activeMonthlyRepayment ?? null}
+        financeContext={financeContext}
         initialMode={mode ?? null}
         initialFrom={initialFrom ?? null}
         initialTo={initialTo ?? null}
@@ -101,7 +151,7 @@ export default async function RangePage({ searchParams }: PageProps) {
       <RangeHistoryScreen
         payload={null}
         today={today}
-        activeMonthlyRepayment={null}
+        financeContext={null}
         initialMode={mode ?? null}
         initialFrom={initialFrom ?? null}
         initialTo={initialTo ?? null}
