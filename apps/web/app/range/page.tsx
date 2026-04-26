@@ -54,9 +54,14 @@ export default async function RangePage({ searchParams }: PageProps) {
   const earliestDate = await loadEarliestSummaryDate(installationId);
 
   // For "All" mode, load from the earliest known summary date.
+  // When a specific from date is in the URL that predates the default window,
+  // extend the window to cover it so historical range selections work.
   // Otherwise fall back to the default 365-day window.
+  const defaultWindowStart = offsetDays(today, -364);
   const windowStart =
-    mode === 'all' && earliestDate ? earliestDate : offsetDays(today, -364);
+    mode === 'all' && earliestDate ? earliestDate
+    : initialFrom && initialFrom < defaultWindowStart ? initialFrom
+    : defaultWindowStart;
   const windowEnd = today;
 
   // Load all-time rows only when: (a) finance context exists, (b) there are summaries,

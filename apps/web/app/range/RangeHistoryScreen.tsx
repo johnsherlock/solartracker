@@ -34,6 +34,7 @@ import {
   isStepBackwardDisabled,
   defaultActiveRange,
   loadedWindowStart,
+  buildRangeUrl,
 } from '@/src/range/presets';
 import {
   aggregateKpisFromSeries,
@@ -128,6 +129,11 @@ export function RangeHistoryScreen({ payload, today, financeContext, initialMode
         router.push('/range?mode=all');
         return;
       }
+      // Selected range predates loaded window and there is known data in that period — reload.
+      if (range.from < loadedFrom && earliestDate != null && earliestDate <= range.to) {
+        router.push(buildRangeUrl(range));
+        return;
+      }
       setActiveRange(range);
       // Leave picker open — user can refine further; closes on outside click / Esc
     } else if (target.type === 'live') {
@@ -150,8 +156,8 @@ export function RangeHistoryScreen({ payload, today, financeContext, initialMode
   function handleStepBackward() {
     if (bwdDisabled) return;
     const next = stepRangeBackward(activeRange, earliestDate);
-    if (next.from < loadedFrom && earliestDate && earliestDate < loadedFrom) {
-      router.push('/range?mode=all');
+    if (next.from < loadedFrom && earliestDate != null && earliestDate < loadedFrom) {
+      router.push(buildRangeUrl(next));
       return;
     }
     setActiveRange(next);
