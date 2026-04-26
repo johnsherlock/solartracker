@@ -15,6 +15,12 @@
  *   # Catch-up from a specific date
  *   npm run job:catch-up -- --from 2024-01-01
  *
+ *   # Catch-up for a single user (by email)
+ *   npm run job:catch-up -- --user alice@example.com
+ *
+ *   # Combined: single user from a specific date
+ *   npm run job:catch-up -- --user alice@example.com --from 2024-01-01
+ *
  * Environment:
  *   Requires DATABASE_URL and a valid provider credential ref in the DB.
  *   Loads .env automatically via dotenv/config (imported by db/client).
@@ -40,6 +46,7 @@ function getArgValue(flag: string): string | undefined {
 
 const dateArg = getArgValue('--date');
 const fromArg = getArgValue('--from');
+const userArg = getArgValue('--user');
 
 // ---------------------------------------------------------------------------
 // Run
@@ -47,12 +54,13 @@ const fromArg = getArgValue('--from');
 
 async function main() {
   if (isCatchUp) {
+    const scope = userArg ? ` for ${userArg}` : '';
     console.log(
       fromArg
-        ? `[job-cli] Running catch-up from ${fromArg}…`
-        : '[job-cli] Running catch-up for the last 30 days…',
+        ? `[job-cli] Running catch-up${scope} from ${fromArg}…`
+        : `[job-cli] Running catch-up${scope} for the last 30 days…`,
     );
-    await runCatchUp({ fromDate: fromArg });
+    await runCatchUp({ fromDate: fromArg, userEmail: userArg });
     return;
   }
 

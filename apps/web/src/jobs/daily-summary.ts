@@ -20,6 +20,7 @@ import {
   tariffPlans,
   tariffPlanVersions,
   tariffPricePeriods,
+  users,
 } from '../db/schema';
 import { fetchDayRecords } from '../providers/myenergi/client';
 import { normaliseEddiRecords } from '../providers/myenergi/adapter';
@@ -70,7 +71,12 @@ type ActiveInstallation = {
   credentialRef: string | null;
 };
 
-async function loadActiveInstallations(): Promise<ActiveInstallation[]> {
+async function loadActiveInstallations(userEmail?: string): Promise<ActiveInstallation[]> {
+  const conditions = [
+    eq(providerConnections.providerType, 'myenergi'),
+    eq(providerConnections.status, 'active'),
+  ];
+
   const rows = await db
     .select({
       installationId: installations.id,
@@ -80,11 +86,11 @@ async function loadActiveInstallations(): Promise<ActiveInstallation[]> {
     })
     .from(providerConnections)
     .innerJoin(installations, eq(installations.id, providerConnections.installationId))
+    .innerJoin(users, eq(users.id, installations.userId))
     .where(
-      and(
-        eq(providerConnections.providerType, 'myenergi'),
-        eq(providerConnections.status, 'active'),
-      ),
+      userEmail
+        ? and(...conditions, eq(users.email, userEmail))
+        : and(...conditions),
     );
 
   return rows;
@@ -440,6 +446,12 @@ export type RunCatchUpOptions = {
   fromDate?: string;
 
   /**
+   * Restrict the catch-up to the installation(s) belonging to this user email.
+   * When omitted, all active installations are processed.
+   */
+  userEmail?: string;
+
+  /**
    * Clock override for testing.
    */
   now?: Date;
@@ -457,7 +469,11 @@ export type RunCatchUpOptions = {
 export async function runCatchUp(options: RunCatchUpOptions = {}): Promise<void> {
   const now = options.now ?? new Date();
 
-  const activeInstallations = await loadActiveInstallations();
+  if (options.userEmail) {
+    console.log(`[catch-up] Filtering to user: ${options.userEmail}`);
+  }
+
+  const activeInstallations = await loadActiveInstallations(options.userEmail);
   if (activeInstallations.length === 0) {
     console.log('[catch-up] No active installations found.');
     return;
