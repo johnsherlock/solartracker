@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { computeAllTimeSavings, computePayoffOutlook } from '../recovery';
-import type { RangeFinanceContext } from '../recovery';
+import { computeAllTimeSavings, computePayoffOutlook, computeRepaymentsInRange } from '../recovery';
+import type { RangeFinanceContext, RepaymentSchedule } from '../recovery';
 import type { RangeSeriesDay } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -49,13 +49,22 @@ function makeMissingDay(date: string): RangeSeriesDay {
   };
 }
 
+function makeSchedule(overrides: Partial<RepaymentSchedule> = {}): RepaymentSchedule {
+  return {
+    additionDate: '2020-01-01',
+    monthlyRepayment: 150,
+    repaymentDurationMonths: 60,
+    ...overrides,
+  };
+}
+
 function makeContext(overrides: Partial<RangeFinanceContext> = {}): RangeFinanceContext {
   return {
     totalSystemInvestment: 10000,
     earliestAdditionDate: '2020-01-01',
     allTimeSavings: 2000,
     allTimeCoveredDays: 365,
-    activeMonthlyRepayment: 150,
+    repaymentSchedules: [makeSchedule()],
     ...overrides,
   };
 }
@@ -162,25 +171,27 @@ describe('computePayoffOutlook', () => {
   // Financing model variants
   // ---------------------------------------------------------------------------
 
-  it('works for upfront-only installations (no active repayment)', () => {
-    const ctx = makeContext({ activeMonthlyRepayment: null });
+  it('works for upfront-only installations (no repayment schedules)', () => {
+    const ctx = makeContext({ repaymentSchedules: [] });
     const result = computePayoffOutlook(ctx, '2025-01-01');
     expect(result).not.toBeNull();
   });
 
   it('works for repayment-backed installations', () => {
-    const ctx = makeContext({ activeMonthlyRepayment: 200 });
+    const ctx = makeContext({ repaymentSchedules: [makeSchedule({ monthlyRepayment: 200 })] });
     const result = computePayoffOutlook(ctx, '2025-01-01');
     expect(result).not.toBeNull();
   });
 
   it('works for mixed portfolio (multiple additions)', () => {
-    // totalSystemInvestment already aggregated from multiple records
     const ctx = makeContext({
       totalSystemInvestment: 18000,
       allTimeSavings: 3000,
       allTimeCoveredDays: 400,
-      activeMonthlyRepayment: 250,
+      repaymentSchedules: [
+        makeSchedule({ monthlyRepayment: 150 }),
+        makeSchedule({ additionDate: '2022-06-01', monthlyRepayment: 100, repaymentDurationMonths: 36 }),
+      ],
     });
     const result = computePayoffOutlook(ctx, '2025-01-01');
     expect(result).not.toBeNull();
@@ -201,12 +212,86 @@ describe('computePayoffOutlook', () => {
   });
 
   it('returns an estimate for partial-history with enough covered days', () => {
-    // 90 days synced, savings reasonable
     const ctx = makeContext({
       allTimeCoveredDays: 90,
       allTimeSavings: 450,
     });
     const result = computePayoffOutlook(ctx, '2025-01-01');
     expect(result).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeRepaymentsInRange
+// ---------------------------------------------------------------------------
+
+describe('computeRepaymentsInRange', () => {
+  it('returns 0 for an empty schedule list', () => {
+    expect(computeRepaymentsInRange([], '2024-01-01', '2024-12-31')).toBe(0);
+  });
+
+  it('counts a single payment falling within the range', () => {
+    const s = makeSchedule({ additionDate: '2024-01-15', monthlyRepayment: 100, repaymentDurationMonths: 12 });
+    // Payment on 2024-04-15 should be in range Apr 1–Apr 30
+    expect(computeRepaymentsInRange([s], '2024-04-01', '2024-04-30')).toBe(100);
+  });
+
+  it('counts multiple payments within a wide range', () => {
+    const s = makeSchedule({ additionDate: '2024-01-01', monthlyRepayment: 150, repaymentDurationMonths: 6 });
+    // Payments on 2024-01 through 2024-06 — range covers all 6
+    expect(computeRepaymentsInRange([s], '2024-01-01', '2024-06-30')).toBe(900);
+  });
+
+  it('excludes payments that fall outside the schedule duration', () => {
+    const s = makeSchedule({ additionDate: '2024-01-01', monthlyRepayment: 100, repaymentDurationMonths: 3 });
+    // Only Jan, Feb, Mar payments exist; range extends to Dec
+    expect(computeRepaymentsInRange([s], '2024-01-01', '2024-12-31')).toBe(300);
+  });
+
+  it('excludes payments before the range start', () => {
+    const s = makeSchedule({ additionDate: '2024-01-01', monthlyRepayment: 100, repaymentDurationMonths: 12 });
+    expect(computeRepaymentsInRange([s], '2024-06-01', '2024-12-31')).toBe(700);
+  });
+
+  it('sums payments across multiple schedules', () => {
+    const s1 = makeSchedule({ additionDate: '2024-01-01', monthlyRepayment: 100, repaymentDurationMonths: 12 });
+    const s2 = makeSchedule({ additionDate: '2024-03-01', monthlyRepayment: 200, repaymentDurationMonths: 6 });
+    // In May: s1 pays 100 (2024-05-01), s2 pays 200 (2024-05-01)
+    expect(computeRepaymentsInRange([s1, s2], '2024-05-01', '2024-05-31')).toBe(300);
+  });
+
+  it('handles upfront-only portfolio (no schedules) returning 0', () => {
+    expect(computeRepaymentsInRange([], '2024-01-01', '2024-12-31')).toBe(0);
+  });
+
+  it('clamps day-of-month to end of month (e.g. Jan 31 → Feb 28)', () => {
+    const s = makeSchedule({ additionDate: '2024-01-31', monthlyRepayment: 100, repaymentDurationMonths: 3 });
+    // Feb payment falls on 2024-02-29 (2024 is a leap year)
+    expect(computeRepaymentsInRange([s], '2024-02-29', '2024-02-29')).toBe(100);
+    // Mar payment falls on 2024-03-31
+    expect(computeRepaymentsInRange([s], '2024-03-31', '2024-03-31')).toBe(100);
+  });
+
+  it('returns 0 for a period entirely before any payments are due', () => {
+    const s = makeSchedule({ additionDate: '2025-01-01', monthlyRepayment: 100, repaymentDurationMonths: 12 });
+    expect(computeRepaymentsInRange([s], '2024-01-01', '2024-12-31')).toBe(0);
+  });
+
+  // Selected-period variants matching story acceptance criteria
+  it('handles a single-month range correctly', () => {
+    const s = makeSchedule({ additionDate: '2024-04-01', monthlyRepayment: 158.33, repaymentDurationMonths: 60 });
+    expect(computeRepaymentsInRange([s], '2024-04-01', '2024-04-30')).toBeCloseTo(158.33, 2);
+  });
+
+  it('handles a calendar-year range correctly', () => {
+    const s = makeSchedule({ additionDate: '2024-01-01', monthlyRepayment: 100, repaymentDurationMonths: 24 });
+    // 12 payments in 2024
+    expect(computeRepaymentsInRange([s], '2024-01-01', '2024-12-31')).toBe(1200);
+  });
+
+  it('handles a custom range spanning two months with one payment per month', () => {
+    const s = makeSchedule({ additionDate: '2024-01-15', monthlyRepayment: 100, repaymentDurationMonths: 12 });
+    // Range Apr 10–May 20: payment on Apr 15 and May 15 both in range
+    expect(computeRepaymentsInRange([s], '2024-04-10', '2024-05-20')).toBe(200);
   });
 });

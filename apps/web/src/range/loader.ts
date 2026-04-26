@@ -42,6 +42,12 @@ async function getDbDeps() {
   return _dbDeps;
 }
 
+export type RepaymentScheduleEntry = {
+  additionDate: string;
+  monthlyRepayment: number;
+  repaymentDurationMonths: number;
+};
+
 export type RangeInstallationContext = {
   id: string;
   name: string;
@@ -51,8 +57,8 @@ export type RangeInstallationContext = {
   totalSystemInvestment: number | null;
   /** ISO date of the earliest system addition, or null when no additions recorded. */
   earliestAdditionDate: string | null;
-  /** Sum of monthly repayments across all additions with remaining schedule, or null if none. */
-  activeMonthlyRepayment: number | null;
+  /** Raw repayment schedules for period-aware coverage calculation. Empty when no financed additions. */
+  repaymentSchedules: RepaymentScheduleEntry[];
 };
 
 export async function loadRangeInstallationContext(
@@ -76,32 +82,27 @@ export async function loadRangeInstallationContext(
   if (installationRows.length === 0) return null;
   const row = installationRows[0];
 
-  const now = new Date();
-  const nowYear = now.getUTCFullYear();
-  const nowMonth = now.getUTCMonth() + 1;
-
-  let totalMonthly = 0;
   let totalInvestment = 0;
   let earliestAdditionDate: string | null = null;
+  const repaymentSchedules: RepaymentScheduleEntry[] = [];
 
   for (const a of additionRows) {
-    // Track earliest addition date
     if (earliestAdditionDate === null || a.additionDate < earliestAdditionDate) {
       earliestAdditionDate = a.additionDate;
     }
 
-    // Total system investment: upfront + (monthly × duration)
     const upfront = a.upfrontPayment != null ? Number(a.upfrontPayment) : 0;
     const monthly = a.monthlyRepayment != null ? Number(a.monthlyRepayment) : 0;
     const duration = a.repaymentDurationMonths ?? 0;
     totalInvestment += upfront + monthly * duration;
 
-    // Active monthly repayments (schedule not yet expired)
-    if (monthly <= 0 || !a.repaymentDurationMonths) continue;
-    const [fromYear, fromMonth] = a.additionDate.split('-').map(Number);
-    const elapsed = Math.max(0, (nowYear - fromYear) * 12 + (nowMonth - fromMonth));
-    const remaining = Math.max(0, a.repaymentDurationMonths - elapsed);
-    if (remaining > 0) totalMonthly += monthly;
+    if (monthly > 0 && a.repaymentDurationMonths != null) {
+      repaymentSchedules.push({
+        additionDate: a.additionDate,
+        monthlyRepayment: monthly,
+        repaymentDurationMonths: a.repaymentDurationMonths,
+      });
+    }
   }
 
   return {
@@ -111,7 +112,7 @@ export async function loadRangeInstallationContext(
     currency: row.currencyCode,
     totalSystemInvestment: additionRows.length > 0 ? Math.round(totalInvestment * 100) / 100 : null,
     earliestAdditionDate,
-    activeMonthlyRepayment: totalMonthly > 0 ? totalMonthly : null,
+    repaymentSchedules,
   };
 }
 

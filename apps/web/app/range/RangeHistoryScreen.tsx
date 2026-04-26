@@ -20,7 +20,9 @@ import {
 import type { RangeSummaryPayload, RangeSeriesDay } from '@/src/range/types';
 import {
   computePayoffOutlook,
+  computeRepaymentsInRange,
   type RangeFinanceContext,
+  type RepaymentSchedule,
 } from '@/src/range/recovery';
 import {
   type ActiveRange,
@@ -318,16 +320,16 @@ export function RangeHistoryScreen({ payload, today, financeContext, initialMode
                 />
 
                 {/* §10 — Investment insights (recovery, repayment coverage, payoff outlook) */}
-                {kpis.hasTariff && (
-                  <InvestmentInsightsPanel
-                    financeContext={financeContext}
-                    periodSavings={kpis.savings}
-                    periodDays={filteredSeries.length}
-                    earliestSummaryDate={payload?.meta.earliestDate ?? null}
-                    today={today}
-                    currency={payload?.meta.currency ?? 'EUR'}
-                  />
-                )}
+                <InvestmentInsightsPanel
+                  financeContext={financeContext}
+                  periodSavings={kpis.savings}
+                  periodFrom={effectiveRange.from}
+                  periodTo={effectiveRange.to}
+                  hasTariff={kpis.hasTariff}
+                  earliestSummaryDate={payload?.meta.earliestDate ?? null}
+                  today={today}
+                  currency={payload?.meta.currency ?? 'EUR'}
+                />
               </>
             )}
           </>
@@ -661,25 +663,25 @@ function ChartCard({
 // §10 — Investment insights panel
 // ---------------------------------------------------------------------------
 
-const AVG_DAYS_PER_MONTH = 30.4375;
-
 function InvestmentInsightsPanel({
   financeContext,
   periodSavings,
-  periodDays,
+  periodFrom,
+  periodTo,
+  hasTariff,
   earliestSummaryDate,
   today,
   currency,
 }: {
   financeContext: RangeFinanceContext | null;
   periodSavings: number;
-  periodDays: number;
+  periodFrom: string;
+  periodTo: string;
+  hasTariff: boolean;
   earliestSummaryDate: string | null;
   today: string;
   currency: string;
 }) {
-  const payoffOutlook = financeContext ? computePayoffOutlook(financeContext, today) : null;
-
   if (!financeContext) {
     return (
       <div className="rounded-[28px] border border-dashed border-slate-700 bg-[#111b2b] p-5 text-center">
@@ -698,12 +700,16 @@ function InvestmentInsightsPanel({
     );
   }
 
-  const { totalSystemInvestment, earliestAdditionDate, allTimeSavings, allTimeCoveredDays, activeMonthlyRepayment } = financeContext;
+  const { totalSystemInvestment, earliestAdditionDate, allTimeSavings, allTimeCoveredDays, repaymentSchedules } = financeContext;
+  const payoffOutlook = computePayoffOutlook(financeContext, today);
+  const repaymentsInPeriod = computeRepaymentsInRange(repaymentSchedules, periodFrom, periodTo);
+
   const recoveryPct = totalSystemInvestment > 0
     ? Math.min(100, Math.round((allTimeSavings / totalSystemInvestment) * 100))
     : 0;
   const hasPartialHistory =
     earliestSummaryDate != null && earliestAdditionDate < earliestSummaryDate;
+  const noHistoryYet = allTimeCoveredDays === 0;
 
   return (
     <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-3 sm:p-5 space-y-5">
@@ -728,7 +734,11 @@ function InvestmentInsightsPanel({
           />
         </div>
         <div className="mt-1.5 flex items-center justify-between">
-          {hasPartialHistory ? (
+          {noHistoryYet ? (
+            <p className="text-[11px] text-slate-600">
+              No billing history yet — add a tariff to start tracking your recovery
+            </p>
+          ) : hasPartialHistory ? (
             <p className="text-[11px] text-slate-600">
               Based on {allTimeCoveredDays} day{allTimeCoveredDays !== 1 ? 's' : ''} of recorded history.
               History begins after your addition date — earlier savings are not included.
@@ -742,22 +752,18 @@ function InvestmentInsightsPanel({
         </div>
       </div>
 
-      {/* Period repayment coverage — only for financed additions */}
-      {activeMonthlyRepayment != null && activeMonthlyRepayment > 0 && (
+      {/* Period repayment coverage — only when the period has tariff data and scheduled repayments */}
+      {hasTariff && repaymentsInPeriod > 0 && (
         <PeriodRepaymentCoverage
           periodSavings={periodSavings}
-          periodDays={periodDays}
-          monthlyPayment={activeMonthlyRepayment}
+          periodPayments={repaymentsInPeriod}
           currency={currency}
         />
       )}
 
       {/* Approximate payoff outlook */}
       {payoffOutlook && (
-        <PayoffOutlookRow
-          outlook={payoffOutlook}
-          currency={currency}
-        />
+        <PayoffOutlookRow outlook={payoffOutlook} currency={currency} />
       )}
     </div>
   );
@@ -765,26 +771,21 @@ function InvestmentInsightsPanel({
 
 function PeriodRepaymentCoverage({
   periodSavings,
-  periodDays,
-  monthlyPayment,
+  periodPayments,
   currency,
 }: {
   periodSavings: number;
-  periodDays: number;
-  monthlyPayment: number;
+  periodPayments: number;
   currency: string;
 }) {
-  const periodPayments = Math.round((monthlyPayment * periodDays / AVG_DAYS_PER_MONTH) * 100) / 100;
   const isPositive = periodSavings >= periodPayments;
-  const fillPct = periodPayments > 0
-    ? Math.min(100, Math.round((periodSavings / periodPayments) * 100))
-    : 0;
+  const fillPct = Math.min(100, Math.round((periodSavings / periodPayments) * 100));
 
   return (
     <div className="border-t border-slate-800/80 pt-4">
       <div className="mb-1.5 flex items-baseline justify-between">
         <span className="text-xs font-medium text-slate-400">Repayment coverage this period</span>
-        <span className="text-[11px] text-slate-500">{formatCurrency(monthlyPayment, currency)}/mo</span>
+        <span className="text-[11px] text-slate-500">{formatCurrency(periodPayments, currency)} due</span>
       </div>
       <div className="mb-1.5 h-2.5 overflow-hidden rounded-full bg-slate-800">
         <div
@@ -803,7 +804,7 @@ function PeriodRepaymentCoverage({
           </span>
           {' '}of{' '}
           <span className="text-slate-400">{formatCurrency(periodPayments, currency)}</span>
-          {' '}due
+          {' '}in scheduled repayments
         </p>
         <span
           className={[
@@ -822,7 +823,7 @@ function PayoffOutlookRow({
   outlook,
   currency,
 }: {
-  outlook: ReturnType<typeof computePayoffOutlook> & {};
+  outlook: NonNullable<ReturnType<typeof computePayoffOutlook>>;
   currency: string;
 }) {
   const year = new Date(`${outlook.estimatedPayoffDate}T12:00:00`).getFullYear();

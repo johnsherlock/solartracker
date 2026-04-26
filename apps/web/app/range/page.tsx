@@ -59,15 +59,19 @@ export default async function RangePage({ searchParams }: PageProps) {
     mode === 'all' && earliestDate ? earliestDate : offsetDays(today, -364);
   const windowEnd = today;
 
-  const needsAllTimeLoad =
-    installationContext?.totalSystemInvestment != null && earliestDate != null;
+  // Load all-time rows only when: (a) finance context exists, (b) there are summaries,
+  // and (c) the current window doesn't already cover all history (mode=all).
+  const hasFinanceContext =
+    installationContext?.totalSystemInvestment != null &&
+    installationContext?.earliestAdditionDate != null;
+  const needsAllTimeLoad = hasFinanceContext && earliestDate != null && earliestDate !== windowStart;
 
   try {
     const [tariffVersions, fixedCharges, summaryRows, allTimeRows] = await Promise.all([
       loadTariffVersionsForInstallation(installationId),
       loadFixedChargeVersionsForInstallation(installationId),
       loadDailySummaryRowsForRange(installationId, windowStart, windowEnd),
-      needsAllTimeLoad && earliestDate !== windowStart
+      needsAllTimeLoad
         ? loadDailySummaryRowsForRange(installationId, earliestDate!, today)
         : Promise.resolve(null),
     ]);
@@ -80,29 +84,34 @@ export default async function RangePage({ searchParams }: PageProps) {
       fixedCharges,
     );
 
+    // Build finance context whenever investment records exist — even when no summaries are
+    // available yet.  In that case allTimeSavings/coveredDays are 0 and the panel shows a
+    // "waiting for data" state rather than the misleading "Set up investment" prompt.
     let financeContext: RangeFinanceContext | null = null;
-    if (
-      installationContext?.totalSystemInvestment != null &&
-      installationContext.earliestAdditionDate != null &&
-      earliestDate != null
-    ) {
-      // Use windowed rows when they already cover all history (mode=all), else use the dedicated all-time load
-      const rowsForAllTime = allTimeRows ?? summaryRows;
-      const allTimeDates = allDatesInRange(earliestDate, today);
-      const { series: allTimeSeries } = computeRangeSummary(
-        rowsForAllTime,
-        allTimeDates,
-        tariffVersions,
-        fixedCharges,
-      );
-      const { savings, coveredDays } = computeAllTimeSavings(allTimeSeries);
+    if (hasFinanceContext) {
+      let allTimeSavings = 0;
+      let allTimeCoveredDays = 0;
+
+      if (earliestDate != null) {
+        // Use windowed rows when they already cover all history (mode=all).
+        const rowsForAllTime = allTimeRows ?? summaryRows;
+        const allTimeDates = allDatesInRange(earliestDate, today);
+        const { series: allTimeSeries } = computeRangeSummary(
+          rowsForAllTime,
+          allTimeDates,
+          tariffVersions,
+          fixedCharges,
+        );
+        ({ savings: allTimeSavings, coveredDays: allTimeCoveredDays } =
+          computeAllTimeSavings(allTimeSeries));
+      }
 
       financeContext = {
-        totalSystemInvestment: installationContext.totalSystemInvestment,
-        earliestAdditionDate: installationContext.earliestAdditionDate,
-        allTimeSavings: savings,
-        allTimeCoveredDays: coveredDays,
-        activeMonthlyRepayment: installationContext.activeMonthlyRepayment,
+        totalSystemInvestment: installationContext!.totalSystemInvestment!,
+        earliestAdditionDate: installationContext!.earliestAdditionDate!,
+        allTimeSavings,
+        allTimeCoveredDays,
+        repaymentSchedules: installationContext!.repaymentSchedules,
       };
     }
 

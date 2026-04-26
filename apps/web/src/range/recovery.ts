@@ -1,11 +1,17 @@
 import type { RangeSeriesDay } from './types';
 
+export type RepaymentSchedule = {
+  additionDate: string;
+  monthlyRepayment: number;
+  repaymentDurationMonths: number;
+};
+
 export type RangeFinanceContext = {
   totalSystemInvestment: number;
   earliestAdditionDate: string;
   allTimeSavings: number;
   allTimeCoveredDays: number;
-  activeMonthlyRepayment: number | null;
+  repaymentSchedules: RepaymentSchedule[];
 };
 
 export type PayoffOutlook = {
@@ -29,6 +35,35 @@ export function computeAllTimeSavings(series: RangeSeriesDay[]): {
     coveredDays++;
   }
   return { savings: Math.round(savings * 100) / 100, coveredDays };
+}
+
+/**
+ * Returns the total repayments that fall due within [from, to] (inclusive, YYYY-MM-DD).
+ *
+ * Each schedule's monthly payment is due on the same day-of-month as its additionDate,
+ * for every month from month 0 through month (repaymentDurationMonths - 1).
+ * Day-of-month is clamped to the actual last day of the month (e.g. Feb 28/29 for day 31).
+ */
+export function computeRepaymentsInRange(
+  schedules: RepaymentSchedule[],
+  from: string,
+  to: string,
+): number {
+  let total = 0;
+  for (const s of schedules) {
+    const [sy, sm, sd] = s.additionDate.split('-').map(Number);
+    for (let m = 0; m < s.repaymentDurationMonths; m++) {
+      const payYear = sy + Math.floor((sm - 1 + m) / 12);
+      const payMonth = ((sm - 1 + m) % 12) + 1;
+      const daysInMonth = new Date(payYear, payMonth, 0).getDate();
+      const payDay = Math.min(sd, daysInMonth);
+      const payDate = `${payYear}-${String(payMonth).padStart(2, '0')}-${String(payDay).padStart(2, '0')}`;
+      if (payDate >= from && payDate <= to) {
+        total += s.monthlyRepayment;
+      }
+    }
+  }
+  return Math.round(total * 100) / 100;
 }
 
 export function computePayoffOutlook(
