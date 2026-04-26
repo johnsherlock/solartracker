@@ -4,7 +4,13 @@ import type {
   SystemAdditionsSettingsPayload,
   SystemAdditionValidationResult,
 } from './system-addition-types';
-import { elapsedMonths } from './finance-domain';
+
+function elapsedMonths(fromDateStr: string, toDate: Date): number {
+  const [fromYear, fromMonth] = fromDateStr.split('-').map(Number);
+  const toYear = toDate.getUTCFullYear();
+  const toMonth = toDate.getUTCMonth() + 1;
+  return Math.max(0, (toYear - fromYear) * 12 + (toMonth - fromMonth));
+}
 
 // ---------------------------------------------------------------------------
 // Validation
@@ -19,13 +25,15 @@ export function validateSystemAdditionInputs(
   if (!inputs.additionDate) {
     return { valid: false, reason: 'Date is required.' };
   }
-  if (inputs.upfrontPayment == null && inputs.monthlyRepayment == null) {
+  const hasUpfront = inputs.upfrontPayment != null && inputs.upfrontPayment > 0;
+  const hasMonthly = inputs.monthlyRepayment != null && inputs.monthlyRepayment > 0;
+  if (!hasUpfront && !hasMonthly) {
     return {
       valid: false,
-      reason: 'At least one of upfront payment or monthly repayment is required.',
+      reason: 'At least one payment amount must be greater than zero.',
     };
   }
-  if (inputs.monthlyRepayment != null && inputs.repaymentDurationMonths == null) {
+  if (inputs.monthlyRepayment != null && inputs.monthlyRepayment > 0 && inputs.repaymentDurationMonths == null) {
     return {
       valid: false,
       reason: 'Repayment duration is required when monthly repayment is set.',

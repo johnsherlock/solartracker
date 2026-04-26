@@ -33,14 +33,6 @@ const SECTION_META = [
     actionableCta: 'Set up finance',
   },
   {
-    key: 'solar' as const,
-    label: 'Solar details',
-    href: '/settings/solar',
-    valueLine: 'Unlocks solar efficiency and yield comparison views.',
-    completeStatusLine: () => 'Array capacity set',
-    actionableCta: 'Set up solar details',
-  },
-  {
     key: 'location' as const,
     label: 'Location',
     href: '/settings/location',

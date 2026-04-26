@@ -20,6 +20,7 @@ let _dbDeps:
       tariffPricePeriods: RangeLoaderSchemaModule['tariffPricePeriods'];
       tariffFixedChargeVersions: RangeLoaderSchemaModule['tariffFixedChargeVersions'];
       dailySummaries: RangeLoaderSchemaModule['dailySummaries'];
+      systemAdditions: RangeLoaderSchemaModule['systemAdditions'];
     }>
   | null = null;
 
@@ -34,6 +35,7 @@ async function getDbDeps() {
         tariffPricePeriods: schema.tariffPricePeriods,
         tariffFixedChargeVersions: schema.tariffFixedChargeVersions,
         dailySummaries: schema.dailySummaries,
+        systemAdditions: schema.systemAdditions,
       }),
     );
   }
@@ -45,31 +47,51 @@ export type RangeInstallationContext = {
   name: string;
   timezone: string;
   currency: string;
-  financeMode: string | null;
-  monthlyFinancePaymentAmount: number | null;
-  financeTermMonths: number | null;
+  /** Sum of monthly repayments across all additions with remaining schedule, or null if none. */
+  activeMonthlyRepayment: number | null;
 };
 
 export async function loadRangeInstallationContext(
   installationId: string,
 ): Promise<RangeInstallationContext | null> {
-  const { db, installations } = await getDbDeps();
-  const rows = await db
-    .select()
-    .from(installations)
-    .where(eq(installations.id, installationId))
-    .limit(1);
+  const { db, installations, systemAdditions } = await getDbDeps();
 
-  if (rows.length === 0) return null;
-  const row = rows[0];
+  const [installationRows, additionRows] = await Promise.all([
+    db.select().from(installations).where(eq(installations.id, installationId)).limit(1),
+    db
+      .select({
+        additionDate: systemAdditions.additionDate,
+        monthlyRepayment: systemAdditions.monthlyRepayment,
+        repaymentDurationMonths: systemAdditions.repaymentDurationMonths,
+      })
+      .from(systemAdditions)
+      .where(eq(systemAdditions.installationId, installationId)),
+  ]);
+
+  if (installationRows.length === 0) return null;
+  const row = installationRows[0];
+
+  const now = new Date();
+  const nowYear = now.getUTCFullYear();
+  const nowMonth = now.getUTCMonth() + 1;
+
+  let totalMonthly = 0;
+  for (const a of additionRows) {
+    if (!a.monthlyRepayment || !a.repaymentDurationMonths) continue;
+    const monthly = Number(a.monthlyRepayment);
+    if (monthly <= 0) continue;
+    const [fromYear, fromMonth] = a.additionDate.split('-').map(Number);
+    const elapsed = Math.max(0, (nowYear - fromYear) * 12 + (nowMonth - fromMonth));
+    const remaining = Math.max(0, a.repaymentDurationMonths - elapsed);
+    if (remaining > 0) totalMonthly += monthly;
+  }
+
   return {
     id: row.id,
     name: row.name,
     timezone: row.timezone,
     currency: row.currencyCode,
-    financeMode: row.financeMode,
-    monthlyFinancePaymentAmount: row.monthlyFinancePaymentAmount != null ? Number(row.monthlyFinancePaymentAmount) : null,
-    financeTermMonths: row.financeTermMonths,
+    activeMonthlyRepayment: totalMonthly > 0 ? totalMonthly : null,
   };
 }
 

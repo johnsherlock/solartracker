@@ -43,11 +43,6 @@ export const installations = pgTable('installations', {
   locale: text('locale').notNull().default('en-IE'),
   currencyCode: text('currency_code').notNull().default('EUR'),
   arrayCapacityKw: numeric('array_capacity_kw', { precision: 8, scale: 2 }),
-  financeMode: text('finance_mode'),
-  financeInvestmentDate: date('finance_investment_date'),
-  installCostAmount: numeric('install_cost_amount', { precision: 12, scale: 2 }),
-  monthlyFinancePaymentAmount: numeric('monthly_finance_payment_amount', { precision: 12, scale: 2 }),
-  financeTermMonths: integer('finance_term_months'),
   providerType: text('provider_type').notNull().default('myenergi'),
   // Location fields — all nullable; set during onboarding, never on page load
   locationRawInput: text('location_raw_input'),

@@ -95,6 +95,46 @@ describe('validateSystemAdditionInputs', () => {
       }),
     ).toMatchObject({ valid: false });
   });
+
+  it('rejects upfront payment of zero', () => {
+    expect(
+      validateSystemAdditionInputs({
+        ...upfrontOnly,
+        upfrontPayment: 0,
+        monthlyRepayment: null,
+      }),
+    ).toMatchObject({ valid: false });
+  });
+
+  it('rejects monthly repayment of zero', () => {
+    expect(
+      validateSystemAdditionInputs({
+        ...repaymentsOnly,
+        monthlyRepayment: 0,
+      }),
+    ).toMatchObject({ valid: false });
+  });
+
+  it('rejects both payment fields as zero', () => {
+    expect(
+      validateSystemAdditionInputs({
+        ...upfrontAndRepayments,
+        upfrontPayment: 0,
+        monthlyRepayment: 0,
+      }),
+    ).toMatchObject({ valid: false });
+  });
+
+  it('accepts upfront > 0 even when monthly is zero', () => {
+    expect(
+      validateSystemAdditionInputs({
+        ...upfrontAndRepayments,
+        upfrontPayment: 5000,
+        monthlyRepayment: 0,
+        repaymentDurationMonths: null,
+      }),
+    ).toEqual({ valid: true });
+  });
 });
 
 // ---------------------------------------------------------------------------

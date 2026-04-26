@@ -11,7 +11,6 @@ const SECTIONS = [
   { label: 'Tariffs', href: '/settings/tariffs', key: 'tariffs' as const },
   { label: 'Provider', href: '/settings/provider', key: 'provider' as const },
   { label: 'Finance', href: '/settings/finance', key: 'finance' as const },
-  { label: 'Solar details', href: '/settings/solar', key: 'solar' as const },
   { label: 'Location', href: '/settings/location', key: 'location' as const },
   { label: 'Notifications', href: '/settings/notifications', key: 'notifications' as const },
 ] as const;
@@ -53,7 +52,6 @@ export default async function SettingsLayout({ children }: { children: ReactNode
     tariffs: completion.tariffs,
     provider: completion.provider,
     finance: completion.finance,
-    solar: completion.solar,
     location: completion.location,
     notifications: completion.notifications,
   };

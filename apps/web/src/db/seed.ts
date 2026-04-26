@@ -10,6 +10,7 @@ import {
   tariffFixedChargeVersions,
   installationContracts,
   dailySummaries,
+  systemAdditions,
 } from './schema';
 
 // ---------------------------------------------------------------------------
@@ -30,6 +31,7 @@ const PRICE_PERIOD_NIGHT_ID  = '00000000-0000-0000-0000-000000000011';
 const PRICE_PERIOD_PEAK_ID   = '00000000-0000-0000-0000-000000000012';
 const INSTALLATION_CONTRACT_ID = '00000000-0000-0000-0000-000000000013';
 const PRICE_PERIOD_FREE_ID   = '00000000-0000-0000-0000-000000000014';
+const SYSTEM_ADDITION_ID     = '00000000-0000-0000-0000-000000000015';
 
 // ---------------------------------------------------------------------------
 // Weekly schedule JSON for tariff version 2
@@ -227,11 +229,6 @@ async function seed() {
       locale: 'en-IE',
       currencyCode: 'EUR',
       arrayCapacityKw: '3.20',
-      financeMode: 'finance',
-      financeInvestmentDate: '2024-04-01',
-      installCostAmount: null,
-      monthlyFinancePaymentAmount: '158.33',
-      financeTermMonths: 60,
       providerType: 'myenergi',
       // Location: Dublin, Ireland — pre-seeded so the weather slice works in dev
       locationRawInput: 'Dublin, Ireland',
@@ -251,11 +248,6 @@ async function seed() {
         locale: sql`excluded.locale`,
         currencyCode: sql`excluded.currency_code`,
         arrayCapacityKw: sql`excluded.array_capacity_kw`,
-        financeMode: sql`excluded.finance_mode`,
-        financeInvestmentDate: sql`excluded.finance_investment_date`,
-        installCostAmount: sql`excluded.install_cost_amount`,
-        monthlyFinancePaymentAmount: sql`excluded.monthly_finance_payment_amount`,
-        financeTermMonths: sql`excluded.finance_term_months`,
         providerType: sql`excluded.provider_type`,
         locationRawInput: sql`excluded.location_raw_input`,
         locationDisplayName: sql`excluded.location_display_name`,
@@ -269,6 +261,28 @@ async function seed() {
       },
     });
     console.log('  installations: ok');
+
+    await tx.insert(systemAdditions).values({
+      id: SYSTEM_ADDITION_ID,
+      installationId: INSTALLATION_ID,
+      label: 'Original install',
+      additionDate: '2024-04-01',
+      capacityAddedKw: '3.20',
+      upfrontPayment: null,
+      monthlyRepayment: '158.33',
+      repaymentDurationMonths: 60,
+    }).onConflictDoUpdate({
+      target: systemAdditions.id,
+      set: {
+        label: sql`excluded.label`,
+        additionDate: sql`excluded.addition_date`,
+        capacityAddedKw: sql`excluded.capacity_added_kw`,
+        upfrontPayment: sql`excluded.upfront_payment`,
+        monthlyRepayment: sql`excluded.monthly_repayment`,
+        repaymentDurationMonths: sql`excluded.repayment_duration_months`,
+      },
+    });
+    console.log('  system additions: ok');
 
     await tx.insert(providerConnections).values({
       id: PROVIDER_CONNECTION_ID,
