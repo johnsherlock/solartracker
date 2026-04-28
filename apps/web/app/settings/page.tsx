@@ -44,9 +44,9 @@ const SECTION_META = [
     key: 'notifications' as const,
     label: 'Notifications',
     href: '/settings/notifications',
-    valueLine: 'Get notified before your tariff or contract expires.',
-    completeStatusLine: () => '',
-    actionableCta: null,
+    valueLine: 'Get notified when your tariff is expiring or when data coverage drops.',
+    completeStatusLine: () => 'Notification preferences saved',
+    actionableCta: 'Set up notifications',
   },
 ] as const;
 

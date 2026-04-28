@@ -11,6 +11,8 @@ import {
   WifiOff,
 } from 'lucide-react';
 import type { FinancialEstimate, LivePoint } from '@/src/live/loader';
+import { StaleTariffBanner } from '@/src/components/StaleTariffBanner';
+import type { StaleTariffWarning } from '@/src/tariffs/stale-check';
 import {
   DayTrendChart,
   DayValuePanel,
@@ -92,6 +94,7 @@ export type HistoricalDayScreenProps = {
     immersionDivertedKwh: number;
   } | null;
   financialEstimate: FinancialEstimate | null;
+  staleTariffWarning: StaleTariffWarning;
 };
 
 // ---------------------------------------------------------------------------
@@ -911,6 +914,7 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
       </div>
 
       <main className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6">
+        <StaleTariffBanner warning={props.staleTariffWarning} />
         <section className="space-y-4">
           <div className="grid gap-4 xl:grid-cols-[1.7fr_1fr]">
             <DayTrendChart

@@ -49,6 +49,8 @@ import { RangePickerPopover } from '@/src/components/RangePickerPopover';
 import type { NavigationTarget } from '@/src/components/RangePickerPopover';
 import { SolarCoverageChart } from './SolarCoverageChart';
 import { ExportRatioChart } from './ExportRatioChart';
+import { StaleTariffBanner } from '@/src/components/StaleTariffBanner';
+import type { StaleTariffWarning } from '@/src/tariffs/stale-check';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -62,13 +64,14 @@ export type RangeHistoryScreenProps = {
   initialFrom: string | null;
   initialTo: string | null;
   error: boolean;
+  staleTariffWarning: StaleTariffWarning;
 };
 
 // ---------------------------------------------------------------------------
 // Root screen
 // ---------------------------------------------------------------------------
 
-export function RangeHistoryScreen({ payload, today, financeContext, initialMode, initialFrom, initialTo, error }: RangeHistoryScreenProps) {
+export function RangeHistoryScreen({ payload, today, financeContext, initialMode, initialFrom, initialTo, error, staleTariffWarning }: RangeHistoryScreenProps) {
   const router = useRouter();
 
   const earliestDate = payload?.meta.earliestDate ?? null;
@@ -279,6 +282,7 @@ export function RangeHistoryScreen({ payload, today, financeContext, initialMode
       {/* Main content                                                        */}
       {/* ------------------------------------------------------------------ */}
       <main className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6">
+        <StaleTariffBanner warning={staleTariffWarning} />
 
         {/* Hard error */}
         {error && <HardErrorCard />}

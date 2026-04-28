@@ -12,6 +12,7 @@ import {
 } from '@/src/live/loader';
 import { HistoricalDayScreen } from './HistoricalDayScreen';
 import { resolveEffectiveInstallationId } from '@/src/installation-helpers';
+import { loadStaleTariffWarning } from '@/src/tariffs/stale-check';
 
 export const dynamic = 'force-dynamic';
 
@@ -74,9 +75,10 @@ export default async function HistoricalDayPage({
 
   const fetchedAt = now.toISOString();
 
-  const [tariffContext, minuteData] = await Promise.all([
+  const [tariffContext, minuteData, staleTariffWarning] = await Promise.all([
     loadTariffContext(installationId, date),
     fetchMinuteData(date, effectiveTimezone),
+    loadStaleTariffWarning(installationId, effectiveTimezone),
   ]);
 
   const dayDetail = buildDayDetail(date, minuteData, fetchedAt, effectiveTimezone);
@@ -158,6 +160,7 @@ export default async function HistoricalDayPage({
       costChartData={costChartData}
       dayTotals={dayTotals}
       financialEstimate={financialEstimate}
+      staleTariffWarning={staleTariffWarning}
     />
   );
 }

@@ -54,6 +54,8 @@ export const installations = pgTable('installations', {
   locationLocality: text('location_locality'),
   locationGeocodedAt: timestamp('location_geocoded_at', { withTimezone: true }),
   locationGeocoderProvider: text('location_geocoder_provider'),
+  // Notification preferences — nullable JSONB; null means not yet saved (defaults to all-on on first save)
+  notificationPreferencesJson: jsonb('notification_preferences_json'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({

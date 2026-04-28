@@ -1,6 +1,38 @@
 import { MapPin } from 'lucide-react';
+import { redirect } from 'next/navigation';
+import { eq } from 'drizzle-orm';
+import { resolveEffectiveInstallationId } from '@/src/installation-helpers';
+import { db } from '@/src/db/client';
+import { installations } from '@/src/db/schema';
+import { LocationForm } from './LocationForm';
 
-export default function LocationPage() {
+export default async function LocationPage() {
+  const installationId = await resolveEffectiveInstallationId();
+  if (!installationId) redirect('/api/auth/signin');
+
+  const row = await db
+    .select({
+      locationRawInput: installations.locationRawInput,
+      locationDisplayName: installations.locationDisplayName,
+      locationPrecisionMode: installations.locationPrecisionMode,
+      locationLatitude: installations.locationLatitude,
+      locationLongitude: installations.locationLongitude,
+    })
+    .from(installations)
+    .where(eq(installations.id, installationId))
+    .limit(1)
+    .then((rows) => rows[0] ?? null);
+
+  const current = row
+    ? {
+        rawInput: row.locationRawInput,
+        displayName: row.locationDisplayName,
+        precisionMode: row.locationPrecisionMode,
+        latitude: row.locationLatitude,
+        longitude: row.locationLongitude,
+      }
+    : null;
+
   return (
     <div>
       <div className="flex items-center gap-2 mb-6">
@@ -8,18 +40,12 @@ export default function LocationPage() {
         <h1 className="text-lg font-semibold text-slate-100">Location</h1>
       </div>
 
-      <p className="text-sm text-slate-400 leading-relaxed max-w-prose">
-        Set your installation location and timezone preferences. Location data improves
-        solar yield context and enables local weather correlation.
+      <p className="text-sm text-slate-400 leading-relaxed max-w-prose mb-8">
+        Set your installation location to enable weather context and solar yield interpretation.
+        Only a city or town is needed.
       </p>
 
-      <div className="mt-8 rounded-[20px] border border-dashed border-slate-700 bg-slate-900/40 px-6 py-10 text-center">
-        <MapPin size={28} className="mx-auto mb-4 text-slate-700" />
-        <p className="text-sm font-semibold text-slate-300">Coming soon</p>
-        <p className="mt-2 text-xs text-slate-500 max-w-sm mx-auto">
-          Location and timezone settings will be configurable here in a future update.
-        </p>
-      </div>
+      <LocationForm current={current} />
     </div>
   );
 }

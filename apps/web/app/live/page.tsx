@@ -20,6 +20,7 @@ import {
 import { getLiveWeatherContext } from '@/src/weather/getLiveWeatherContext';
 import { LiveScreen } from './LiveScreen';
 import { resolveEffectiveInstallationId } from '@/src/installation-helpers';
+import { loadStaleTariffWarning } from '@/src/tariffs/stale-check';
 
 export const dynamic = 'force-dynamic';
 
@@ -76,11 +77,12 @@ export default async function LivePage({
   const selectedDate = resolveSelectedDate(params?.date, today);
   const fetchedAt = now.toISOString();
 
-  // Load tariff, provider credentials, and weather in parallel.
-  const [tariffContext, providerConnection, weatherResult] = await Promise.all([
+  // Load tariff, provider credentials, weather, and stale-tariff check in parallel.
+  const [tariffContext, providerConnection, weatherResult, staleTariffWarning] = await Promise.all([
     loadTariffContext(installationId, selectedDate),
     loadProviderConnection(installationId),
     getLiveWeatherContext(installationId),
+    loadStaleTariffWarning(installationId, effectiveTimezone),
   ]);
 
   // Fetch live minute data from MyEnergi via the rewrite-owned adapter.
@@ -182,6 +184,7 @@ export default async function LivePage({
       costChartData={costChartData}
       todayTotals={todayTotals}
       financialEstimate={financialEstimate}
+      staleTariffWarning={staleTariffWarning}
     />
   );
 }

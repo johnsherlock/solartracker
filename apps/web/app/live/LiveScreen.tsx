@@ -67,6 +67,8 @@ import type { CostPoint } from '@/src/live/loader';
 import { buildRangeUrl } from '@/src/range/presets';
 import { RangePickerPopover } from '@/src/components/RangePickerPopover';
 import type { NavigationTarget } from '@/src/components/RangePickerPopover';
+import { StaleTariffBanner } from '@/src/components/StaleTariffBanner';
+import type { StaleTariffWarning } from '@/src/tariffs/stale-check';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -122,6 +124,7 @@ export type LiveScreenProps = {
     immersionDivertedKwh: number;
   } | null;
   financialEstimate: FinancialEstimate | null;
+  staleTariffWarning: StaleTariffWarning;
 };
 
 // ---------------------------------------------------------------------------
@@ -1125,6 +1128,7 @@ export function LiveScreen({
   costChartData,
   todayTotals,
   financialEstimate,
+  staleTariffWarning,
 }: LiveScreenProps) {
   const hasCoordinates = weatherResult.status !== 'no-location';
   const router = useRouter();
@@ -1492,6 +1496,7 @@ export function LiveScreen({
       </div>
 
       <main className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6">
+        <StaleTariffBanner warning={staleTariffWarning} />
         <section className="space-y-4">
           <SectionHeader
             eyebrow="Now"
