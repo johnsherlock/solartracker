@@ -300,7 +300,6 @@ export function RangeHistoryScreen({ payload, today, financeContext, initialMode
                 <KpiRow
                   kpis={kpis}
                   currency={payload?.meta.currency ?? 'EUR'}
-                  note={payload?.summary.note}
                 />
 
                 {/* §3 — Tariff-change callout */}
@@ -325,7 +324,6 @@ export function RangeHistoryScreen({ payload, today, financeContext, initialMode
                 <ChartPlaceholders
                   hasTariff={kpis.hasTariff}
                   series={filteredSeries}
-                  note={payload?.summary.note}
                   currency={payload?.meta.currency ?? 'EUR'}
                 />
 
@@ -356,10 +354,9 @@ export function RangeHistoryScreen({ payload, today, financeContext, initialMode
 type KpiRowProps = {
   kpis: ReturnType<typeof aggregateKpisFromSeries>;
   currency: string;
-  note?: 'banded-daily-rate' | 'simplified-daily-rate';
 };
 
-function KpiRow({ kpis, currency, note }: KpiRowProps) {
+function KpiRow({ kpis, currency }: KpiRowProps) {
   if (!kpis.hasTariff) {
     return (
       <div className="rounded-[28px] border border-dashed border-slate-700 bg-[#111b2b] p-6 text-center">
@@ -386,9 +383,6 @@ function KpiRow({ kpis, currency, note }: KpiRowProps) {
             Add tariff history to extend coverage.
           </Link>
         </p>
-      )}
-      {note === 'simplified-daily-rate' && (
-        <p className="text-[11px] text-slate-500">Cost calculated using day rate only</p>
       )}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <KpiCard label="Solar savings" value={formatCurrency(kpis.savings, currency)} highlight />
@@ -541,12 +535,10 @@ function HardErrorCard() {
 function ChartPlaceholders({
   hasTariff,
   series,
-  note,
   currency,
 }: {
   hasTariff: boolean;
   series: RangeSeriesDay[];
-  note?: 'banded-daily-rate' | 'simplified-daily-rate';
   currency: string;
 }) {
   // Incrementing this key forces charts to remount, which reliably clears zoom state.
@@ -596,7 +588,7 @@ function ChartPlaceholders({
             <ChartCard title="Period cost breakdown" icon={<Zap size={14} />}>
               <PeriodCostDonutChart
                 totals={periodCostTotals}
-                simplified={note === 'simplified-daily-rate'}
+                simplified={false}
                 currency={currency}
               />
             </ChartCard>

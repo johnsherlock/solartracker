@@ -26,12 +26,6 @@ export type TariffPricePeriod = {
  */
 export type WeeklySchedule = string[];
 
-/**
- * Per-period import kWh totals for a single day, keyed by TariffPricePeriod id.
- * Stored as dailySummaries.bandBreakdownJson when schedule-based derivation is used.
- */
-export type BandBreakdown = Record<string, number>;
-
 // ---------------------------------------------------------------------------
 // Schedule resolution helpers
 // ---------------------------------------------------------------------------
@@ -119,120 +113,13 @@ export const calculateIntervalImportCostScheduled = (
 // Schedule-based summary-backed billing
 // ---------------------------------------------------------------------------
 
-export type DailySummaryForBillingScheduled = DailySummaryForBilling & {
-  /** Per-period kWh breakdown. When present, used instead of fixed band fields. */
-  bandBreakdown?: BandBreakdown | null;
-};
-
 export type ScheduledTariffVersion = TariffVersion & {
   pricePeriods: TariffPricePeriod[];
   weeklySchedule: WeeklySchedule | null;
 };
 
-/**
- * Calculate billing from daily summaries using the schedule-based tariff model.
- *
- * When a summary row carries a bandBreakdown, each period's kWh is multiplied
- * by that period's rate, then discount and VAT are applied.
- *
- * Falls back to the fixed-band path (dayImportKwh/nightImportKwh/peakImportKwh)
- * if bandBreakdown is absent, and to the day-rate-only path if neither is
- * available — matching the behaviour of calculateBillingFromDailySummaries.
- */
-export const calculateBillingFromDailySummariesScheduled = (
-  summaries: DailySummaryForBillingScheduled[],
-  tariffVersions: ScheduledTariffVersion[],
-  fixedChargeVersions: FixedChargeVersion[],
-): BillingPeriodResult => {
-  let actualImportCost = 0;
-  let exportCredit = 0;
-  let fixedCharges = 0;
-  let withoutSolarImportCost = 0;
-  let totalConsumed = 0;
-  let totalImported = 0;
-  let totalExported = 0;
-
-  for (const day of summaries) {
-    const tariff = resolveTariffVersion(tariffVersions, `${day.localDate}T12:00`);
-    const scheduledTariff = tariff as ScheduledTariffVersion;
-    const vat = 1 + (tariff.vatRate ?? 0);
-    const discount = tariff.discountRuleType === 'percentage' && tariff.discountValue != null
-      ? 1 - tariff.discountValue
-      : 1;
-
-    if (day.bandBreakdown && scheduledTariff.pricePeriods.length > 0) {
-      // Schedule-based: walk the persisted breakdown entries and look each up in
-      // the loaded periods list. Iterating the breakdown (not the periods list)
-      // ensures no persisted kWh is silently dropped if a period ID is missing
-      // from the loaded list — for example because a period was deleted after
-      // summaries were generated. Unknown period IDs fall back to the day rate so
-      // the full import is always billed.
-      const periodMap = new Map(scheduledTariff.pricePeriods.map((p) => [p.id, p]));
-      let rawCost = 0;
-      for (const [periodId, kwh] of Object.entries(day.bandBreakdown)) {
-        const period = periodMap.get(periodId);
-        const rate = period
-          ? (period.isFreeImport ? 0 : period.ratePerKwh)
-          : tariff.dayRate; // unknown period → day-rate fallback
-        rawCost += kwh * rate;
-      }
-      actualImportCost += round(rawCost * discount * vat);
-    } else if (day.dayImportKwh != null && day.nightImportKwh != null && day.peakImportKwh != null) {
-      // Fixed-band fallback
-      const dayBand   = (day.dayImportKwh  ?? 0) * tariff.dayRate;
-      const nightBand = (day.nightImportKwh ?? 0) * (tariff.nightRate ?? tariff.dayRate);
-      const peakBand  = (day.peakImportKwh  ?? 0) * (tariff.peakRate  ?? tariff.dayRate);
-      actualImportCost += round((dayBand + nightBand + peakBand) * discount * vat);
-    } else {
-      actualImportCost += round(day.importKwh * tariff.dayRate * discount * vat);
-    }
-
-    exportCredit += round(day.exportKwh * (tariff.exportRate ?? 0));
-    fixedCharges += fixedChargeContributionForDate(day.localDate, tariff.id, fixedChargeVersions);
-
-    const withoutSolarImport = Math.max(0, round(
-      day.importKwh + day.generatedKwh - day.exportKwh - day.immersionDivertedKwh,
-    ));
-    withoutSolarImportCost += round(withoutSolarImport * tariff.dayRate * discount * vat);
-
-    totalConsumed += day.consumedKwh;
-    totalImported += day.importKwh;
-    totalExported += day.exportKwh;
-  }
-
-  const actualGrossCost = round(actualImportCost + fixedCharges);
-  const actualNetCost = round(actualGrossCost - exportCredit);
-  const withoutSolarGrossCost = round(withoutSolarImportCost + fixedCharges);
-  const withoutSolarNetCost = round(withoutSolarGrossCost);
-  const savings = round(withoutSolarNetCost - actualNetCost);
-  const selfConsumptionRatio = totalConsumed > 0 ? round((totalConsumed - totalImported) / totalConsumed) : 0;
-  const gridDependenceRatio = totalConsumed > 0 ? round(totalImported / totalConsumed) : 0;
-
-  return {
-    actual: {
-      importCost: round(actualImportCost),
-      fixedCharges: round(fixedCharges),
-      exportCredit: round(exportCredit),
-      grossCost: actualGrossCost,
-      netCost: actualNetCost,
-    },
-    withoutSolar: {
-      importCost: round(withoutSolarImportCost),
-      fixedCharges: round(fixedCharges),
-      grossCost: withoutSolarGrossCost,
-      netCost: withoutSolarNetCost,
-    },
-    solar: {
-      savings,
-      exportValue: round(exportCredit),
-      selfConsumptionRatio,
-      gridDependenceRatio,
-    },
-  };
-};
-
 // ---------------------------------------------------------------------------
-// Original simple-window types and functions follow
+// Simple-window types and functions follow
 // ---------------------------------------------------------------------------
 
 export type IntervalReading = {
@@ -270,18 +157,6 @@ export type FixedChargeVersion = {
   unit: 'per_day' | 'per_month' | 'per_bill';
   validFromLocalDate: string;
   validToLocalDate?: string | null;
-};
-
-export type DailySummaryForBilling = {
-  localDate: string;
-  importKwh: number;
-  exportKwh: number;
-  generatedKwh: number;
-  consumedKwh: number;
-  immersionDivertedKwh: number;
-  dayImportKwh?: number | null;
-  nightImportKwh?: number | null;
-  peakImportKwh?: number | null;
 };
 
 export type BillingPeriodResult = {
@@ -452,93 +327,3 @@ export const calculateBillingPeriod = (
   };
 };
 
-/**
- * Calculate billing totals from persisted daily summary rows.
- *
- * When a row carries band breakdown fields (dayImportKwh / nightImportKwh /
- * peakImportKwh), banded rates are applied: each band is multiplied by its
- * respective rate before discount and VAT. When band data is absent (older
- * rows or installations without tariff windows configured), the full import is
- * costed at the day rate — the simplified-daily-rate fallback.
- *
- * The no-solar counterfactual (withoutSolarImportCost) always uses the day
- * rate for the full hypothetical import, regardless of band data, because
- * we cannot know how a higher counterfactual load would have split across
- * bands. This is a documented, accepted simplification.
- */
-export const calculateBillingFromDailySummaries = (
-  summaries: DailySummaryForBilling[],
-  tariffVersions: TariffVersion[],
-  fixedChargeVersions: FixedChargeVersion[],
-): BillingPeriodResult => {
-  let actualImportCost = 0;
-  let exportCredit = 0;
-  let fixedCharges = 0;
-  let withoutSolarImportCost = 0;
-  let totalConsumed = 0;
-  let totalImported = 0;
-  let totalExported = 0;
-
-  for (const day of summaries) {
-    const tariff = resolveTariffVersion(tariffVersions, `${day.localDate}T12:00`);
-    const vat = 1 + (tariff.vatRate ?? 0);
-    const discount = tariff.discountRuleType === 'percentage' && tariff.discountValue != null
-      ? 1 - tariff.discountValue
-      : 1;
-
-    const hasBandData =
-      day.dayImportKwh != null &&
-      day.nightImportKwh != null &&
-      day.peakImportKwh != null;
-
-    if (hasBandData) {
-      const dayBand  = (day.dayImportKwh  ?? 0) * tariff.dayRate;
-      const nightBand = (day.nightImportKwh ?? 0) * (tariff.nightRate ?? tariff.dayRate);
-      const peakBand  = (day.peakImportKwh  ?? 0) * (tariff.peakRate  ?? tariff.dayRate);
-      actualImportCost += round((dayBand + nightBand + peakBand) * discount * vat);
-    } else {
-      actualImportCost += round(day.importKwh * tariff.dayRate * discount * vat);
-    }
-    exportCredit += round(day.exportKwh * (tariff.exportRate ?? 0));
-    fixedCharges += fixedChargeContributionForDate(day.localDate, tariff.id, fixedChargeVersions);
-
-    const withoutSolarImport = Math.max(0, round(
-      day.importKwh + day.generatedKwh - day.exportKwh - day.immersionDivertedKwh,
-    ));
-    withoutSolarImportCost += round(withoutSolarImport * tariff.dayRate * discount * vat);
-
-    totalConsumed += day.consumedKwh;
-    totalImported += day.importKwh;
-    totalExported += day.exportKwh;
-  }
-
-  const actualGrossCost = round(actualImportCost + fixedCharges);
-  const actualNetCost = round(actualGrossCost - exportCredit);
-  const withoutSolarGrossCost = round(withoutSolarImportCost + fixedCharges);
-  const withoutSolarNetCost = round(withoutSolarGrossCost);
-  const savings = round(withoutSolarNetCost - actualNetCost);
-  const selfConsumptionRatio = totalConsumed > 0 ? round((totalConsumed - totalImported) / totalConsumed) : 0;
-  const gridDependenceRatio = totalConsumed > 0 ? round(totalImported / totalConsumed) : 0;
-
-  return {
-    actual: {
-      importCost: round(actualImportCost),
-      fixedCharges: round(fixedCharges),
-      exportCredit: round(exportCredit),
-      grossCost: actualGrossCost,
-      netCost: actualNetCost,
-    },
-    withoutSolar: {
-      importCost: round(withoutSolarImportCost),
-      fixedCharges: round(fixedCharges),
-      grossCost: withoutSolarGrossCost,
-      netCost: withoutSolarNetCost,
-    },
-    solar: {
-      savings,
-      exportValue: round(exportCredit),
-      selfConsumptionRatio,
-      gridDependenceRatio,
-    },
-  };
-};

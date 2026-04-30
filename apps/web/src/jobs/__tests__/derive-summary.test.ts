@@ -5,12 +5,9 @@ import {
   getPreviousLocalDate,
   isAfterMidnightBuffer,
   expectedMinutesForDay,
-  deriveDailySummaryFields,
-  deriveBandBreakdown,
-  deriveDailySummaryFieldsScheduled,
-  type TariffWindows,
+  utcStartOfLocalDate,
+  aggregateToIntervalReadings,
 } from '../derive-summary';
-import type { TariffPricePeriod, WeeklySchedule } from '../../domain/billing';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -43,7 +40,6 @@ function makeReadings(count: number, perMinute: Partial<MinuteReading> = {}): Mi
 
 describe('getLocalDate', () => {
   it('returns YYYY-MM-DD for Europe/Dublin in winter (UTC = local)', () => {
-    // 2024-01-15T10:30:00Z — winter, UTC = local
     const date = getLocalDate('Europe/Dublin', new Date('2024-01-15T10:30:00Z'));
     expect(date).toBe('2024-01-15');
   });
@@ -55,7 +51,6 @@ describe('getLocalDate', () => {
   });
 
   it('returns UTC date for Europe/Dublin at UTC midnight in summer', () => {
-    // 2024-07-02T00:00:00Z = 2024-07-02T01:00:00 BST — already the next local day
     const date = getLocalDate('Europe/Dublin', new Date('2024-07-02T00:00:00Z'));
     expect(date).toBe('2024-07-02');
   });
@@ -67,27 +62,21 @@ describe('getLocalDate', () => {
 
 describe('getPreviousLocalDate', () => {
   it('returns yesterday in a normal winter case', () => {
-    // 2024-01-15T10:00:00Z — local today is 2024-01-15, so yesterday is 2024-01-14
     const prev = getPreviousLocalDate('Europe/Dublin', new Date('2024-01-15T10:00:00Z'));
     expect(prev).toBe('2024-01-14');
   });
 
   it('returns correct previous day in summer (UTC offset)', () => {
-    // 2024-07-02T00:30:00Z = 2024-07-02T01:30:00 BST — local today is 2024-07-02
     const prev = getPreviousLocalDate('Europe/Dublin', new Date('2024-07-02T00:30:00Z'));
     expect(prev).toBe('2024-07-01');
   });
 
-  it('handles DST spring-forward: 2024-03-31 (clocks go forward at 01:00 UTC)', () => {
-    // After spring-forward (e.g. 02:00 local on 2024-03-31), local today is 2024-03-31
-    // Previous day should be 2024-03-30.
+  it('handles DST spring-forward: 2024-03-31', () => {
     const prev = getPreviousLocalDate('Europe/Dublin', new Date('2024-03-31T10:00:00Z'));
     expect(prev).toBe('2024-03-30');
   });
 
-  it('handles DST fall-back: 2024-10-27 (clocks go back at 01:00 UTC)', () => {
-    // After fall-back on 2024-10-27, local today is 2024-10-27
-    // Previous day should be 2024-10-26.
+  it('handles DST fall-back: 2024-10-27', () => {
     const prev = getPreviousLocalDate('Europe/Dublin', new Date('2024-10-27T10:00:00Z'));
     expect(prev).toBe('2024-10-26');
   });
@@ -109,7 +98,6 @@ describe('getPreviousLocalDate', () => {
 
 describe('isAfterMidnightBuffer', () => {
   it('returns false at 00:00 local (exactly midnight)', () => {
-    // 2024-01-15T00:00:00Z = midnight local in winter
     expect(isAfterMidnightBuffer('Europe/Dublin', 15, new Date('2024-01-15T00:00:00Z'))).toBe(false);
   });
 
@@ -126,17 +114,14 @@ describe('isAfterMidnightBuffer', () => {
   });
 
   it('handles summer time (UTC+1): 00:15 UTC = 01:15 local — returns true', () => {
-    // In BST, UTC 00:15 = local 01:15, well past midnight buffer
     expect(isAfterMidnightBuffer('Europe/Dublin', 15, new Date('2024-07-15T00:15:00Z'))).toBe(true);
   });
 
   it('handles summer time: 23:00 UTC = 00:00 local BST — at local midnight, before buffer', () => {
-    // 2024-07-15T23:00:00Z = 2024-07-16T00:00:00 BST
     expect(isAfterMidnightBuffer('Europe/Dublin', 15, new Date('2024-07-15T23:00:00Z'))).toBe(false);
   });
 
   it('respects a custom buffer value', () => {
-    // 00:30 UTC in winter = 00:30 local
     expect(isAfterMidnightBuffer('Europe/Dublin', 60, new Date('2024-01-15T00:30:00Z'))).toBe(false);
     expect(isAfterMidnightBuffer('Europe/Dublin', 60, new Date('2024-01-15T01:00:00Z'))).toBe(true);
   });
@@ -161,313 +146,165 @@ describe('expectedMinutesForDay', () => {
 });
 
 // ---------------------------------------------------------------------------
-// deriveDailySummaryFields
+// utcStartOfLocalDate
 // ---------------------------------------------------------------------------
 
-describe('deriveDailySummaryFields', () => {
-  it('sums all energy fields across all minute readings', () => {
-    const readings = makeReadings(3, {
+describe('utcStartOfLocalDate', () => {
+  it('returns UTC midnight for a winter day (UTC+0)', () => {
+    // 2024-01-15 in Dublin is UTC+0, so local midnight = UTC midnight
+    const ms = utcStartOfLocalDate('2024-01-15', 'Europe/Dublin');
+    expect(new Date(ms).toISOString()).toBe('2024-01-15T00:00:00.000Z');
+  });
+
+  it('returns UTC 23:00 the previous day for a BST day (UTC+1)', () => {
+    // 2024-07-15 in Dublin is BST (UTC+1), so local midnight = UTC 23:00 prev day
+    const ms = utcStartOfLocalDate('2024-07-15', 'Europe/Dublin');
+    expect(new Date(ms).toISOString()).toBe('2024-07-14T23:00:00.000Z');
+  });
+
+  it('returns the correct UTC start for the spring-forward day', () => {
+    // 2024-03-31: clocks go forward from 01:00 to 02:00 (UTC 01:00)
+    // Local midnight is UTC midnight (both UTC+0 at that point)
+    const ms = utcStartOfLocalDate('2024-03-31', 'Europe/Dublin');
+    expect(new Date(ms).toISOString()).toBe('2024-03-31T00:00:00.000Z');
+  });
+
+  it('returns the correct UTC start for the fall-back day', () => {
+    // 2024-10-27: clocks go back from 02:00 BST to 01:00 GMT (UTC 01:00)
+    // Local midnight on Oct 27 is at UTC 23:00 on Oct 26 (still BST)
+    const ms = utcStartOfLocalDate('2024-10-27', 'Europe/Dublin');
+    expect(new Date(ms).toISOString()).toBe('2024-10-26T23:00:00.000Z');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// aggregateToIntervalReadings
+// ---------------------------------------------------------------------------
+
+describe('aggregateToIntervalReadings', () => {
+  const TZ = 'Europe/Dublin';
+  const WINTER_DATE = '2024-01-15'; // UTC+0
+  const SUMMER_DATE = '2024-07-15'; // UTC+1 (BST)
+
+  it('returns empty array for empty readings', () => {
+    const slots = aggregateToIntervalReadings([], WINTER_DATE, TZ);
+    expect(slots).toHaveLength(0);
+  });
+
+  it('produces 48 slots for a full normal winter day', () => {
+    const readings = makeReadings(1440);
+    const slots = aggregateToIntervalReadings(readings, WINTER_DATE, TZ);
+    expect(slots).toHaveLength(48);
+  });
+
+  it('produces 46 slots for a spring-forward day (23-hour day)', () => {
+    const readings = makeReadings(1380);
+    const slots = aggregateToIntervalReadings(readings, '2024-03-31', TZ);
+    expect(slots).toHaveLength(46);
+  });
+
+  it('produces 50 slots for a fall-back day (25-hour day)', () => {
+    const readings = makeReadings(1500);
+    const slots = aggregateToIntervalReadings(readings, '2024-10-27', TZ);
+    expect(slots).toHaveLength(50);
+  });
+
+  it('slot interval_start timestamps advance by exactly 30 minutes', () => {
+    const readings = makeReadings(1440);
+    const slots = aggregateToIntervalReadings(readings, WINTER_DATE, TZ);
+    for (let i = 1; i < slots.length; i++) {
+      const diff = slots[i].intervalStart.getTime() - slots[i - 1].intervalStart.getTime();
+      expect(diff).toBe(30 * 60 * 1000);
+    }
+  });
+
+  it('first slot start is UTC midnight for a winter day', () => {
+    const readings = makeReadings(1440);
+    const slots = aggregateToIntervalReadings(readings, WINTER_DATE, TZ);
+    expect(slots[0].intervalStart.toISOString()).toBe('2024-01-15T00:00:00.000Z');
+  });
+
+  it('first slot start is UTC 23:00 prev day for a summer BST day', () => {
+    const readings = makeReadings(1440);
+    const slots = aggregateToIntervalReadings(readings, SUMMER_DATE, TZ);
+    expect(slots[0].intervalStart.toISOString()).toBe('2024-07-14T23:00:00.000Z');
+  });
+
+  it('sums all energy fields within each 30-minute slot', () => {
+    // 60 readings, each with importKwh=0.01 → 2 slots, each with importKwh=0.30
+    const readings = makeReadings(60, { importKwh: 0.01 });
+    const slots = aggregateToIntervalReadings(readings, WINTER_DATE, TZ);
+    expect(slots).toHaveLength(48);
+    expect(slots[0].importKwh).toBeCloseTo(0.30, 6);
+    expect(slots[1].importKwh).toBeCloseTo(0.30, 6);
+    // Later slots have no readings and are zeros
+    expect(slots[2].importKwh).toBe(0);
+  });
+
+  it('readingCount matches number of readings in each slot', () => {
+    const readings = makeReadings(1440);
+    const slots = aggregateToIntervalReadings(readings, WINTER_DATE, TZ);
+    for (const slot of slots) {
+      expect(slot.readingCount).toBe(30);
+    }
+  });
+
+  it('readingCount is less than 30 for a partial slot (partial day)', () => {
+    const readings = makeReadings(45); // 1.5 slots worth
+    const slots = aggregateToIntervalReadings(readings, WINTER_DATE, TZ);
+    expect(slots[0].readingCount).toBe(30);
+    expect(slots[1].readingCount).toBe(15);
+    // Rest are 0
+    expect(slots[2].readingCount).toBe(0);
+  });
+
+  it('sums all energy metric fields correctly', () => {
+    const readings = makeReadings(30, {
       importKwh: 0.01,
-      exportKwh: 0.005,
       generatedKwh: 0.02,
+      exportKwh: 0.005,
       consumedKwh: 0.015,
       immersionDivertedKwh: 0.002,
       immersionBoostedKwh: 0.001,
     });
-
-    const result = deriveDailySummaryFields(readings, 1440);
-    expect(result.importKwh).toBeCloseTo(0.03, 6);
-    expect(result.exportKwh).toBeCloseTo(0.015, 6);
-    expect(result.generatedKwh).toBeCloseTo(0.06, 6);
-    expect(result.consumedKwh).toBeCloseTo(0.045, 6);
-    expect(result.immersionDivertedKwh).toBeCloseTo(0.006, 6);
-    expect(result.immersionBoostedKwh).toBeCloseTo(0.003, 6);
+    const slots = aggregateToIntervalReadings(readings, WINTER_DATE, TZ);
+    const slot = slots[0];
+    expect(slot.importKwh).toBeCloseTo(0.3, 6);
+    expect(slot.generationKwh).toBeCloseTo(0.6, 6);
+    expect(slot.exportKwh).toBeCloseTo(0.15, 6);
+    expect(slot.consumedKwh).toBeCloseTo(0.45, 6);
+    expect(slot.immersionDivertedKwh).toBeCloseTo(0.06, 6);
+    expect(slot.immersionBoostedKwh).toBeCloseTo(0.03, 6);
   });
 
-  it('marks isPartial false when readings count meets expected', () => {
-    const readings = makeReadings(1440);
-    const result = deriveDailySummaryFields(readings, 1440);
-    expect(result.isPartial).toBe(false);
+  it('total energy across all slots equals the daily total', () => {
+    const readings = makeReadings(1440, { importKwh: 0.005, generatedKwh: 0.003 });
+    const slots = aggregateToIntervalReadings(readings, WINTER_DATE, TZ);
+    const totalImport = slots.reduce((s, sl) => s + sl.importKwh, 0);
+    const totalGen = slots.reduce((s, sl) => s + sl.generationKwh, 0);
+    expect(totalImport).toBeCloseTo(1440 * 0.005, 4);
+    expect(totalGen).toBeCloseTo(1440 * 0.003, 4);
   });
 
-  it('marks isPartial true when readings count is below expected', () => {
-    const readings = makeReadings(720);
-    const result = deriveDailySummaryFields(readings, 1440);
-    expect(result.isPartial).toBe(true);
-  });
-
-  it('marks isPartial false for a spring-forward day with 1380 readings', () => {
-    const readings = makeReadings(1380);
-    const result = deriveDailySummaryFields(readings, 1380);
-    expect(result.isPartial).toBe(false);
-  });
-
-  it('marks isPartial false for a fall-back day with 1500 readings', () => {
-    const readings = makeReadings(1500);
-    const result = deriveDailySummaryFields(readings, 1500);
-    expect(result.isPartial).toBe(false);
-  });
-
-  it('computes selfConsumptionRatio correctly', () => {
-    // consumed=1.0, import=0.4 => solarConsumed=0.6 => ratio=0.6
-    const readings = [makeReading({ consumedKwh: 1.0, importKwh: 0.4 })];
-    const result = deriveDailySummaryFields(readings, 1440);
-    expect(result.selfConsumptionRatio).toBeCloseTo(0.6, 6);
-  });
-
-  it('computes gridDependenceRatio correctly', () => {
-    // consumed=1.0, import=0.4 => ratio=0.4
-    const readings = [makeReading({ consumedKwh: 1.0, importKwh: 0.4 })];
-    const result = deriveDailySummaryFields(readings, 1440);
-    expect(result.gridDependenceRatio).toBeCloseTo(0.4, 6);
-  });
-
-  it('returns null ratios when consumed is zero', () => {
-    const readings = [makeReading({ consumedKwh: 0 })];
-    const result = deriveDailySummaryFields(readings, 1440);
-    expect(result.selfConsumptionRatio).toBeNull();
-    expect(result.gridDependenceRatio).toBeNull();
-  });
-
-  it('clamps selfConsumptionRatio to 0 when import exceeds consumed', () => {
-    // import > consumed (should not happen physically but clamp is defensive)
-    const readings = [makeReading({ consumedKwh: 0.5, importKwh: 1.0 })];
-    const result = deriveDailySummaryFields(readings, 1440);
-    expect(result.selfConsumptionRatio).toBe(0);
-    expect(result.gridDependenceRatio).toBeCloseTo(2.0, 6);
-  });
-
-  it('handles empty readings (no data day)', () => {
-    const result = deriveDailySummaryFields([], 1440);
-    expect(result.importKwh).toBe(0);
-    expect(result.exportKwh).toBe(0);
-    expect(result.generatedKwh).toBe(0);
-    expect(result.consumedKwh).toBe(0);
-    expect(result.selfConsumptionRatio).toBeNull();
-    expect(result.gridDependenceRatio).toBeNull();
-    expect(result.isPartial).toBe(true);
-  });
-
-  it('returns null band fields when no tariff windows are supplied', () => {
-    const readings = [makeReading({ hour: 2, minute: 0, importKwh: 0.1 })];
-    const result = deriveDailySummaryFields(readings, 1440);
-    expect(result.dayImportKwh).toBeNull();
-    expect(result.nightImportKwh).toBeNull();
-    expect(result.peakImportKwh).toBeNull();
-    expect(result.freeImportKwh).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// deriveDailySummaryFields — band classification
-// ---------------------------------------------------------------------------
-
-describe('deriveDailySummaryFields — band classification', () => {
-  const windows: TariffWindows = {
-    nightStartLocalTime: '23:00',
-    nightEndLocalTime: '08:00',
-    peakStartLocalTime: '17:00',
-    peakEndLocalTime: '19:00',
-  };
-
-  it('classifies a mid-day reading as day import', () => {
-    const readings = [makeReading({ hour: 12, minute: 0, importKwh: 1.0 })];
-    const result = deriveDailySummaryFields(readings, 1440, windows);
-    expect(result.dayImportKwh).toBeCloseTo(1.0, 6);
-    expect(result.nightImportKwh).toBeCloseTo(0, 6);
-    expect(result.peakImportKwh).toBeCloseTo(0, 6);
-  });
-
-  it('classifies a peak reading as peak import', () => {
-    const readings = [makeReading({ hour: 17, minute: 30, importKwh: 0.5 })];
-    const result = deriveDailySummaryFields(readings, 1440, windows);
-    expect(result.peakImportKwh).toBeCloseTo(0.5, 6);
-    expect(result.dayImportKwh).toBeCloseTo(0, 6);
-    expect(result.nightImportKwh).toBeCloseTo(0, 6);
-  });
-
-  it('classifies an early-morning reading in the midnight-crossing night window', () => {
-    // 02:00 is inside 23:00–08:00 (midnight-crossing)
-    const readings = [makeReading({ hour: 2, minute: 0, importKwh: 0.8 })];
-    const result = deriveDailySummaryFields(readings, 1440, windows);
-    expect(result.nightImportKwh).toBeCloseTo(0.8, 6);
-    expect(result.dayImportKwh).toBeCloseTo(0, 6);
-    expect(result.peakImportKwh).toBeCloseTo(0, 6);
-  });
-
-  it('classifies a late-night reading (23:30) in the midnight-crossing night window', () => {
-    const readings = [makeReading({ hour: 23, minute: 30, importKwh: 0.6 })];
-    const result = deriveDailySummaryFields(readings, 1440, windows);
-    expect(result.nightImportKwh).toBeCloseTo(0.6, 6);
-    expect(result.dayImportKwh).toBeCloseTo(0, 6);
-  });
-
-  it('band totals sum to total importKwh across a mixed day', () => {
-    // 6 readings spread across different bands
-    const readings = [
-      makeReading({ hour: 2, minute: 0, importKwh: 0.3 }),   // night
-      makeReading({ hour: 8, minute: 0, importKwh: 0.5 }),   // day (08:00 is end of night, exclusive)
-      makeReading({ hour: 12, minute: 0, importKwh: 0.7 }),  // day
-      makeReading({ hour: 17, minute: 0, importKwh: 0.4 }),  // peak
-      makeReading({ hour: 18, minute: 0, importKwh: 0.2 }),  // peak
-      makeReading({ hour: 23, minute: 0, importKwh: 0.1 }),  // night
-    ];
-    const result = deriveDailySummaryFields(readings, 1440, windows);
-    const bandTotal = (result.dayImportKwh ?? 0) + (result.nightImportKwh ?? 0) + (result.peakImportKwh ?? 0);
-    expect(bandTotal).toBeCloseTo(result.importKwh, 5);
-  });
-
-  it('peak takes priority over night when windows would overlap', () => {
-    // Peak is checked first in the classification logic
-    const overlappingWindows: TariffWindows = {
-      nightStartLocalTime: '16:00',
-      nightEndLocalTime: '20:00',
-      peakStartLocalTime: '17:00',
-      peakEndLocalTime: '19:00',
-    };
-    const readings = [makeReading({ hour: 17, minute: 30, importKwh: 1.0 })];
-    const result = deriveDailySummaryFields(readings, 1440, overlappingWindows);
-    expect(result.peakImportKwh).toBeCloseTo(1.0, 6);
-    expect(result.nightImportKwh).toBeCloseTo(0, 6);
-  });
-
-  it('freeImportKwh is always null (deferred)', () => {
-    const readings = [makeReading({ hour: 12, minute: 0, importKwh: 1.0 })];
-    const result = deriveDailySummaryFields(readings, 1440, windows);
-    expect(result.freeImportKwh).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Schedule-based derivation
-// ---------------------------------------------------------------------------
-
-// Fixtures: 3-period schedule for a simple day/night/free tariff.
-// 2025-05-05 is a Monday (dayIndex 0).
-// Night: slots 0–15 (00:00–07:30) and 46–47 (23:00–23:30)
-// Free: slot 24 (12:00–12:29)
-// Day: everything else
-
-const pDay: TariffPricePeriod = {
-  id: 'pd', tariffPlanVersionId: 'v1', periodLabel: 'Day',
-  ratePerKwh: 0.30, isFreeImport: false, sortOrder: 0,
-};
-const pNight: TariffPricePeriod = {
-  id: 'pn', tariffPlanVersionId: 'v1', periodLabel: 'Night',
-  ratePerKwh: 0.15, isFreeImport: false, sortOrder: 1,
-};
-const pFree: TariffPricePeriod = {
-  id: 'pf', tariffPlanVersionId: 'v1', periodLabel: 'Free',
-  ratePerKwh: 0, isFreeImport: true, sortOrder: 2,
-};
-
-// Build a schedule for Monday (dayIndex 0) with night / free slots
-function buildTestSchedule(): WeeklySchedule {
-  const schedule: WeeklySchedule = Array(336).fill('pd');
-  // Night: slots 0–15 and 46–47 for all days
-  for (let day = 0; day < 7; day++) {
-    for (let slot = 0; slot <= 15; slot++) schedule[day * 48 + slot] = 'pn';
-    schedule[day * 48 + 46] = 'pn';
-    schedule[day * 48 + 47] = 'pn';
-    // Free: slot 24 (12:00)
-    schedule[day * 48 + 24] = 'pf';
-  }
-  return schedule;
-}
-
-const testSchedule = buildTestSchedule();
-const testPeriods = [pDay, pNight, pFree];
-const monday = '2025-05-05';
-
-describe('deriveBandBreakdown', () => {
-  it('accumulates import kWh into the correct period bucket', () => {
-    const readings = [
-      makeReading({ hour: 12, minute: 0, importKwh: 1.0 }), // free slot (12:00)
-      makeReading({ hour: 14, minute: 0, importKwh: 2.0 }), // day slot
-      makeReading({ hour: 23, minute: 0, importKwh: 0.5 }), // night slot (23:00 = slot 46)
-    ];
-
-    const { breakdown, freeImportKwh } = deriveBandBreakdown(readings, monday, testSchedule, testPeriods);
-
-    expect(breakdown['pd']).toBeCloseTo(2.0, 6);
-    expect(breakdown['pn']).toBeCloseTo(0.5, 6);
-    expect(breakdown['pf']).toBeCloseTo(1.0, 6);
-    expect(freeImportKwh).toBeCloseTo(1.0, 6);
-  });
-
-  it('returns empty breakdown and zero freeImportKwh for empty readings', () => {
-    const { breakdown, freeImportKwh } = deriveBandBreakdown([], monday, testSchedule, testPeriods);
-    expect(Object.keys(breakdown)).toHaveLength(0);
-    expect(freeImportKwh).toBe(0);
-  });
-
-  it('accumulates multiple readings into the same period', () => {
-    const readings = [
-      makeReading({ hour: 10, minute: 0, importKwh: 0.5 }),
-      makeReading({ hour: 10, minute: 30, importKwh: 0.5 }),
-      makeReading({ hour: 11, minute: 0, importKwh: 0.5 }),
-    ];
-    const { breakdown } = deriveBandBreakdown(readings, monday, testSchedule, testPeriods);
-    expect(breakdown['pd']).toBeCloseTo(1.5, 6);
-  });
-});
-
-describe('deriveDailySummaryFieldsScheduled', () => {
-  it('populates bandBreakdownJson and leaves fixed band fields null', () => {
-    const readings = [
-      makeReading({ hour: 14, minute: 0, importKwh: 1.0 }), // day
-      makeReading({ hour: 0, minute: 0, importKwh: 0.5 }),   // night
-    ];
-
-    const result = deriveDailySummaryFieldsScheduled(readings, 1440, monday, testSchedule, testPeriods);
-
-    expect(result.dayImportKwh).toBeNull();
-    expect(result.nightImportKwh).toBeNull();
-    expect(result.peakImportKwh).toBeNull();
-    expect(result.bandBreakdownJson).not.toBeNull();
-    expect(result.bandBreakdownJson?.['pd']).toBeCloseTo(1.0, 6);
-    expect(result.bandBreakdownJson?.['pn']).toBeCloseTo(0.5, 6);
-  });
-
-  it('sets freeImportKwh when free-period readings exist', () => {
-    const readings = [
-      makeReading({ hour: 12, minute: 0, importKwh: 2.0 }), // free slot
-    ];
-    const result = deriveDailySummaryFieldsScheduled(readings, 1440, monday, testSchedule, testPeriods);
-    expect(result.freeImportKwh).toBeCloseTo(2.0, 6);
-  });
-
-  it('sets freeImportKwh to null when no free-period readings exist', () => {
-    const readings = [makeReading({ hour: 14, minute: 0, importKwh: 1.0 })];
-    const result = deriveDailySummaryFieldsScheduled(readings, 1440, monday, testSchedule, testPeriods);
-    expect(result.freeImportKwh).toBeNull();
-  });
-
-  it('marks the summary as partial when readings are fewer than expected', () => {
-    const readings = [makeReading({ hour: 14, minute: 0, importKwh: 1.0 })];
-    const result = deriveDailySummaryFieldsScheduled(readings, 1440, monday, testSchedule, testPeriods);
-    expect(result.isPartial).toBe(true);
-  });
-
-  it('produces the same energy totals as deriveDailySummaryFields', () => {
-    const readings = makeReadings(1440, { importKwh: 0.001, exportKwh: 0.0005, generatedKwh: 0.002, consumedKwh: 0.0015 });
-    const scheduled = deriveDailySummaryFieldsScheduled(readings, 1440, monday, testSchedule, testPeriods);
-    const simple = deriveDailySummaryFields(readings, 1440);
-
-    expect(scheduled.importKwh).toBeCloseTo(simple.importKwh, 4);
-    expect(scheduled.exportKwh).toBeCloseTo(simple.exportKwh, 4);
-    expect(scheduled.generatedKwh).toBeCloseTo(simple.generatedKwh, 4);
-    expect(scheduled.consumedKwh).toBeCloseTo(simple.consumedKwh, 4);
-  });
-
-  it('band breakdown totals sum to total importKwh', () => {
-    const readings = [
-      makeReading({ hour: 0, minute: 0, importKwh: 0.5 }),   // night
-      makeReading({ hour: 12, minute: 0, importKwh: 1.0 }),  // free
-      makeReading({ hour: 14, minute: 0, importKwh: 2.0 }),  // day
-    ];
-    const result = deriveDailySummaryFieldsScheduled(readings, 1440, monday, testSchedule, testPeriods);
-    const bandTotal = Object.values(result.bandBreakdownJson ?? {}).reduce((a, b) => a + b, 0);
-    expect(bandTotal).toBeCloseTo(result.importKwh, 5);
+  it('places gap-adjacent readings in their correct local-time slots, leaving gap slots empty', () => {
+    // hour 0 (slots 0–1) and hour 2 (slots 4–5) with a gap at hour 1 (slots 2–3)
+    const hour0 = Array.from({ length: 60 }, (_, i) =>
+      makeReading({ hour: 0, minute: i, importKwh: 0.01 }),
+    );
+    const hour2 = Array.from({ length: 60 }, (_, i) =>
+      makeReading({ hour: 2, minute: i, importKwh: 0.02 }),
+    );
+    const slots = aggregateToIntervalReadings([...hour0, ...hour2], WINTER_DATE, TZ);
+    // slot 0 = 00:00–00:29 (30 readings × 0.01)
+    expect(slots[0].importKwh).toBeCloseTo(0.30, 6);
+    // slot 1 = 00:30–00:59 (30 readings × 0.01)
+    expect(slots[1].importKwh).toBeCloseTo(0.30, 6);
+    // slots 2–3 = 01:00–01:59 — gap, no readings
+    expect(slots[2].importKwh).toBe(0);
+    expect(slots[3].importKwh).toBe(0);
+    // slot 4 = 02:00–02:29 (30 readings × 0.02)
+    expect(slots[4].importKwh).toBeCloseTo(0.60, 6);
+    // slot 5 = 02:30–02:59 (30 readings × 0.02)
+    expect(slots[5].importKwh).toBeCloseTo(0.60, 6);
   });
 });

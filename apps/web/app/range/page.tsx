@@ -2,8 +2,8 @@ import {
   loadRangeInstallationContext,
   loadTariffVersionsForInstallation,
   loadFixedChargeVersionsForInstallation,
-  loadDailySummaryRowsForRange,
-  loadEarliestSummaryDate,
+  loadIntervalReadingsForRange,
+  loadEarliestIntervalDate,
 } from '@/src/range/loader';
 import { allDatesInRange, computeRangeSummary } from '@/src/range/billing';
 import type { RangeSummaryPayload } from '@/src/range/types';
@@ -52,7 +52,7 @@ export default async function RangePage({ searchParams }: PageProps) {
   const currency = installationContext?.currency ?? 'EUR';
   const today = getTodayLocalDate(timezone);
 
-  const earliestDate = await loadEarliestSummaryDate(installationId);
+  const earliestDate = await loadEarliestIntervalDate(installationId, timezone);
 
   // For "All" mode, load from the earliest known summary date.
   // When a specific from date is in the URL that predates the default window,
@@ -79,38 +79,36 @@ export default async function RangePage({ searchParams }: PageProps) {
   );
 
   try {
-    const [tariffVersions, fixedCharges, summaryRows, allTimeRows] = await Promise.all([
+    const [tariffVersions, fixedCharges, intervals, allTimeIntervals] = await Promise.all([
       loadTariffVersionsForInstallation(installationId),
       loadFixedChargeVersionsForInstallation(installationId),
-      loadDailySummaryRowsForRange(installationId, windowStart, windowEnd),
+      loadIntervalReadingsForRange(installationId, windowStart, windowEnd, timezone),
       needsAllTimeLoad
-        ? loadDailySummaryRowsForRange(installationId, earliestDate!, today)
+        ? loadIntervalReadingsForRange(installationId, earliestDate!, today, timezone)
         : Promise.resolve(null),
     ]);
 
     const allDates = allDatesInRange(windowStart, windowEnd);
     const { summary, series, health } = computeRangeSummary(
-      summaryRows,
+      intervals,
       allDates,
+      timezone,
       tariffVersions,
       fixedCharges,
     );
 
-    // Build finance context whenever investment records exist — even when no summaries are
-    // available yet.  In that case allTimeSavings/coveredDays are 0 and the panel shows a
-    // "waiting for data" state rather than the misleading "Set up investment" prompt.
     let financeContext: RangeFinanceContext | null = null;
     if (hasFinanceContext) {
       let allTimeSavings = 0;
       let allTimeCoveredDays = 0;
 
       if (earliestDate != null) {
-        // Use windowed rows when they already cover all history (mode=all).
-        const rowsForAllTime = allTimeRows ?? summaryRows;
+        const intervalsForAllTime = allTimeIntervals ?? intervals;
         const allTimeDates = allDatesInRange(earliestDate, today);
         const { series: allTimeSeries } = computeRangeSummary(
-          rowsForAllTime,
+          intervalsForAllTime,
           allTimeDates,
+          timezone,
           tariffVersions,
           fixedCharges,
         );

@@ -5,8 +5,9 @@
  * resolving the correct installationId before calling these functions.
  */
 
-import { and, between, eq, inArray, min } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, lt, min } from 'drizzle-orm';
 import type { TariffPricePeriod, ScheduledTariffVersion, FixedChargeVersion } from '../domain/billing';
+import { utcStartOfLocalDate } from '../jobs/derive-summary';
 
 type RangeLoaderDbModule = typeof import('../db/client');
 type RangeLoaderSchemaModule = typeof import('../db/schema');
@@ -19,7 +20,7 @@ let _dbDeps:
       tariffPlanVersions: RangeLoaderSchemaModule['tariffPlanVersions'];
       tariffPricePeriods: RangeLoaderSchemaModule['tariffPricePeriods'];
       tariffFixedChargeVersions: RangeLoaderSchemaModule['tariffFixedChargeVersions'];
-      dailySummaries: RangeLoaderSchemaModule['dailySummaries'];
+      intervalReadings: RangeLoaderSchemaModule['intervalReadings'];
       systemAdditions: RangeLoaderSchemaModule['systemAdditions'];
     }>
   | null = null;
@@ -34,7 +35,7 @@ async function getDbDeps() {
         tariffPlanVersions: schema.tariffPlanVersions,
         tariffPricePeriods: schema.tariffPricePeriods,
         tariffFixedChargeVersions: schema.tariffFixedChargeVersions,
-        dailySummaries: schema.dailySummaries,
+        intervalReadings: schema.intervalReadings,
         systemAdditions: schema.systemAdditions,
       }),
     );
@@ -244,70 +245,85 @@ export async function loadFixedChargeVersionsForInstallation(
     }));
 }
 
-export type DailySummaryRow = {
-  localDate: string;
+export type IntervalRow = {
+  intervalStart: Date;
   importKwh: number;
+  generationKwh: number;
   exportKwh: number;
-  generatedKwh: number;
-  consumedKwh: number | null;
-  immersionDivertedKwh: number | null;
-  immersionBoostedKwh: number | null;
-  isPartial: boolean;
-  dayImportKwh: number | null;
-  nightImportKwh: number | null;
-  peakImportKwh: number | null;
-  freeImportKwh: number | null;
-  bandBreakdown: Record<string, number> | null;
+  immersionDivertedKwh: number;
+  immersionBoostedKwh: number;
+  consumedKwh: number;
+  readingCount: number;
 };
 
 /**
- * Returns the earliest local_date stored in daily_summaries for the installation,
- * or null when no summaries exist yet.
+ * Returns the earliest interval_start stored in interval_readings for the
+ * installation, expressed as a local date string (YYYY-MM-DD) in the
+ * installation's timezone. Returns null when no data exists yet.
  */
-export async function loadEarliestSummaryDate(
+export async function loadEarliestIntervalDate(
   installationId: string,
+  timezone: string,
 ): Promise<string | null> {
-  const { db, dailySummaries } = await getDbDeps();
+  const { db, intervalReadings } = await getDbDeps();
   const rows = await db
-    .select({ earliest: min(dailySummaries.localDate) })
-    .from(dailySummaries)
-    .where(eq(dailySummaries.installationId, installationId));
-  return rows[0]?.earliest ?? null;
+    .select({ earliest: min(intervalReadings.intervalStart) })
+    .from(intervalReadings)
+    .where(eq(intervalReadings.installationId, installationId));
+
+  const earliest = rows[0]?.earliest;
+  if (!earliest) return null;
+
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(earliest);
 }
 
 /**
- * Load persisted daily summaries for an installation within an inclusive local date range.
+ * Load persisted interval readings for an installation within an inclusive
+ * local date range, ordered by interval_start ascending.
+ *
+ * The from/to bounds are converted to UTC using the installation timezone so
+ * the query correctly spans the full local days (including DST transitions).
  */
-export async function loadDailySummaryRowsForRange(
+export async function loadIntervalReadingsForRange(
   installationId: string,
   from: string,
   to: string,
-): Promise<DailySummaryRow[]> {
-  const { db, dailySummaries } = await getDbDeps();
+  timezone: string,
+): Promise<IntervalRow[]> {
+  const { db, intervalReadings } = await getDbDeps();
+
+  // Compute the UTC bounds: start of the `from` local date, up to (but not
+  // including) the start of the day after `to`.
+  const utcFrom = new Date(utcStartOfLocalDate(from, timezone));
+  const toPlusOne = new Date(`${to}T00:00:00Z`);
+  toPlusOne.setUTCDate(toPlusOne.getUTCDate() + 1);
+  const utcTo = new Date(utcStartOfLocalDate(toPlusOne.toISOString().slice(0, 10), timezone));
 
   const rows = await db
     .select()
-    .from(dailySummaries)
+    .from(intervalReadings)
     .where(
       and(
-        eq(dailySummaries.installationId, installationId),
-        between(dailySummaries.localDate, from, to),
+        eq(intervalReadings.installationId, installationId),
+        gte(intervalReadings.intervalStart, utcFrom),
+        lt(intervalReadings.intervalStart, utcTo),
       ),
-    );
+    )
+    .orderBy(asc(intervalReadings.intervalStart));
 
   return rows.map((r) => ({
-    localDate: r.localDate,
+    intervalStart: r.intervalStart,
     importKwh: Number(r.importKwh),
+    generationKwh: Number(r.generationKwh),
     exportKwh: Number(r.exportKwh),
-    generatedKwh: Number(r.generatedKwh),
-    consumedKwh: r.consumedKwh != null ? Number(r.consumedKwh) : null,
-    immersionDivertedKwh: r.immersionDivertedKwh != null ? Number(r.immersionDivertedKwh) : null,
-    immersionBoostedKwh: r.immersionBoostedKwh != null ? Number(r.immersionBoostedKwh) : null,
-    isPartial: r.isPartial,
-    dayImportKwh: r.dayImportKwh != null ? Number(r.dayImportKwh) : null,
-    nightImportKwh: r.nightImportKwh != null ? Number(r.nightImportKwh) : null,
-    peakImportKwh: r.peakImportKwh != null ? Number(r.peakImportKwh) : null,
-    freeImportKwh: r.freeImportKwh != null ? Number(r.freeImportKwh) : null,
-    bandBreakdown: r.bandBreakdownJson as Record<string, number> | null,
+    immersionDivertedKwh: Number(r.immersionDivertedKwh),
+    immersionBoostedKwh: Number(r.immersionBoostedKwh),
+    consumedKwh: Number(r.consumedKwh),
+    readingCount: r.readingCount,
   }));
 }

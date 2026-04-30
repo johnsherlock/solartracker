@@ -1,11 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { allDatesInRange, computeRangeSummary } from '../billing';
 import type { ScheduledTariffVersion, FixedChargeVersion } from '../../domain/billing';
-import type { DailySummaryRow } from '../loader';
+import type { IntervalRow } from '../loader';
 
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
+
+// All test dates are Nov/winter in Dublin (UTC+0 = local), so local midnight = UTC midnight.
+
+const TZ = 'Europe/Dublin';
 
 const baseTariff: ScheduledTariffVersion = {
   id: 'tariff-v1',
@@ -36,24 +40,38 @@ const standingCharge: FixedChargeVersion = {
   validToLocalDate: null,
 };
 
-function makeRow(localDate: string, overrides?: Partial<DailySummaryRow>): DailySummaryRow {
-  return {
-    localDate,
-    importKwh: 5,
-    exportKwh: 3,
-    generatedKwh: 8,
-    consumedKwh: 10,
+/**
+ * Build `count` half-hour interval rows starting at `utcStartISO`.
+ * Energy values are per-slot amounts; multiply by 48 to get daily totals.
+ */
+function makeDaySlots(
+  utcStartISO: string,
+  count = 48,
+  perSlot: Partial<Omit<IntervalRow, 'intervalStart'>> = {},
+  readingCount = 30,
+): IntervalRow[] {
+  const t0 = new Date(utcStartISO).getTime();
+  return Array.from({ length: count }, (_, i) => ({
+    intervalStart: new Date(t0 + i * 30 * 60 * 1000),
+    importKwh: 0,
+    generationKwh: 0,
+    exportKwh: 0,
     immersionDivertedKwh: 0,
     immersionBoostedKwh: 0,
-    isPartial: false,
-    dayImportKwh: null,
-    nightImportKwh: null,
-    peakImportKwh: null,
-    freeImportKwh: null,
-    bandBreakdown: null,
-    ...overrides,
-  };
+    consumedKwh: 0,
+    readingCount,
+    ...perSlot,
+  }));
 }
+
+// Standard per-slot energy (daily totals: import=5, export=3, gen=8, consumed=10)
+const STD: Partial<Omit<IntervalRow, 'intervalStart'>> = {
+  importKwh: 5 / 48,
+  exportKwh: 3 / 48,
+  generationKwh: 8 / 48,
+  consumedKwh: 10 / 48,
+  immersionDivertedKwh: 0,
+};
 
 // ---------------------------------------------------------------------------
 // allDatesInRange
@@ -80,35 +98,35 @@ describe('allDatesInRange', () => {
 // ---------------------------------------------------------------------------
 
 describe('computeRangeSummary — basic billing', () => {
-  const rows = [
-    makeRow('2024-11-01'),
-    makeRow('2024-11-02'),
-    makeRow('2024-11-03'),
+  const intervals = [
+    ...makeDaySlots('2024-11-01T00:00:00Z', 48, STD),
+    ...makeDaySlots('2024-11-02T00:00:00Z', 48, STD),
+    ...makeDaySlots('2024-11-03T00:00:00Z', 48, STD),
   ];
   const allDates = allDatesInRange('2024-11-01', '2024-11-03');
 
   it('returns correct energy totals', () => {
-    const { summary } = computeRangeSummary(rows, allDates, [baseTariff], [standingCharge]);
-    expect(summary.totals.importKwh).toBe(15);
-    expect(summary.totals.exportKwh).toBe(9);
-    expect(summary.totals.generatedKwh).toBe(24);
-    expect(summary.totals.consumedKwh).toBe(30);
+    const { summary } = computeRangeSummary(intervals, allDates, TZ, [baseTariff], [standingCharge]);
+    expect(summary.totals.importKwh).toBeCloseTo(15, 5);
+    expect(summary.totals.exportKwh).toBeCloseTo(9, 5);
+    expect(summary.totals.generatedKwh).toBeCloseTo(24, 5);
+    expect(summary.totals.consumedKwh).toBeCloseTo(30, 5);
   });
 
   it('returns a series entry per requested date', () => {
-    const { series } = computeRangeSummary(rows, allDates, [baseTariff], [standingCharge]);
+    const { series } = computeRangeSummary(intervals, allDates, TZ, [baseTariff], [standingCharge]);
     expect(series).toHaveLength(3);
     expect(series.map((s) => s.date)).toEqual(['2024-11-01', '2024-11-02', '2024-11-03']);
   });
 
   it('computes billing for each series day including fixed charges', () => {
-    const { series } = computeRangeSummary(rows, allDates, [baseTariff], [standingCharge]);
+    const { series } = computeRangeSummary(intervals, allDates, TZ, [baseTariff], [standingCharge]);
     for (const day of series) {
       expect(day.billing).not.toBeNull();
-      // importCost = r2(5 * 0.3 * 1.09) = r2(1.635) = 1.64
-      // fixedCharges = 0.50 (standing charge per day)
-      // exportCredit = r2(3 * 0.1) = 0.3
-      // actualNetCost = r2(1.64 + 0.50 - 0.3) = r2(1.84) = 1.84
+      // importCost = r2(5 × 0.3 × 1.09) = r2(1.635) = 1.64
+      // fixedCharges = 0.50 per day
+      // exportCredit = r2(3 × 0.1) = 0.3
+      // actualNetCost = r2(1.64 + 0.50 − 0.3) = 1.84
       expect(day.billing!.actualNetCost).toBeCloseTo(1.84, 2);
       expect(day.billing!.exportCredit).toBeCloseTo(0.3, 6);
       expect(day.billing!.importCost).toBeCloseTo(1.64, 2);
@@ -116,50 +134,15 @@ describe('computeRangeSummary — basic billing', () => {
     }
   });
 
-  it('includes savings in billing > 0', () => {
-    const { summary } = computeRangeSummary(rows, allDates, [baseTariff], [standingCharge]);
+  it('includes savings > 0', () => {
+    const { summary } = computeRangeSummary(intervals, allDates, TZ, [baseTariff], [standingCharge]);
     expect(summary.solar.savings).toBeGreaterThan(0);
   });
 
   it('includes fixed charges in overall summary', () => {
-    const { summary } = computeRangeSummary(rows, allDates, [baseTariff], [standingCharge]);
-    // 3 days × £0.50 = £1.50
+    const { summary } = computeRangeSummary(intervals, allDates, TZ, [baseTariff], [standingCharge]);
+    // 3 days × €0.50 = €1.50
     expect(summary.actual.fixedCharges).toBeCloseTo(1.5, 5);
-  });
-
-  it('returns simplified-daily-rate note when rows have no band data', () => {
-    const { summary } = computeRangeSummary(rows, allDates, [baseTariff], [standingCharge]);
-    expect(summary.note).toBe('simplified-daily-rate');
-  });
-
-  it('returns banded-daily-rate note when all rows have band data', () => {
-    const bandedRows = rows.map((r) => ({
-      ...r,
-      dayImportKwh: 2.75,
-      nightImportKwh: 1.75,
-      peakImportKwh: 0.5,
-      freeImportKwh: null,
-    }));
-    const { summary } = computeRangeSummary(bandedRows, allDates, [baseTariff], [standingCharge]);
-    expect(summary.note).toBe('banded-daily-rate');
-  });
-
-  it('uses banded rates when band data is present and tariff has night/peak rates', () => {
-    const bandedTariff = {
-      ...baseTariff,
-      nightRate: 0.1,
-      peakRate: 0.4,
-      nightStartLocalTime: '23:00',
-      nightEndLocalTime: '08:00',
-      peakStartLocalTime: '17:00',
-      peakEndLocalTime: '19:00',
-    };
-    // importKwh=5: day=2.75, night=1.75, peak=0.5 — bands sum to 5
-    const bandedRow = makeRow('2024-11-01', { dayImportKwh: 2.75, nightImportKwh: 1.75, peakImportKwh: 0.5 });
-    const { summary } = computeRangeSummary([bandedRow], allDatesInRange('2024-11-01', '2024-11-01'), [bandedTariff], []);
-    // banded: (2.75×0.3 + 1.75×0.1 + 0.5×0.4) × 1.09 = (0.825+0.175+0.2) × 1.09 = 1.2 × 1.09 = 1.308
-    // simplified would be: 5 × 0.3 × 1.09 = 1.635
-    expect(summary.actual.importCost).toBeCloseTo(1.308, 2);
   });
 });
 
@@ -182,16 +165,16 @@ describe('computeRangeSummary — tariff version change', () => {
     validToLocalDate: null,
     dayRate: 0.35,
   };
-  const rows = [
-    makeRow('2024-11-01'),
-    makeRow('2024-11-02'),
-    makeRow('2024-11-03'),
-    makeRow('2024-11-04'),
+  const intervals = [
+    ...makeDaySlots('2024-11-01T00:00:00Z', 48, STD),
+    ...makeDaySlots('2024-11-02T00:00:00Z', 48, STD),
+    ...makeDaySlots('2024-11-03T00:00:00Z', 48, STD),
+    ...makeDaySlots('2024-11-04T00:00:00Z', 48, STD),
   ];
   const allDates = allDatesInRange('2024-11-01', '2024-11-04');
 
   it('detects hasTariffChange when two versions apply', () => {
-    const { health } = computeRangeSummary(rows, allDates, [tariffV1, tariffV2], []);
+    const { health } = computeRangeSummary(intervals, allDates, TZ, [tariffV1, tariffV2], []);
     expect(health.hasTariffChange).toBe(true);
     expect(health.tariffVersionIds).toHaveLength(2);
     expect(health.tariffVersionIds).toContain('tariff-v1');
@@ -200,8 +183,9 @@ describe('computeRangeSummary — tariff version change', () => {
 
   it('does not flag hasTariffChange when only one version applies', () => {
     const { health } = computeRangeSummary(
-      [makeRow('2024-11-03'), makeRow('2024-11-04')],
+      [...makeDaySlots('2024-11-03T00:00:00Z', 48, STD), ...makeDaySlots('2024-11-04T00:00:00Z', 48, STD)],
       allDatesInRange('2024-11-03', '2024-11-04'),
+      TZ,
       [tariffV1, tariffV2],
       [],
     );
@@ -210,7 +194,7 @@ describe('computeRangeSummary — tariff version change', () => {
   });
 
   it('applies different day rates for days in different tariff windows', () => {
-    const { series } = computeRangeSummary(rows, allDates, [tariffV1, tariffV2], []);
+    const { series } = computeRangeSummary(intervals, allDates, TZ, [tariffV1, tariffV2], []);
     const day1 = series.find((s) => s.date === '2024-11-01')!;
     const day3 = series.find((s) => s.date === '2024-11-03')!;
     // day1 uses 0.25 rate, day3 uses 0.35 rate — same import so day3 costs more
@@ -223,16 +207,16 @@ describe('computeRangeSummary — tariff version change', () => {
 // ---------------------------------------------------------------------------
 
 describe('computeRangeSummary — missing days', () => {
-  // 5-day range but only 3 rows
-  const rows = [
-    makeRow('2024-11-01'),
-    makeRow('2024-11-03'),
-    makeRow('2024-11-05'),
+  // 5-day range but only intervals for Nov 1, 3, 5
+  const intervals = [
+    ...makeDaySlots('2024-11-01T00:00:00Z', 48, STD),
+    ...makeDaySlots('2024-11-03T00:00:00Z', 48, STD),
+    ...makeDaySlots('2024-11-05T00:00:00Z', 48, STD),
   ];
   const allDates = allDatesInRange('2024-11-01', '2024-11-05');
 
   it('reports correct missing day count', () => {
-    const { health } = computeRangeSummary(rows, allDates, [baseTariff], []);
+    const { health } = computeRangeSummary(intervals, allDates, TZ, [baseTariff], []);
     expect(health.totalDays).toBe(5);
     expect(health.coveredDays).toBe(3);
     expect(health.missingDays).toBe(2);
@@ -240,12 +224,12 @@ describe('computeRangeSummary — missing days', () => {
   });
 
   it('reports completeness ratio correctly', () => {
-    const { health } = computeRangeSummary(rows, allDates, [baseTariff], []);
+    const { health } = computeRangeSummary(intervals, allDates, TZ, [baseTariff], []);
     expect(health.completenessRatio).toBeCloseTo(0.6, 5);
   });
 
   it('includes zero-value series entries for missing days', () => {
-    const { series } = computeRangeSummary(rows, allDates, [baseTariff], []);
+    const { series } = computeRangeSummary(intervals, allDates, TZ, [baseTariff], []);
     const missing = series.filter((s) => ['2024-11-02', '2024-11-04'].includes(s.date));
     expect(missing).toHaveLength(2);
     for (const day of missing) {
@@ -256,9 +240,9 @@ describe('computeRangeSummary — missing days', () => {
   });
 
   it('billing totals only include covered days (not missing zeros)', () => {
-    const { summary } = computeRangeSummary(rows, allDates, [baseTariff], []);
+    const { summary } = computeRangeSummary(intervals, allDates, TZ, [baseTariff], []);
     // 3 covered days × 5 kWh each
-    expect(summary.totals.importKwh).toBe(15);
+    expect(summary.totals.importKwh).toBeCloseTo(15, 5);
   });
 });
 
@@ -267,26 +251,29 @@ describe('computeRangeSummary — missing days', () => {
 // ---------------------------------------------------------------------------
 
 describe('computeRangeSummary — no tariff', () => {
-  const rows = [makeRow('2024-11-01'), makeRow('2024-11-02')];
+  const intervals = [
+    ...makeDaySlots('2024-11-01T00:00:00Z', 48, STD),
+    ...makeDaySlots('2024-11-02T00:00:00Z', 48, STD),
+  ];
   const allDates = allDatesInRange('2024-11-01', '2024-11-02');
 
   it('returns null billing for each series day', () => {
-    const { series } = computeRangeSummary(rows, allDates, [], []);
+    const { series } = computeRangeSummary(intervals, allDates, TZ, [], []);
     expect(series.every((s) => s.billing === null)).toBe(true);
   });
 
   it('reports hasTariff: false', () => {
-    const { health } = computeRangeSummary(rows, allDates, [], []);
+    const { health } = computeRangeSummary(intervals, allDates, TZ, [], []);
     expect(health.hasTariff).toBe(false);
   });
 
   it('includes a setup warning', () => {
-    const { health } = computeRangeSummary(rows, allDates, [], []);
+    const { health } = computeRangeSummary(intervals, allDates, TZ, [], []);
     expect(health.setupWarnings.length).toBeGreaterThan(0);
   });
 
   it('returns zero cost summary', () => {
-    const { summary } = computeRangeSummary(rows, allDates, [], []);
+    const { summary } = computeRangeSummary(intervals, allDates, TZ, [], []);
     expect(summary.actual.netCost).toBe(0);
     expect(summary.solar.savings).toBe(0);
   });
@@ -297,37 +284,35 @@ describe('computeRangeSummary — no tariff', () => {
 // ---------------------------------------------------------------------------
 
 describe('computeRangeSummary — rows outside tariff coverage', () => {
-  // Tariff only covers from 2024-11-03 onward; rows 01-02 are outside.
+  // Tariff only covers from 2024-11-03; Nov 01-02 intervals are outside.
   const partialTariff: ScheduledTariffVersion = {
     ...baseTariff,
     id: 'tariff-partial',
     validFromLocalDate: '2024-11-03',
     validToLocalDate: null,
   };
-  const rows = [
-    makeRow('2024-11-01'),  // outside tariff window
-    makeRow('2024-11-02'),  // outside tariff window
-    makeRow('2024-11-03'),  // inside
-    makeRow('2024-11-04'),  // inside
+  const intervals = [
+    ...makeDaySlots('2024-11-01T00:00:00Z', 48, STD),
+    ...makeDaySlots('2024-11-02T00:00:00Z', 48, STD),
+    ...makeDaySlots('2024-11-03T00:00:00Z', 48, STD),
+    ...makeDaySlots('2024-11-04T00:00:00Z', 48, STD),
   ];
   const allDates = allDatesInRange('2024-11-01', '2024-11-04');
 
-  it('does not throw when some rows fall outside tariff coverage', () => {
+  it('does not throw when some intervals fall outside tariff coverage', () => {
     expect(() =>
-      computeRangeSummary(rows, allDates, [partialTariff], []),
+      computeRangeSummary(intervals, allDates, TZ, [partialTariff], []),
     ).not.toThrow();
   });
 
-  it('billing totals cover only tariff-covered rows', () => {
-    const { summary } = computeRangeSummary(rows, allDates, [partialTariff], []);
-    // Only 2 covered days (11-03, 11-04) contribute to billing
-    expect(summary.actual.importCost).toBeGreaterThan(0);
-    // importCost = 2 × (5 * 0.3 * 1.09) = 2 × 1.635 = 3.27
+  it('billing totals cover only tariff-covered days', () => {
+    const { summary } = computeRangeSummary(intervals, allDates, TZ, [partialTariff], []);
+    // Only 2 covered days (11-03, 11-04): 2 × (5 × 0.3 × 1.09) = 2 × 1.635 = 3.27
     expect(summary.actual.importCost).toBeCloseTo(3.27, 1);
   });
 
   it('series entries for uncovered days still have null billing', () => {
-    const { series } = computeRangeSummary(rows, allDates, [partialTariff], []);
+    const { series } = computeRangeSummary(intervals, allDates, TZ, [partialTariff], []);
     expect(series.find((s) => s.date === '2024-11-01')!.billing).toBeNull();
     expect(series.find((s) => s.date === '2024-11-02')!.billing).toBeNull();
     expect(series.find((s) => s.date === '2024-11-03')!.billing).not.toBeNull();
@@ -340,7 +325,7 @@ describe('computeRangeSummary — rows outside tariff coverage', () => {
 
 describe('computeRangeSummary — tariff change on missing day', () => {
   // v1 covers 11-01 to 11-02, v2 covers 11-03 onward.
-  // Only 11-01 and 11-03 have summary rows; 11-02 (the change boundary) is missing.
+  // Only 11-01 and 11-03 have intervals; 11-02 (the change boundary) is missing.
   const tariffV1: ScheduledTariffVersion = {
     ...baseTariff,
     id: 'tariff-v1',
@@ -353,11 +338,14 @@ describe('computeRangeSummary — tariff change on missing day', () => {
     validFromLocalDate: '2024-11-03',
     validToLocalDate: null,
   };
-  const rows = [makeRow('2024-11-01'), makeRow('2024-11-03')]; // 11-02 missing
+  const intervals = [
+    ...makeDaySlots('2024-11-01T00:00:00Z', 48, STD),
+    ...makeDaySlots('2024-11-03T00:00:00Z', 48, STD),
+  ];
   const allDates = allDatesInRange('2024-11-01', '2024-11-03');
 
-  it('detects hasTariffChange even when the boundary day has no summary', () => {
-    const { health } = computeRangeSummary(rows, allDates, [tariffV1, tariffV2], []);
+  it('detects hasTariffChange even when the boundary day has no intervals', () => {
+    const { health } = computeRangeSummary(intervals, allDates, TZ, [tariffV1, tariffV2], []);
     expect(health.hasTariffChange).toBe(true);
     expect(health.tariffVersionIds).toContain('tariff-v1');
     expect(health.tariffVersionIds).toContain('tariff-v2');
@@ -365,30 +353,21 @@ describe('computeRangeSummary — tariff change on missing day', () => {
 });
 
 // ---------------------------------------------------------------------------
-// calculateBillingFromDailySummaries — withoutSolarImport clamped to zero
+// computeRangeSummary — withoutSolarImport clamped to zero
 // ---------------------------------------------------------------------------
 
-describe('calculateBillingFromDailySummaries — withoutSolarImport clamped', () => {
-  it('does not produce negative withoutSolarImportCost for bad data', () => {
-    // Pathological row: immersion diverted exceeds what the formula allows,
-    // which without clamping would give a negative withoutSolarImport.
-    const badRow: DailySummaryRow = {
-      localDate: '2024-11-01',
-      importKwh: 1,
+describe('computeRangeSummary — withoutSolarImport clamped', () => {
+  it('does not produce negative withoutSolarImportCost for pathological data', () => {
+    // Pathological slot: immersionDiverted far exceeds generation — without clamping
+    // withoutSolarImport would be negative.
+    const intervals = makeDaySlots('2024-11-01T00:00:00Z', 48, {
+      importKwh: 1 / 48,
+      generationKwh: 2 / 48,
       exportKwh: 0,
-      generatedKwh: 2,
-      consumedKwh: 3,
-      immersionDivertedKwh: 100, // implausibly large — would make withoutSolarImport negative
-      immersionBoostedKwh: 0,
-      isPartial: false,
-      dayImportKwh: null,
-      nightImportKwh: null,
-      peakImportKwh: null,
-      freeImportKwh: null,
-      bandBreakdown: null,
-    };
+      immersionDivertedKwh: 100 / 48, // implausibly large
+    });
     const allDates = allDatesInRange('2024-11-01', '2024-11-01');
-    const { summary } = computeRangeSummary([badRow], allDates, [baseTariff], []);
+    const { summary } = computeRangeSummary(intervals, allDates, TZ, [baseTariff], []);
     expect(summary.withoutSolar.importCost).toBeGreaterThanOrEqual(0);
     expect(summary.withoutSolar.netCost).toBeGreaterThanOrEqual(0);
   });
@@ -399,17 +378,25 @@ describe('calculateBillingFromDailySummaries — withoutSolarImport clamped', ()
 // ---------------------------------------------------------------------------
 
 describe('computeRangeSummary — per-day savings includes export credit', () => {
-  it('savings equals withoutSolarCost minus actualNetCost', () => {
-    const rows = [makeRow('2024-11-01', { importKwh: 5, exportKwh: 3, generatedKwh: 8, consumedKwh: 10, immersionDivertedKwh: 0 })];
+  it('savings equals withoutSolarNetCost minus actualNetCost', () => {
+    // daily totals: import=5, export=3, gen=8, immersionDiverted=0
+    const intervals = makeDaySlots('2024-11-01T00:00:00Z', 48, {
+      importKwh: 5 / 48,
+      exportKwh: 3 / 48,
+      generationKwh: 8 / 48,
+      consumedKwh: 10 / 48,
+      immersionDivertedKwh: 0,
+    });
     const allDates = allDatesInRange('2024-11-01', '2024-11-01');
-    const { series } = computeRangeSummary(rows, allDates, [baseTariff], []);
+    // No fixed charges so billing is purely import vs export
+    const { series } = computeRangeSummary(intervals, allDates, TZ, [baseTariff], []);
     const day = series[0];
-    // actualNetCost = r2(importCost - exportCredit) = r2(1.635 - 0.3) = 1.34
-    // withoutSolarImport = 5 + 8 - 3 - 0 = 10
-    // withoutSolarCost = r2(10 * 0.3 * 1.09) = r2(3.27) = 3.27
-    // savings = r2(3.27 - 1.34) = r2(1.93) = 1.93
+    // importCost = r2(5 × 0.3 × 1.09) = 1.64; exportCredit = r2(3 × 0.1) = 0.3
+    // actualNetCost = r2(1.64 − 0.3) = 1.34
+    // withoutSolarImport = 5 + 8 − 3 − 0 = 10; withoutSolarCost = r2(10 × 0.327) = 3.27
+    // savings = r2(3.27 − 1.34) = 1.93
     expect(day.billing!.savings).toBeCloseTo(1.93, 2);
-    // Savings must be higher than if export credit were excluded (1.635)
+    // Savings must exceed the actual net cost (export credit makes savings higher)
     expect(day.billing!.savings).toBeGreaterThan(day.billing!.actualNetCost);
   });
 });
@@ -419,60 +406,22 @@ describe('computeRangeSummary — per-day savings includes export credit', () =>
 // ---------------------------------------------------------------------------
 
 describe('computeRangeSummary — partial days', () => {
-  it('reports partial day count', () => {
-    const rows = [
-      makeRow('2024-11-01', { isPartial: false }),
-      makeRow('2024-11-02', { isPartial: true }),
-      makeRow('2024-11-03', { isPartial: true }),
+  it('reports partial day count based on readingCount', () => {
+    const intervals = [
+      ...makeDaySlots('2024-11-01T00:00:00Z', 48, STD, 30), // full
+      ...makeDaySlots('2024-11-02T00:00:00Z', 48, STD, 15), // partial (readingCount < 30)
+      ...makeDaySlots('2024-11-03T00:00:00Z', 48, STD, 15), // partial
     ];
     const allDates = allDatesInRange('2024-11-01', '2024-11-03');
-    const { health } = computeRangeSummary(rows, allDates, [baseTariff], []);
+    const { health } = computeRangeSummary(intervals, allDates, TZ, [baseTariff], []);
     expect(health.partialDays).toBe(2);
   });
-});
 
-// ---------------------------------------------------------------------------
-// computeRangeSummary — schedule-based band breakdown billing
-// ---------------------------------------------------------------------------
-
-describe('computeRangeSummary — schedule-based billing', () => {
-  const pDay = { id: 'pd', tariffPlanVersionId: 'tariff-v1', periodLabel: 'Day', ratePerKwh: 0.3, isFreeImport: false, sortOrder: 0 };
-  const pNight = { id: 'pn', tariffPlanVersionId: 'tariff-v1', periodLabel: 'Night', ratePerKwh: 0.1, isFreeImport: false, sortOrder: 1 };
-  const pFree = { id: 'pf', tariffPlanVersionId: 'tariff-v1', periodLabel: 'Free', ratePerKwh: 0, isFreeImport: true, sortOrder: 2 };
-
-  const scheduledTariff: ScheduledTariffVersion = {
-    ...baseTariff,
-    nightRate: null,
-    peakRate: null,
-    pricePeriods: [pDay, pNight, pFree],
-    weeklySchedule: null,
-  };
-
-  it('uses per-period rates from bandBreakdown when present', () => {
-    // 2 kWh day (0.3), 2 kWh night (0.1), 1 kWh free (0)
-    // rawCost = (2×0.3 + 2×0.1 + 1×0) × 1.09 = 0.8 × 1.09 = 0.872
-    const row = makeRow('2024-11-01', {
-      importKwh: 5,
-      bandBreakdown: { pd: 2, pn: 2, pf: 1 },
-    });
+  it('detects a partial day when whole slots are missing (fewer than 48 slots)', () => {
+    // 47 of 48 expected slots — all with full readingCount, but one entire slot is absent
+    const intervals = makeDaySlots('2024-11-01T00:00:00Z', 47, STD, 30);
     const allDates = allDatesInRange('2024-11-01', '2024-11-01');
-    const { series, summary } = computeRangeSummary([row], allDates, [scheduledTariff], []);
-    expect(series[0].billing!.importCost).toBeCloseTo(0.872, 2);
-    expect(summary.actual.importCost).toBeCloseTo(0.872, 2);
-  });
-
-  it('returns banded-daily-rate note when all rows have a bandBreakdown', () => {
-    const row = makeRow('2024-11-01', { bandBreakdown: { pd: 5 } });
-    const allDates = allDatesInRange('2024-11-01', '2024-11-01');
-    const { summary } = computeRangeSummary([row], allDates, [scheduledTariff], []);
-    expect(summary.note).toBe('banded-daily-rate');
-  });
-
-  it('treats isFreeImport periods as zero-rate in both per-day and overall billing', () => {
-    const row = makeRow('2024-11-01', { importKwh: 3, bandBreakdown: { pf: 3 } });
-    const allDates = allDatesInRange('2024-11-01', '2024-11-01');
-    const { series, summary } = computeRangeSummary([row], allDates, [scheduledTariff], []);
-    expect(series[0].billing!.importCost).toBeCloseTo(0, 6);
-    expect(summary.actual.importCost).toBeCloseTo(0, 6);
+    const { health } = computeRangeSummary(intervals, allDates, TZ, [baseTariff], []);
+    expect(health.partialDays).toBe(1);
   });
 });

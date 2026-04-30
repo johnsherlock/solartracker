@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   calculateBillingPeriod,
-  calculateBillingFromDailySummariesScheduled,
   calculateIntervalImportCostScheduled,
   calculateWithoutSolarImportKwh,
   getISODayIndex,
@@ -11,8 +10,6 @@ import {
   getTariffRateForInterval,
   resolveSlotIndex,
   resolveTariffVersion,
-  type BandBreakdown,
-  type DailySummaryForBillingScheduled,
   type FixedChargeVersion,
   type IntervalReading,
   type ScheduledTariffVersion,
@@ -377,104 +374,3 @@ describe('calculateIntervalImportCostScheduled', () => {
   });
 });
 
-describe('calculateBillingFromDailySummariesScheduled', () => {
-  const scheduledTariff: ScheduledTariffVersion = {
-    id: 'sv1',
-    validFromLocalDate: '2025-01-01',
-    dayRate: 0.30,
-    nightRate: 0.15,
-    vatRate: 0.09,
-    pricePeriods: [stdDay, stdNight],
-    weeklySchedule: dayNightSchedule('p-day', 'p-night', nightSlots),
-  };
-
-  it('uses bandBreakdown when present, applying per-period rates', () => {
-    const breakdown: BandBreakdown = { 'p-day': 3, 'p-night': 1 };
-    const summary: DailySummaryForBillingScheduled = {
-      localDate: '2025-05-05',
-      importKwh: 4,
-      exportKwh: 0,
-      generatedKwh: 0,
-      consumedKwh: 4,
-      immersionDivertedKwh: 0,
-      bandBreakdown: breakdown,
-    };
-
-    const result = calculateBillingFromDailySummariesScheduled(
-      [summary],
-      [scheduledTariff],
-      [],
-    );
-
-    // (3 × 0.30 + 1 × 0.15) × 1.09 = 1.05 × 1.09 = 1.1445
-    expect(result.actual.importCost).toBeCloseTo(1.1445, 4);
-  });
-
-  it('falls back to fixed-band fields when bandBreakdown is absent', () => {
-    const summary: DailySummaryForBillingScheduled = {
-      localDate: '2025-05-05',
-      importKwh: 4,
-      exportKwh: 0,
-      generatedKwh: 0,
-      consumedKwh: 4,
-      immersionDivertedKwh: 0,
-      dayImportKwh: 3,
-      nightImportKwh: 1,
-      peakImportKwh: 0,
-      bandBreakdown: null,
-    };
-
-    const result = calculateBillingFromDailySummariesScheduled(
-      [summary],
-      [scheduledTariff],
-      [],
-    );
-
-    // Fixed-band: (3×0.30 + 1×0.15 + 0×0.30) × 1.09 = 1.1445
-    expect(result.actual.importCost).toBeCloseTo(1.1445, 4);
-  });
-
-  it('falls back to day rate when neither breakdown nor band fields are present', () => {
-    const summary: DailySummaryForBillingScheduled = {
-      localDate: '2025-05-05',
-      importKwh: 4,
-      exportKwh: 0,
-      generatedKwh: 0,
-      consumedKwh: 4,
-      immersionDivertedKwh: 0,
-      bandBreakdown: null,
-    };
-
-    const result = calculateBillingFromDailySummariesScheduled(
-      [summary],
-      [scheduledTariff],
-      [],
-    );
-
-    // Day-rate only: 4 × 0.30 × 1.09 = 1.308
-    expect(result.actual.importCost).toBeCloseTo(1.308, 4);
-  });
-
-  it('bills unknown breakdown period IDs at the day rate rather than dropping their kWh', () => {
-    // A breakdown referencing a period ID not in pricePeriods (e.g. period was deleted)
-    const breakdown: BandBreakdown = { 'p-day': 2, 'stale-period-id': 1 };
-    const summary: DailySummaryForBillingScheduled = {
-      localDate: '2025-05-05',
-      importKwh: 3,
-      exportKwh: 0,
-      generatedKwh: 0,
-      consumedKwh: 3,
-      immersionDivertedKwh: 0,
-      bandBreakdown: breakdown,
-    };
-
-    const result = calculateBillingFromDailySummariesScheduled(
-      [summary],
-      [scheduledTariff],
-      [],
-    );
-
-    // 2 kWh × 0.30 (day) + 1 kWh × 0.30 (unknown → day fallback) = 3 × 0.30 × 1.09 = 0.981
-    expect(result.actual.importCost).toBeCloseTo(0.981, 4);
-  });
-});

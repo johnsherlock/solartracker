@@ -174,30 +174,21 @@ export const providerConnections = pgTable('provider_connections', {
   installationIdIdx: index('provider_connections_installation_id_idx').on(table.installationId),
 }));
 
-export const dailySummaries = pgTable('daily_summaries', {
+export const intervalReadings = pgTable('interval_readings', {
   id: uuid('id').defaultRandom().primaryKey(),
   installationId: uuid('installation_id').notNull().references(() => installations.id, { onDelete: 'cascade' }),
-  localDate: date('local_date').notNull(),
-  importKwh: numeric('import_kwh', { precision: 14, scale: 6 }).notNull().default('0'),
-  exportKwh: numeric('export_kwh', { precision: 14, scale: 6 }).notNull().default('0'),
-  generatedKwh: numeric('generated_kwh', { precision: 14, scale: 6 }).notNull().default('0'),
-  consumedKwh: numeric('consumed_kwh', { precision: 14, scale: 6 }),
-  immersionDivertedKwh: numeric('immersion_diverted_kwh', { precision: 14, scale: 6 }),
-  immersionBoostedKwh: numeric('immersion_boosted_kwh', { precision: 14, scale: 6 }),
-  selfConsumptionRatio: numeric('self_consumption_ratio', { precision: 8, scale: 4 }),
-  gridDependenceRatio: numeric('grid_dependence_ratio', { precision: 8, scale: 4 }),
-  dayImportKwh: numeric('day_import_kwh', { precision: 14, scale: 6 }),
-  nightImportKwh: numeric('night_import_kwh', { precision: 14, scale: 6 }),
-  peakImportKwh: numeric('peak_import_kwh', { precision: 14, scale: 6 }),
-  freeImportKwh: numeric('free_import_kwh', { precision: 14, scale: 6 }),
-  // Schedule-based per-period import breakdown: { [pricePeriodId]: kWh }.
-  // Populated when a schedule-based tariff version is active during summary
-  // derivation. Null for rows derived under the simple window model.
-  bandBreakdownJson: jsonb('band_breakdown_json'),
-  isPartial: boolean('is_partial').notNull().default(false),
-  rebuiltAt: timestamp('rebuilt_at', { withTimezone: true }).notNull().defaultNow(),
+  intervalStart: timestamp('interval_start', { withTimezone: true }).notNull(),
+  importKwh: numeric('import_kwh', { precision: 10, scale: 6 }).notNull(),
+  generationKwh: numeric('generation_kwh', { precision: 10, scale: 6 }).notNull(),
+  exportKwh: numeric('export_kwh', { precision: 10, scale: 6 }).notNull(),
+  immersionDivertedKwh: numeric('immersion_diverted_kwh', { precision: 10, scale: 6 }).notNull(),
+  immersionBoostedKwh: numeric('immersion_boosted_kwh', { precision: 10, scale: 6 }).notNull(),
+  consumedKwh: numeric('consumed_kwh', { precision: 10, scale: 6 }).notNull(),
+  // Number of minute readings (0–30) that contributed to this slot; < 30 indicates a partial slot.
+  readingCount: smallint('reading_count').notNull(),
 }, (table) => ({
-  uniqueDailySummaryIdx: uniqueIndex('daily_summaries_installation_date_idx').on(table.installationId, table.localDate),
+  uniqueIntervalIdx: uniqueIndex('interval_readings_installation_interval_idx').on(table.installationId, table.intervalStart),
+  installationIntervalIdx: index('interval_readings_installation_interval_brin').on(table.installationId, table.intervalStart),
 }));
 
 export const jobRuns = pgTable('job_runs', {

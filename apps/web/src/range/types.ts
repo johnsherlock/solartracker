@@ -8,7 +8,7 @@ export type RangeSummaryMeta = {
   timezone: string;
   currency: string;
   generatedAt: string;  // ISO 8601 timestamp
-  /** Earliest local_date in daily_summaries for the installation; null when no data exists */
+  /** Earliest interval_start in interval_readings for the installation as a local date; null when no data exists */
   earliestDate: string | null;
 };
 
@@ -47,8 +47,6 @@ export type RangeSummarySection = {
   withoutSolar: RangeWithoutSolarBreakdown;
   solar: RangeSolarSummary;
   totals: RangeEnergyTotals;
-  /** Reflects whether banded (day/night/peak) or simplified (day rate only) billing was applied. */
-  note: 'banded-daily-rate' | 'simplified-daily-rate';
 };
 
 export type RangeSeriesDayBilling = {

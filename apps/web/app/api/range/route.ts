@@ -3,8 +3,8 @@ import {
   loadRangeInstallationContext,
   loadTariffVersionsForInstallation,
   loadFixedChargeVersionsForInstallation,
-  loadDailySummaryRowsForRange,
-  loadEarliestSummaryDate,
+  loadIntervalReadingsForRange,
+  loadEarliestIntervalDate,
 } from '../../../src/range/loader';
 import { allDatesInRange, computeRangeSummary } from '../../../src/range/billing';
 import type { RangeSummaryPayload } from '../../../src/range/types';
@@ -66,17 +66,20 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const [tariffVersions, fixedCharges, summaryRows, earliestDate] = await Promise.all([
+  const timezone = installationContext.timezone;
+
+  const [tariffVersions, fixedCharges, intervals, earliestDate] = await Promise.all([
     loadTariffVersionsForInstallation(installationId),
     loadFixedChargeVersionsForInstallation(installationId),
-    loadDailySummaryRowsForRange(installationId, from, to),
-    loadEarliestSummaryDate(installationId),
+    loadIntervalReadingsForRange(installationId, from, to, timezone),
+    loadEarliestIntervalDate(installationId, timezone),
   ]);
 
   const allDates = allDatesInRange(from, to);
   const { summary, series, health } = computeRangeSummary(
-    summaryRows,
+    intervals,
     allDates,
+    timezone,
     tariffVersions,
     fixedCharges,
   );

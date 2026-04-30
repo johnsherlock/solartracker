@@ -6,35 +6,32 @@
  *   - the local CLI scripts (job:daily-summary, job:catch-up)
  *
  * It queries all active MyEnergi installations, fetches the previous local day
- * from the MyEnergi API, derives persisted daily summary fields, and upserts
- * one daily_summaries row per installation + local date.
+ * from the MyEnergi API, aggregates minute readings into 30-minute slots, and
+ * upserts up to 48 interval_readings rows per installation per day.
+ *
+ * Tariff rates are no longer applied at write time — they are resolved at
+ * query time in the range read path.
  */
 
-import { and, desc, eq, gte, inArray, isNull, lte, or } from 'drizzle-orm';
+import { and, count, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import {
   installations,
   providerConnections,
-  dailySummaries,
+  intervalReadings,
   jobRuns,
-  tariffPlans,
-  tariffPlanVersions,
-  tariffPricePeriods,
   users,
 } from '../db/schema';
 import { fetchDayRecords } from '../providers/myenergi/client';
 import { normaliseEddiRecords } from '../providers/myenergi/adapter';
 import { resolveMyEnergiCredentials } from '../providers/myenergi/credentials';
-import type { TariffPricePeriod, WeeklySchedule } from '../domain/billing';
 import {
   getPreviousLocalDate,
   isAfterMidnightBuffer,
   expectedMinutesForDay,
-  deriveDailySummaryFields,
-  deriveDailySummaryFieldsScheduled,
-  type DailySummaryFields,
-  type DailySummaryFieldsScheduled,
-  type TariffWindows,
+  utcStartOfLocalDate,
+  aggregateToIntervalReadings,
+  type IntervalSlot,
 } from './derive-summary';
 
 // ---------------------------------------------------------------------------
@@ -97,162 +94,44 @@ async function loadActiveInstallations(userEmail?: string): Promise<ActiveInstal
 }
 
 // ---------------------------------------------------------------------------
-// Tariff context loader
-// ---------------------------------------------------------------------------
-
-type ScheduledTariffContext = {
-  kind: 'scheduled';
-  schedule: WeeklySchedule;
-  periods: TariffPricePeriod[];
-};
-
-type LegacyTariffContext = {
-  kind: 'legacy';
-  windows: TariffWindows;
-};
-
-type TariffContext = ScheduledTariffContext | LegacyTariffContext | null;
-
-async function loadTariffContextForDate(
-  installationId: string,
-  localDate: string,
-): Promise<TariffContext> {
-  const planRows = await db
-    .select({ id: tariffPlans.id })
-    .from(tariffPlans)
-    .where(eq(tariffPlans.installationId, installationId));
-
-  if (planRows.length === 0) return null;
-
-  const planIds = planRows.map((p) => p.id);
-
-  const versionRows = await db
-    .select({
-      id: tariffPlanVersions.id,
-      weeklyScheduleJson: tariffPlanVersions.weeklyScheduleJson,
-      nightStartLocalTime: tariffPlanVersions.nightStartLocalTime,
-      nightEndLocalTime: tariffPlanVersions.nightEndLocalTime,
-      peakStartLocalTime: tariffPlanVersions.peakStartLocalTime,
-      peakEndLocalTime: tariffPlanVersions.peakEndLocalTime,
-    })
-    .from(tariffPlanVersions)
-    .where(
-      and(
-        planIds.length === 1
-          ? eq(tariffPlanVersions.tariffPlanId, planIds[0])
-          : inArray(tariffPlanVersions.tariffPlanId, planIds),
-        lte(tariffPlanVersions.validFromLocalDate, localDate),
-        or(
-          isNull(tariffPlanVersions.validToLocalDate),
-          gte(tariffPlanVersions.validToLocalDate, localDate),
-        ),
-      ),
-    )
-    .orderBy(desc(tariffPlanVersions.validFromLocalDate))
-    .limit(1);
-
-  if (versionRows.length === 0) return null;
-
-  const v = versionRows[0];
-
-  if (v.weeklyScheduleJson) {
-    const periodRows = await db
-      .select({
-        id: tariffPricePeriods.id,
-        tariffPlanVersionId: tariffPricePeriods.tariffPlanVersionId,
-        periodLabel: tariffPricePeriods.periodLabel,
-        ratePerKwh: tariffPricePeriods.ratePerKwh,
-        isFreeImport: tariffPricePeriods.isFreeImport,
-        sortOrder: tariffPricePeriods.sortOrder,
-      })
-      .from(tariffPricePeriods)
-      .where(eq(tariffPricePeriods.tariffPlanVersionId, v.id))
-      .orderBy(tariffPricePeriods.sortOrder);
-
-    const periods: TariffPricePeriod[] = periodRows.map((p) => ({
-      id: p.id,
-      tariffPlanVersionId: p.tariffPlanVersionId,
-      periodLabel: p.periodLabel,
-      ratePerKwh: parseFloat(p.ratePerKwh),
-      isFreeImport: p.isFreeImport,
-      sortOrder: p.sortOrder,
-    }));
-
-    return { kind: 'scheduled', schedule: v.weeklyScheduleJson as WeeklySchedule, periods };
-  }
-
-  if (!v.nightStartLocalTime || !v.nightEndLocalTime) return null;
-
-  return {
-    kind: 'legacy',
-    windows: {
-      nightStartLocalTime: v.nightStartLocalTime,
-      nightEndLocalTime: v.nightEndLocalTime,
-      peakStartLocalTime: v.peakStartLocalTime ?? null,
-      peakEndLocalTime: v.peakEndLocalTime ?? null,
-    },
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Upsert
 // ---------------------------------------------------------------------------
 
-async function upsertDailySummary(
+async function upsertIntervalReadings(
   installationId: string,
-  localDate: string,
-  fields: DailySummaryFields | DailySummaryFieldsScheduled,
-): Promise<{ written: boolean }> {
-  const now = new Date();
-  const bandBreakdown = 'bandBreakdownJson' in fields ? fields.bandBreakdownJson : null;
+  slots: IntervalSlot[],
+): Promise<{ slotsWritten: number }> {
+  if (slots.length === 0) return { slotsWritten: 0 };
 
-  const values = {
+  const values = slots.map((s) => ({
     installationId,
-    localDate,
-    importKwh: String(fields.importKwh),
-    exportKwh: String(fields.exportKwh),
-    generatedKwh: String(fields.generatedKwh),
-    consumedKwh: String(fields.consumedKwh),
-    immersionDivertedKwh: String(fields.immersionDivertedKwh),
-    immersionBoostedKwh: String(fields.immersionBoostedKwh),
-    selfConsumptionRatio:
-      fields.selfConsumptionRatio != null ? String(fields.selfConsumptionRatio) : null,
-    gridDependenceRatio:
-      fields.gridDependenceRatio != null ? String(fields.gridDependenceRatio) : null,
-    dayImportKwh: fields.dayImportKwh != null ? String(fields.dayImportKwh) : null,
-    nightImportKwh: fields.nightImportKwh != null ? String(fields.nightImportKwh) : null,
-    peakImportKwh: fields.peakImportKwh != null ? String(fields.peakImportKwh) : null,
-    freeImportKwh: fields.freeImportKwh != null ? String(fields.freeImportKwh) : null,
-    bandBreakdownJson: bandBreakdown ?? null,
-    isPartial: fields.isPartial,
-    rebuiltAt: now,
-  };
+    intervalStart: s.intervalStart,
+    importKwh: String(s.importKwh),
+    generationKwh: String(s.generationKwh),
+    exportKwh: String(s.exportKwh),
+    immersionDivertedKwh: String(s.immersionDivertedKwh),
+    immersionBoostedKwh: String(s.immersionBoostedKwh),
+    consumedKwh: String(s.consumedKwh),
+    readingCount: s.readingCount,
+  }));
 
   await db
-    .insert(dailySummaries)
+    .insert(intervalReadings)
     .values(values)
     .onConflictDoUpdate({
-      target: [dailySummaries.installationId, dailySummaries.localDate],
+      target: [intervalReadings.installationId, intervalReadings.intervalStart],
       set: {
-        importKwh: values.importKwh,
-        exportKwh: values.exportKwh,
-        generatedKwh: values.generatedKwh,
-        consumedKwh: values.consumedKwh,
-        immersionDivertedKwh: values.immersionDivertedKwh,
-        immersionBoostedKwh: values.immersionBoostedKwh,
-        selfConsumptionRatio: values.selfConsumptionRatio,
-        gridDependenceRatio: values.gridDependenceRatio,
-        dayImportKwh: values.dayImportKwh,
-        nightImportKwh: values.nightImportKwh,
-        peakImportKwh: values.peakImportKwh,
-        freeImportKwh: values.freeImportKwh,
-        bandBreakdownJson: values.bandBreakdownJson,
-        isPartial: values.isPartial,
-        rebuiltAt: values.rebuiltAt,
+        importKwh: sql`excluded.import_kwh`,
+        generationKwh: sql`excluded.generation_kwh`,
+        exportKwh: sql`excluded.export_kwh`,
+        immersionDivertedKwh: sql`excluded.immersion_diverted_kwh`,
+        immersionBoostedKwh: sql`excluded.immersion_boosted_kwh`,
+        consumedKwh: sql`excluded.consumed_kwh`,
+        readingCount: sql`excluded.reading_count`,
       },
     });
 
-  return { written: true };
+  return { slotsWritten: slots.length };
 }
 
 // ---------------------------------------------------------------------------
@@ -290,20 +169,18 @@ async function summariseInstallation(
 
   const readings = normaliseEddiRecords(fetchResult.records, targetDate, inst.timezone);
   const expected = expectedMinutesForDay(targetDate, inst.timezone);
-  const tariffContext = await loadTariffContextForDate(inst.installationId, targetDate);
+  const slots = aggregateToIntervalReadings(readings, targetDate, inst.timezone);
 
-  const fields =
-    tariffContext?.kind === 'scheduled'
-      ? deriveDailySummaryFieldsScheduled(readings, expected, targetDate, tariffContext.schedule, tariffContext.periods)
-      : deriveDailySummaryFields(readings, expected, tariffContext?.kind === 'legacy' ? tariffContext.windows : null);
+  await upsertIntervalReadings(inst.installationId, slots);
 
-  await upsertDailySummary(inst.installationId, targetDate, fields);
+  const totalReadingCount = slots.reduce((s, slot) => s + slot.readingCount, 0);
+  const isPartial = totalReadingCount < expected;
 
   return {
     ...base,
     status: 'success',
     readingsCount: readings.length,
-    isPartial: fields.isPartial,
+    isPartial,
   };
 }
 
@@ -334,7 +211,7 @@ async function finishJobRun(
     .set({
       status: outcome.status === 'success' ? 'completed' : outcome.status,
       finishedAt: new Date(),
-      recordsWritten: outcome.status === 'success' ? 1 : 0,
+      recordsWritten: outcome.status === 'success' ? (outcome.readingsCount ?? 0) : 0,
       errorSummary: outcome.errorSummary ?? null,
       metadataJson: {
         targetDate: outcome.targetDate,
@@ -372,11 +249,6 @@ export type RunDailySummaryJobOptions = {
 
 /**
  * Run the daily summary job for all active installations.
- *
- * For the Ireland-only beta this is typically triggered by a Vercel cron at
- * 00:15 UTC (safely after local midnight in both GMT and BST). The job
- * still resolves the correct previous local date per installation timezone
- * rather than assuming a fixed UTC offset.
  */
 export async function runDailySummaryJob(
   options: RunDailySummaryJobOptions = {},
@@ -389,11 +261,8 @@ export async function runDailySummaryJob(
   const outcomes: InstallationJobOutcome[] = [];
 
   for (const inst of activeInstallations) {
-    // Determine the target date for this installation.
     const targetDate = options.targetDate ?? getPreviousLocalDate(inst.timezone, now);
 
-    // Check whether the previous local day is safely finalized (unless the
-    // caller has bypassed this check, e.g. for catch-up runs).
     if (!options.skipEligibilityCheck && !isAfterMidnightBuffer(inst.timezone, 15, now)) {
       outcomes.push({
         installationId: inst.installationId,
@@ -459,12 +328,8 @@ export type RunCatchUpOptions = {
 
 /**
  * Summarise all missing days from fromDate up to and including yesterday for
- * every active installation. Existing rows are left untouched (skipped).
- *
- * This is the local dev and backfill path. It calls summariseInstallation()
- * directly per (installation, date) pair so each combination is processed
- * exactly once, rather than routing through runDailySummaryJob() which would
- * re-query all installations on every call.
+ * every active installation. A day is considered complete when interval_readings
+ * already contains the expected number of slots for that date.
  */
 export async function runCatchUp(options: RunCatchUpOptions = {}): Promise<void> {
   const now = options.now ?? new Date();
@@ -479,7 +344,6 @@ export async function runCatchUp(options: RunCatchUpOptions = {}): Promise<void>
     return;
   }
 
-  // Default from-date: 30 days ago in UTC.
   let fromDate = options.fromDate;
   if (!fromDate) {
     const d = new Date(now);
@@ -487,8 +351,6 @@ export async function runCatchUp(options: RunCatchUpOptions = {}): Promise<void>
     fromDate = d.toISOString().slice(0, 10);
   }
 
-  // Build a list of all calendar dates from fromDate to yesterday (UTC).
-  // Since we assume Ireland-only beta, yesterday UTC is a safe upper bound.
   const yesterday = getPreviousLocalDate('Europe/Dublin', now);
   const datesToProcess: string[] = [];
   {
@@ -505,26 +367,38 @@ export async function runCatchUp(options: RunCatchUpOptions = {}): Promise<void>
     return;
   }
 
-  // Load already-summarised (installationId, localDate) pairs to skip.
   const installationIds = activeInstallations.map((i) => i.installationId);
-  const existingRows = await db
-    .select({
-      installationId: dailySummaries.installationId,
-      localDate: dailySummaries.localDate,
-    })
-    .from(dailySummaries)
-    .where(
-      and(
-        inArray(dailySummaries.installationId, installationIds),
-        // Filter to dates within our catch-up window only
-      ),
-    );
 
-  const existingSet = new Set(
-    existingRows
-      .filter((r) => r.localDate >= fromDate! && r.localDate <= yesterday)
-      .map((r) => `${r.installationId}::${r.localDate}`),
-  );
+  // For each (installation, date), check whether interval_readings already
+  // has a full set of slots. A full set = expectedMinutesForDay / 30 slots.
+  // We query counts per installation per UTC day-window and compare.
+  const existingSet = new Set<string>();
+
+  for (const inst of activeInstallations) {
+    for (const date of datesToProcess) {
+      const expectedMinutes = expectedMinutesForDay(date, inst.timezone);
+      const expectedSlots = Math.ceil(expectedMinutes / 30);
+      const utcStart = new Date(utcStartOfLocalDate(date, inst.timezone));
+      const utcEnd = new Date(utcStart.getTime() + expectedMinutes * 60 * 1000);
+
+      const rows = await db
+        .select({ slotCount: count() })
+        .from(intervalReadings)
+        .where(
+          and(
+            inArray(intervalReadings.installationId, installationIds),
+            eq(intervalReadings.installationId, inst.installationId),
+            gte(intervalReadings.intervalStart, utcStart),
+            lt(intervalReadings.intervalStart, utcEnd),
+          ),
+        );
+
+      const slotCount = rows[0]?.slotCount ?? 0;
+      if (slotCount >= expectedSlots) {
+        existingSet.add(`${inst.installationId}::${date}`);
+      }
+    }
+  }
 
   let totalSuccess = 0;
   let totalSkipped = 0;

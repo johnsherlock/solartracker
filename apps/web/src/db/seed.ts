@@ -9,7 +9,7 @@ import {
   tariffPricePeriods,
   tariffFixedChargeVersions,
   installationContracts,
-  dailySummaries,
+  intervalReadings,
   systemAdditions,
 } from './schema';
 
@@ -69,30 +69,12 @@ function buildWeeklySchedule(): string[] {
   return schedule;
 }
 
-// Daily summary IDs: one per seeded date
-const SUMMARY_IDS: Record<string, string> = {
-  '2025-10-03': '00000000-0000-0000-0001-000000000001',
-  '2025-10-04': '00000000-0000-0000-0001-000000000002',
-  '2025-10-05': '00000000-0000-0000-0001-000000000003',
-  '2025-10-06': '00000000-0000-0000-0001-000000000004',
-  '2025-10-07': '00000000-0000-0000-0001-000000000005',
-  '2025-10-08': '00000000-0000-0000-0001-000000000006',
-  '2025-10-09': '00000000-0000-0000-0001-000000000007',
-  '2025-10-10': '00000000-0000-0000-0001-000000000008',
-  '2025-10-11': '00000000-0000-0000-0001-000000000009',
-  '2025-10-12': '00000000-0000-0000-0001-000000000010',
-  '2025-10-13': '00000000-0000-0000-0001-000000000011',
-  '2025-10-14': '00000000-0000-0000-0001-000000000012',
-  '2025-10-15': '00000000-0000-0000-0001-000000000013',
-  '2025-10-16': '00000000-0000-0000-0001-000000000014',
-};
-
 // ---------------------------------------------------------------------------
-// Daily summary raw inputs
+// Interval reading raw inputs
 // Dates 2025-10-03 to 2025-10-09 fall under tariff version 1 (rates pre-Oct-10)
 // Dates 2025-10-10 to 2025-10-16 fall under tariff version 2 (rates from Oct-10)
-// Values reflect typical autumn Ireland conditions: modest solar, higher import
-// consumed = import + generated - export - immersionDiverted
+// All seeded dates are in BST (UTC+1), so local 00:00 = UTC 23:00 prev day.
+// consumed = import + generation - export - immersionDiverted
 // ---------------------------------------------------------------------------
 
 type DayInput = {
@@ -104,45 +86,94 @@ type DayInput = {
   immersionBoostedKwh: number;
 };
 
-const round4 = (n: number) => Math.round(n * 10000) / 10000;
+const TIMEZONE = 'Europe/Dublin';
+const SLOTS_PER_DAY = 48;
+
+const r6 = (n: number) => Math.round(n * 1_000_000) / 1_000_000;
 
 /**
- * Approximate band splits for Irish household usage.
- * Night: 23:00–08:00 (~35% of import), Peak: 17:00–19:00 (~10%), Day: remainder.
- * Values sum exactly to importKwh.
+ * Return the UTC millisecond timestamp of the first instant of the given local
+ * calendar date in the given timezone (same scan used by utcStartOfLocalDate).
  */
-const bandSplit = (importKwh: number) => {
-  const night = round4(importKwh * 0.35);
-  const peak  = round4(importKwh * 0.10);
-  const day   = round4(importKwh - night - peak);
-  return { night, peak, day };
-};
+function utcStartMs(localDate: string, timezone: string): number {
+  const [year, month, day] = localDate.split('-').map(Number);
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  const utcNoon = Date.UTC(year, month - 1, day, 12, 0, 0);
+  for (let ts = utcNoon - 14 * 3_600_000; ts < utcNoon + 13 * 3_600_000; ts += 60_000) {
+    const parts = formatter.formatToParts(new Date(ts));
+    const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? '0');
+    if (get('year') === year && get('month') === month && get('day') === day) return ts;
+  }
+  return Date.UTC(year, month - 1, day);
+}
 
-const buildSummaryRow = (day: DayInput) => {
-  const consumed = round4(day.importKwh + day.generatedKwh - day.exportKwh - day.immersionDivertedKwh);
-  const selfConsumptionRatio = consumed > 0 ? round4((consumed - day.importKwh) / consumed) : 0;
-  const gridDependenceRatio  = consumed > 0 ? round4(day.importKwh / consumed) : 0;
-  const bands = bandSplit(day.importKwh);
+/**
+ * Build 48 interval rows for a seeded day using a realistic energy pattern:
+ *   - Generation concentrated in local 08:00–16:00 (slots 16–31 in BST = UTC 07:00–15:00)
+ *   - Import higher at night, lower during generation hours
+ *   - Export only during peak generation slots
+ *   - Immersion diversion only during generation slots
+ * Daily totals match the DayInput values exactly.
+ */
+function buildIntervalRows(day: DayInput) {
+  const utcStart = utcStartMs(day.localDate, TIMEZONE);
+  const slotMs = 30 * 60 * 1000;
 
-  return {
-    id: SUMMARY_IDS[day.localDate],
-    installationId: INSTALLATION_ID,
-    localDate: day.localDate,
-    importKwh: String(day.importKwh),
-    exportKwh: String(day.exportKwh),
-    generatedKwh: String(day.generatedKwh),
-    consumedKwh: String(consumed),
-    immersionDivertedKwh: String(day.immersionDivertedKwh),
-    immersionBoostedKwh: String(day.immersionBoostedKwh),
-    selfConsumptionRatio: String(selfConsumptionRatio),
-    gridDependenceRatio: String(gridDependenceRatio),
-    dayImportKwh: String(bands.day),
-    nightImportKwh: String(bands.night),
-    peakImportKwh: String(bands.peak),
-    freeImportKwh: null,
-    isPartial: false,
-  };
-};
+  // Generation slots (local 08:00–16:00 in BST = UTC slots 14–29 of the local day)
+  // In BST local 08:00 = UTC 07:00. Slot 14 = UTC 07:00 (utcStart + 14*30min = +7h).
+  const genSlots = new Set<number>();
+  for (let i = 14; i <= 29; i++) genSlots.add(i);
+
+  // Distribute generation evenly across gen slots
+  const genSlotsCount = genSlots.size;
+  const genPerSlot = genSlotsCount > 0 ? day.generatedKwh / genSlotsCount : 0;
+
+  // Distribute export and immersion only in gen slots
+  const exportPerSlot = genSlotsCount > 0 ? day.exportKwh / genSlotsCount : 0;
+  const immersionPerSlot = genSlotsCount > 0 ? day.immersionDivertedKwh / genSlotsCount : 0;
+  const immersionBoostedPerSlot = day.immersionBoostedKwh / SLOTS_PER_DAY;
+
+  // Import: less during generation slots. Remaining import = daily total - gen imports.
+  // Night slots get higher import share, gen slots get lower.
+  const nightImportShare = 0.55;  // 55% across 18 night slots (local 23:00–08:00 in BST = UTC slots 0–8 and 38–47)
+  const nightSlots = new Set<number>([0,1,2,3,4,5,6,7,8,38,39,40,41,42,43,44,45,46,47]);
+  const nightSlotsCount = nightSlots.size;
+  const importNightPerSlot = nightSlotsCount > 0 ? (day.importKwh * nightImportShare) / nightSlotsCount : 0;
+  const remainingImport = day.importKwh - importNightPerSlot * nightSlotsCount;
+  const nonNightNonGenSlots = SLOTS_PER_DAY - nightSlotsCount - genSlotsCount;
+  const importDayPerSlot = nonNightNonGenSlots > 0 ? (remainingImport * 0.30) / nonNightNonGenSlots : 0;
+  const importGenPerSlot = genSlotsCount > 0 ? (remainingImport * 0.70) / genSlotsCount : 0;
+
+  const rows = [];
+  for (let i = 0; i < SLOTS_PER_DAY; i++) {
+    const intervalStart = new Date(utcStart + i * slotMs);
+    const isNight = nightSlots.has(i);
+    const isGen = genSlots.has(i);
+
+    const importKwh = r6(isNight ? importNightPerSlot : isGen ? importGenPerSlot : importDayPerSlot);
+    const generationKwh = r6(isGen ? genPerSlot : 0);
+    const exportKwh = r6(isGen ? exportPerSlot : 0);
+    const immersionDivertedKwh = r6(isGen ? immersionPerSlot : 0);
+    const immersionBoostedKwh = r6(immersionBoostedPerSlot);
+    const consumedKwh = r6(Math.max(0, importKwh + generationKwh - exportKwh - immersionDivertedKwh));
+
+    rows.push({
+      installationId: INSTALLATION_ID,
+      intervalStart,
+      importKwh: String(importKwh),
+      generationKwh: String(generationKwh),
+      exportKwh: String(exportKwh),
+      immersionDivertedKwh: String(immersionDivertedKwh),
+      immersionBoostedKwh: String(immersionBoostedKwh),
+      consumedKwh: String(consumedKwh),
+      readingCount: 30,
+    });
+  }
+  return rows;
+}
 
 // V1 period (2025-10-03 to 2025-10-09) — pre rate-change
 const v1Days: DayInput[] = [
@@ -468,27 +499,20 @@ async function seed() {
     });
     console.log('  installation_contracts: ok');
 
-    const summaryRows = [...v1Days, ...v2Days].map(buildSummaryRow);
-    await tx.insert(dailySummaries).values(summaryRows).onConflictDoUpdate({
-      target: [dailySummaries.installationId, dailySummaries.localDate],
+    const intervalRows = [...v1Days, ...v2Days].flatMap(buildIntervalRows);
+    await tx.insert(intervalReadings).values(intervalRows).onConflictDoUpdate({
+      target: [intervalReadings.installationId, intervalReadings.intervalStart],
       set: {
         importKwh: sql`excluded.import_kwh`,
+        generationKwh: sql`excluded.generation_kwh`,
         exportKwh: sql`excluded.export_kwh`,
-        generatedKwh: sql`excluded.generated_kwh`,
-        consumedKwh: sql`excluded.consumed_kwh`,
         immersionDivertedKwh: sql`excluded.immersion_diverted_kwh`,
         immersionBoostedKwh: sql`excluded.immersion_boosted_kwh`,
-        selfConsumptionRatio: sql`excluded.self_consumption_ratio`,
-        gridDependenceRatio: sql`excluded.grid_dependence_ratio`,
-        dayImportKwh: sql`excluded.day_import_kwh`,
-        nightImportKwh: sql`excluded.night_import_kwh`,
-        peakImportKwh: sql`excluded.peak_import_kwh`,
-        freeImportKwh: sql`excluded.free_import_kwh`,
-        isPartial: sql`excluded.is_partial`,
-        rebuiltAt: sql`excluded.rebuilt_at`,
+        consumedKwh: sql`excluded.consumed_kwh`,
+        readingCount: sql`excluded.reading_count`,
       },
     });
-    console.log(`  daily_summaries: ok (${summaryRows.length} rows)`);
+    console.log(`  interval_readings: ok (${intervalRows.length} rows across ${[...v1Days, ...v2Days].length} days)`);
   });
 }
 
