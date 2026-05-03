@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -93,6 +93,12 @@ export function RangeHistoryScreen({ payload, today, financeContext, initialMode
   });
   const [pickerOpen, setPickerOpen] = useState(false);
   const [warningsDismissed, setWarningsDismissed] = useState(false);
+
+  const hasMounted = useRef(false);
+  useEffect(() => {
+    if (!hasMounted.current) { hasMounted.current = true; return; }
+    window.history.replaceState(null, '', buildRangeUrl(activeRange));
+  }, [activeRange]);
 
   // ---------------------------------------------------------------------------
   // Effective range clamped to what's loaded server-side

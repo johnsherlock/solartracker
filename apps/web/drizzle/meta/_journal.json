@@ -92,6 +92,34 @@
       "when": 1777199722928,
       "tag": "0012_system_additions_finance_check",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1777200000000,
+      "tag": "0013_drop_flat_finance_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1777210000000,
+      "tag": "0014_notification_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1777220000000,
+      "tag": "0015_interval_readings",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1746268800000,
+      "tag": "0016_daily_priced_rollups",
+      "breakpoints": true
     }
   ]
 }

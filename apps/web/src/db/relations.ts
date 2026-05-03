@@ -1,5 +1,6 @@
 import { relations } from 'drizzle-orm';
 import {
+  dailyPricedRollups,
   dataHealthEvents,
   deletionRequests,
   installationContracts,
@@ -28,6 +29,7 @@ export const installationsRelations = relations(installations, ({ one, many }) =
   providerConnections: many(providerConnections),
   installationContracts: many(installationContracts),
   intervalReadings: many(intervalReadings),
+  dailyPricedRollups: many(dailyPricedRollups),
   dataHealthEvents: many(dataHealthEvents),
   jobRuns: many(jobRuns),
 }));
@@ -105,6 +107,17 @@ export const dataHealthEventsRelations = relations(dataHealthEvents, ({ one }) =
   providerConnection: one(providerConnections, {
     fields: [dataHealthEvents.providerConnectionId],
     references: [providerConnections.id],
+  }),
+}));
+
+export const dailyPricedRollupsRelations = relations(dailyPricedRollups, ({ one }) => ({
+  installation: one(installations, {
+    fields: [dailyPricedRollups.installationId],
+    references: [installations.id],
+  }),
+  tariffPlanVersion: one(tariffPlanVersions, {
+    fields: [dailyPricedRollups.tariffVersionId],
+    references: [tariffPlanVersions.id],
   }),
 }));
 

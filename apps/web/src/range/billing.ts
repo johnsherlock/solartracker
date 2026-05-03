@@ -23,7 +23,7 @@ import type {
   RangeSeriesDay,
   RangeSummaryHealth,
 } from './types';
-import type { IntervalRow } from './loader';
+import type { IntervalRow, DailyPricedRollupRow } from './loader';
 
 // ---------------------------------------------------------------------------
 // Date helpers
@@ -411,6 +411,195 @@ export function computeRangeSummary(
   };
 
   const health = deriveHealth(allDates, dayMap, tariffVersions, timezone);
+
+  return { summary, series, health };
+}
+
+// ---------------------------------------------------------------------------
+// Range summary from pre-computed daily priced rollups
+// ---------------------------------------------------------------------------
+
+/**
+ * Assemble the full RangeComputeResult from persisted daily priced rollups.
+ *
+ * For covered dates (rollup present) financial values are read directly from
+ * the stored row — no repricing occurs. Missing dates produce hasSummary:false
+ * series entries. Tariff versions are still required for health computation
+ * (setup warnings and tariff-change detection).
+ */
+export function computeRangeSummaryFromRollups(
+  rollups: DailyPricedRollupRow[],
+  allDates: string[],
+  timezone: string,
+  tariffVersions: ScheduledTariffVersion[],
+): RangeComputeResult {
+  const rollupMap = new Map<string, DailyPricedRollupRow>();
+  for (const row of rollups) {
+    rollupMap.set(row.localDate, row);
+  }
+
+  const series: RangeSeriesDay[] = allDates.map((date) => {
+    const row = rollupMap.get(date);
+    if (!row) {
+      return {
+        date,
+        hasSummary: false,
+        generatedKwh: 0,
+        importKwh: 0,
+        exportKwh: 0,
+        consumedKwh: null,
+        immersionDivertedKwh: null,
+        isPartial: false,
+        billing: null,
+        tariffVersionId: null,
+        dayImportKwh: null,
+        nightImportKwh: null,
+        peakImportKwh: null,
+      };
+    }
+
+    let billing: RangeSeriesDay['billing'] = null;
+    if (row.importCost != null) {
+      const importCost = row.importCost;
+      const exportCredit = row.exportCredit ?? 0;
+      const fixedCharges = row.fixedCharges ?? 0;
+      const actualNetCost = r2(importCost + fixedCharges - exportCredit);
+      const withoutSolarNetCost = r2((row.withoutSolarImportCost ?? 0) + fixedCharges);
+      const savings = r2(withoutSolarNetCost - actualNetCost);
+      billing = {
+        importCost,
+        exportCredit,
+        fixedCharges,
+        actualNetCost,
+        savings,
+        selfConsumedSolarValue: row.selfConsumedSolarValue ?? 0,
+        freeImportKwh: row.freeImportKwh ?? 0,
+      };
+    }
+
+    return {
+      date,
+      hasSummary: true,
+      generatedKwh: row.generatedKwh,
+      importKwh: row.importKwh,
+      exportKwh: row.exportKwh,
+      consumedKwh: row.consumedKwh,
+      immersionDivertedKwh: row.immersionDivertedKwh,
+      isPartial: row.isPartial,
+      billing,
+      tariffVersionId: row.tariffVersionId,
+      dayImportKwh: null,
+      nightImportKwh: null,
+      peakImportKwh: null,
+    };
+  });
+
+  // Range totals from rollup rows
+  const coveredRollups = [...rollupMap.values()];
+  const totalGeneratedKwh = coveredRollups.reduce((s, r) => s + r.generatedKwh, 0);
+  const totalImportKwh    = coveredRollups.reduce((s, r) => s + r.importKwh, 0);
+  const totalExportKwh    = coveredRollups.reduce((s, r) => s + r.exportKwh, 0);
+  const totalConsumedKwh  = coveredRollups.reduce((s, r) => s + r.consumedKwh, 0);
+  const totalImmersionDivertedKwh = coveredRollups.reduce((s, r) => s + r.immersionDivertedKwh, 0);
+
+  let rangeImportCost = 0;
+  let rangeExportCredit = 0;
+  let rangeSelfConsumedSolarValue = 0;
+  let rangeFixedCharges = 0;
+  let rangeWithoutSolarImportCost = 0;
+  let hasBilling = false;
+
+  for (const row of coveredRollups) {
+    if (row.importCost != null) {
+      rangeImportCost += row.importCost;
+      rangeExportCredit += row.exportCredit ?? 0;
+      rangeSelfConsumedSolarValue += row.selfConsumedSolarValue ?? 0;
+      rangeFixedCharges += row.fixedCharges ?? 0;
+      rangeWithoutSolarImportCost += row.withoutSolarImportCost ?? 0;
+      hasBilling = true;
+    }
+  }
+
+  const actualGrossCost = r2(rangeImportCost + rangeFixedCharges);
+  const actualNetCost = r2(actualGrossCost - rangeExportCredit);
+  const withoutSolarGrossCost = r2(rangeWithoutSolarImportCost + rangeFixedCharges);
+  const savings = r2(withoutSolarGrossCost - actualNetCost);
+  const selfConsumptionRatio = totalConsumedKwh > 0
+    ? r2((totalConsumedKwh - totalImportKwh) / totalConsumedKwh)
+    : 0;
+  const gridDependenceRatio = totalConsumedKwh > 0
+    ? r2(totalImportKwh / totalConsumedKwh)
+    : 0;
+
+  const zeroCostBreakdown = { importCost: 0, fixedCharges: 0, exportCredit: 0, grossCost: 0, netCost: 0 };
+
+  const summary: RangeSummarySection = {
+    actual: hasBilling ? {
+      importCost: r2(rangeImportCost),
+      fixedCharges: r2(rangeFixedCharges),
+      exportCredit: r2(rangeExportCredit),
+      grossCost: actualGrossCost,
+      netCost: actualNetCost,
+    } : zeroCostBreakdown,
+    withoutSolar: hasBilling ? {
+      importCost: r2(rangeWithoutSolarImportCost),
+      fixedCharges: r2(rangeFixedCharges),
+      grossCost: withoutSolarGrossCost,
+      netCost: withoutSolarGrossCost,
+    } : { importCost: 0, fixedCharges: 0, grossCost: 0, netCost: 0 },
+    solar: hasBilling ? {
+      savings,
+      exportValue: r2(rangeExportCredit),
+      selfConsumedSolarValue: r2(rangeSelfConsumedSolarValue),
+      selfConsumptionRatio,
+      gridDependenceRatio,
+    } : { savings: 0, exportValue: 0, selfConsumedSolarValue: 0, selfConsumptionRatio: 0, gridDependenceRatio: 0 },
+    totals: {
+      generatedKwh: r2(totalGeneratedKwh),
+      importKwh: r2(totalImportKwh),
+      exportKwh: r2(totalExportKwh),
+      consumedKwh: r2(totalConsumedKwh),
+      immersionDivertedKwh: r2(totalImmersionDivertedKwh),
+    },
+  };
+
+  // Health from rollup metadata
+  const missingDayDates: string[] = [];
+  let partialDays = 0;
+  const applicableVersionIds = new Set<string>();
+  const setupWarnings: string[] = [];
+  const hasTariff = tariffVersions.length > 0;
+
+  for (const date of allDates) {
+    const row = rollupMap.get(date);
+    if (!row) {
+      missingDayDates.push(date);
+    } else {
+      if (row.isPartial) partialDays++;
+      if (row.tariffVersionId) applicableVersionIds.add(row.tariffVersionId);
+    }
+  }
+
+  if (!hasTariff) {
+    setupWarnings.push('No tariff data found. Add a tariff plan to enable billing estimates.');
+  }
+
+  const totalDays = allDates.length;
+  const coveredDays = totalDays - missingDayDates.length;
+  const completenessRatio = totalDays > 0 ? coveredDays / totalDays : 0;
+
+  const health: RangeSummaryHealth = {
+    totalDays,
+    coveredDays,
+    missingDays: missingDayDates.length,
+    missingDayDates,
+    partialDays,
+    completenessRatio,
+    hasTariffChange: applicableVersionIds.size > 1,
+    tariffVersionIds: Array.from(applicableVersionIds),
+    hasTariff,
+    setupWarnings,
+  };
 
   return { summary, series, health };
 }

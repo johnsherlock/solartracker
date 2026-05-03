@@ -2,11 +2,10 @@ import type { NextRequest } from 'next/server';
 import {
   loadRangeInstallationContext,
   loadTariffVersionsForInstallation,
-  loadFixedChargeVersionsForInstallation,
-  loadIntervalReadingsForRange,
+  loadDailyPricedRollupsForRange,
   loadEarliestIntervalDate,
 } from '../../../src/range/loader';
-import { allDatesInRange, computeRangeSummary } from '../../../src/range/billing';
+import { allDatesInRange, computeRangeSummaryFromRollups } from '../../../src/range/billing';
 import type { RangeSummaryPayload } from '../../../src/range/types';
 import { resolveEffectiveInstallationId } from '../../../src/installation-helpers';
 
@@ -68,20 +67,18 @@ export async function GET(request: NextRequest) {
 
   const timezone = installationContext.timezone;
 
-  const [tariffVersions, fixedCharges, intervals, earliestDate] = await Promise.all([
+  const [tariffVersions, rollups, earliestDate] = await Promise.all([
     loadTariffVersionsForInstallation(installationId),
-    loadFixedChargeVersionsForInstallation(installationId),
-    loadIntervalReadingsForRange(installationId, from, to, timezone),
+    loadDailyPricedRollupsForRange(installationId, from, to),
     loadEarliestIntervalDate(installationId, timezone),
   ]);
 
   const allDates = allDatesInRange(from, to);
-  const { summary, series, health } = computeRangeSummary(
-    intervals,
+  const { summary, series, health } = computeRangeSummaryFromRollups(
+    rollups,
     allDates,
     timezone,
     tariffVersions,
-    fixedCharges,
   );
 
   const payload: RangeSummaryPayload = {

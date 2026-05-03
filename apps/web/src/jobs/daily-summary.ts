@@ -19,9 +19,11 @@ import {
   installations,
   providerConnections,
   intervalReadings,
+  dailyPricedRollups,
   jobRuns,
   users,
 } from '../db/schema';
+import { buildAndPersistRollupForDate } from '../range/rollup-service';
 import { fetchDayRecords } from '../providers/myenergi/client';
 import { normaliseEddiRecords } from '../providers/myenergi/adapter';
 import { resolveMyEnergiCredentials } from '../providers/myenergi/credentials';
@@ -173,6 +175,17 @@ async function summariseInstallation(
   const slots = aggregateToIntervalReadings(readings, targetDate, inst.timezone);
 
   await upsertIntervalReadings(inst.installationId, slots);
+
+  // Build the priced rollup from the just-written intervals. Non-fatal: if
+  // this fails the interval data is intact and job:build-rollups can recover it.
+  try {
+    await buildAndPersistRollupForDate(inst.installationId, targetDate, inst.timezone);
+  } catch (err) {
+    console.error(
+      `[daily-summary] rollup build failed for ${inst.installationId} on ${targetDate}:`,
+      err,
+    );
+  }
 
   const totalReadingCount = slots.reduce((s, slot) => s + slot.readingCount, 0);
   const isPartial = isPartialDay(totalReadingCount, expected);
@@ -447,4 +460,112 @@ export async function runCatchUp(options: RunCatchUpOptions = {}): Promise<void>
   console.log(
     `[catch-up] Done. success=${totalSuccess} skipped=${totalSkipped} failed=${totalFailed}`,
   );
+
+  await runRollupCatchUp({ fromDate: fromDate, userEmail: options.userEmail, now });
+}
+
+// ---------------------------------------------------------------------------
+// Rollup catch-up: build missing daily_priced_rollups from existing interval data
+// ---------------------------------------------------------------------------
+
+export type RunRollupCatchUpOptions = {
+  fromDate?: string;
+  userEmail?: string;
+  now?: Date;
+};
+
+/**
+ * Build daily_priced_rollups for every installation-date pair that has
+ * interval_readings but no rollup row yet. Does not touch the provider API.
+ */
+export async function runRollupCatchUp(options: RunRollupCatchUpOptions = {}): Promise<void> {
+  const now = options.now ?? new Date();
+
+  if (options.userEmail) {
+    console.log(`[rollup-catchup] Filtering to user: ${options.userEmail}`);
+  }
+
+  const activeInstallations = await loadActiveInstallations(options.userEmail);
+  if (activeInstallations.length === 0) {
+    console.log('[rollup-catchup] No active installations found.');
+    return;
+  }
+
+  let fromDate = options.fromDate;
+  if (!fromDate) {
+    const d = new Date(now);
+    d.setUTCDate(d.getUTCDate() - 30);
+    fromDate = d.toISOString().slice(0, 10);
+  }
+
+  const yesterday = getPreviousLocalDate('Europe/Dublin', now);
+  const datesToProcess: string[] = [];
+  {
+    const cur = new Date(`${fromDate}T00:00:00Z`);
+    const end = new Date(`${yesterday}T00:00:00Z`);
+    while (cur <= end) {
+      datesToProcess.push(cur.toISOString().slice(0, 10));
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+  }
+
+  if (datesToProcess.length === 0) {
+    console.log('[rollup-catchup] No dates to process.');
+    return;
+  }
+
+  console.log(`[rollup-catchup] Processing ${datesToProcess.length} dates from ${fromDate} to ${yesterday}…`);
+
+  let built = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (const inst of activeInstallations) {
+    for (const date of datesToProcess) {
+      const utcStart = new Date(utcStartOfLocalDate(date, inst.timezone));
+      const expectedMinutes = expectedMinutesForDay(date, inst.timezone);
+      const utcEnd = new Date(utcStart.getTime() + expectedMinutes * 60 * 1000);
+
+      const intervalCountRows = await db
+        .select({ c: count() })
+        .from(intervalReadings)
+        .where(
+          and(
+            eq(intervalReadings.installationId, inst.installationId),
+            gte(intervalReadings.intervalStart, utcStart),
+            lt(intervalReadings.intervalStart, utcEnd),
+          ),
+        );
+      if ((intervalCountRows[0]?.c ?? 0) === 0) {
+        skipped++;
+        continue;
+      }
+
+      const rollupCountRows = await db
+        .select({ c: count() })
+        .from(dailyPricedRollups)
+        .where(
+          and(
+            eq(dailyPricedRollups.installationId, inst.installationId),
+            eq(dailyPricedRollups.localDate, date),
+          ),
+        );
+      if ((rollupCountRows[0]?.c ?? 0) > 0) {
+        skipped++;
+        continue;
+      }
+
+      try {
+        await buildAndPersistRollupForDate(inst.installationId, date, inst.timezone);
+        built++;
+        console.log(`[rollup-catchup]   ✓ ${inst.installationId} ${date}`);
+      } catch (err) {
+        failed++;
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(`[rollup-catchup]   ✗ ${inst.installationId} ${date} — ${msg}`);
+      }
+    }
+  }
+
+  console.log(`[rollup-catchup] Done. built=${built} skipped=${skipped} failed=${failed}`);
 }

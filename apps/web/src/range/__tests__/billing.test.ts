@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { allDatesInRange, computeRangeSummary } from '../billing';
+import { allDatesInRange, computeRangeSummary, computeRangeSummaryFromRollups } from '../billing';
 import type { ScheduledTariffVersion, FixedChargeVersion } from '../../domain/billing';
-import type { IntervalRow } from '../loader';
+import type { IntervalRow, DailyPricedRollupRow } from '../loader';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -548,5 +548,193 @@ describe('computeRangeSummary — U-054 worked example', () => {
     const allDates = allDatesInRange('2024-11-01', '2024-11-01');
     const { series } = computeRangeSummary(intervals, allDates, TZ, [noVatTariff], []);
     expect(series[0].billing!.exportCredit).toBeCloseTo(0.10, 2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeRangeSummaryFromRollups
+// ---------------------------------------------------------------------------
+
+function makeRollupRow(
+  localDate: string,
+  overrides: Partial<DailyPricedRollupRow> = {},
+): DailyPricedRollupRow {
+  return {
+    localDate,
+    tariffVersionId: 'tariff-v1',
+    generatedKwh: 8,
+    importKwh: 5,
+    exportKwh: 3,
+    consumedKwh: 10,
+    immersionDivertedKwh: 0,
+    totalReadingCount: 1440,
+    slotCount: 48,
+    isPartial: false,
+    importCost: 1.64,
+    exportCredit: 0.3,
+    selfConsumedSolarValue: 1.2,
+    withoutSolarImportCost: 2.95,
+    fixedCharges: 0.5,
+    freeImportKwh: 0,
+    ...overrides,
+  };
+}
+
+describe('computeRangeSummaryFromRollups — series shape', () => {
+  const rollups = [
+    makeRollupRow('2024-11-01'),
+    makeRollupRow('2024-11-02'),
+    makeRollupRow('2024-11-03'),
+  ];
+  const allDates = allDatesInRange('2024-11-01', '2024-11-03');
+  const { series } = computeRangeSummaryFromRollups(rollups, allDates, TZ, [baseTariff]);
+
+  it('produces one series entry per date', () => {
+    expect(series).toHaveLength(3);
+    expect(series.map((s) => s.date)).toEqual(['2024-11-01', '2024-11-02', '2024-11-03']);
+  });
+
+  it('sets hasSummary true for covered dates', () => {
+    expect(series.every((s) => s.hasSummary)).toBe(true);
+  });
+
+  it('returns stored energy values', () => {
+    expect(series[0].importKwh).toBeCloseTo(5, 5);
+    expect(series[0].generatedKwh).toBeCloseTo(8, 5);
+    expect(series[0].exportKwh).toBeCloseTo(3, 5);
+  });
+
+  it('returns stored isPartial flag', () => {
+    expect(series[0].isPartial).toBe(false);
+  });
+
+  it('returns stored tariffVersionId', () => {
+    expect(series[0].tariffVersionId).toBe('tariff-v1');
+  });
+
+  it('computes billing from stored cost fields', () => {
+    const b = series[0].billing!;
+    expect(b.importCost).toBeCloseTo(1.64, 2);
+    expect(b.exportCredit).toBeCloseTo(0.3, 2);
+    expect(b.fixedCharges).toBeCloseTo(0.5, 2);
+    // actualNetCost = importCost + fixedCharges - exportCredit = 1.64 + 0.5 - 0.3 = 1.84
+    expect(b.actualNetCost).toBeCloseTo(1.84, 2);
+    // withoutSolarNetCost = withoutSolarImportCost + fixedCharges = 2.95 + 0.5 = 3.45
+    // savings = withoutSolarNetCost - actualNetCost = 3.45 - 1.84 = 1.61
+    expect(b.savings).toBeCloseTo(1.61, 2);
+  });
+});
+
+describe('computeRangeSummaryFromRollups — missing dates', () => {
+  // 5-day range but only rollups for Nov 1, 3, 5
+  const rollups = [
+    makeRollupRow('2024-11-01'),
+    makeRollupRow('2024-11-03'),
+    makeRollupRow('2024-11-05'),
+  ];
+  const allDates = allDatesInRange('2024-11-01', '2024-11-05');
+  const { series, health } = computeRangeSummaryFromRollups(rollups, allDates, TZ, [baseTariff]);
+
+  it('produces hasSummary:false for missing dates', () => {
+    const missing = series.filter((s) => ['2024-11-02', '2024-11-04'].includes(s.date));
+    expect(missing.every((s) => !s.hasSummary)).toBe(true);
+    expect(missing.every((s) => s.billing === null)).toBe(true);
+  });
+
+  it('reports correct missing day count in health', () => {
+    expect(health.missingDays).toBe(2);
+    expect(health.missingDayDates).toEqual(['2024-11-02', '2024-11-04']);
+    expect(health.coveredDays).toBe(3);
+  });
+
+  it('reports completeness ratio', () => {
+    expect(health.completenessRatio).toBeCloseTo(0.6, 5);
+  });
+});
+
+describe('computeRangeSummaryFromRollups — range totals', () => {
+  const rollups = [
+    makeRollupRow('2024-11-01'),
+    makeRollupRow('2024-11-02'),
+    makeRollupRow('2024-11-03'),
+  ];
+  const allDates = allDatesInRange('2024-11-01', '2024-11-03');
+  const { summary } = computeRangeSummaryFromRollups(rollups, allDates, TZ, [baseTariff]);
+
+  it('sums energy totals across all rollup rows', () => {
+    expect(summary.totals.importKwh).toBeCloseTo(15, 2);
+    expect(summary.totals.generatedKwh).toBeCloseTo(24, 2);
+    expect(summary.totals.exportKwh).toBeCloseTo(9, 2);
+    expect(summary.totals.consumedKwh).toBeCloseTo(30, 2);
+  });
+
+  it('sums billing totals across all rollup rows', () => {
+    // 3 × 1.64
+    expect(summary.actual.importCost).toBeCloseTo(4.92, 2);
+    // 3 × 0.5
+    expect(summary.actual.fixedCharges).toBeCloseTo(1.5, 2);
+    // 3 × 0.3
+    expect(summary.actual.exportCredit).toBeCloseTo(0.9, 2);
+  });
+
+  it('computes savings > 0', () => {
+    expect(summary.solar.savings).toBeGreaterThan(0);
+  });
+});
+
+describe('computeRangeSummaryFromRollups — partial day in rollup', () => {
+  const rollups = [makeRollupRow('2024-11-01', { isPartial: true })];
+  const allDates = allDatesInRange('2024-11-01', '2024-11-01');
+  const { series, health } = computeRangeSummaryFromRollups(rollups, allDates, TZ, [baseTariff]);
+
+  it('reflects isPartial from stored rollup', () => {
+    expect(series[0].isPartial).toBe(true);
+  });
+
+  it('increments health.partialDays', () => {
+    expect(health.partialDays).toBe(1);
+  });
+});
+
+describe('computeRangeSummaryFromRollups — no tariff', () => {
+  const rollups = [makeRollupRow('2024-11-01', {
+    tariffVersionId: null,
+    importCost: null,
+    exportCredit: null,
+    selfConsumedSolarValue: null,
+    withoutSolarImportCost: null,
+    fixedCharges: null,
+    freeImportKwh: null,
+  })];
+  const allDates = allDatesInRange('2024-11-01', '2024-11-01');
+  const { series, health } = computeRangeSummaryFromRollups(rollups, allDates, TZ, []);
+
+  it('returns null billing when rollup has no pricing', () => {
+    expect(series[0].billing).toBeNull();
+  });
+
+  it('reports hasTariff:false', () => {
+    expect(health.hasTariff).toBe(false);
+  });
+
+  it('includes setup warning', () => {
+    expect(health.setupWarnings.length).toBeGreaterThan(0);
+  });
+});
+
+describe('computeRangeSummaryFromRollups — tariff change detection', () => {
+  const rollups = [
+    makeRollupRow('2024-11-01', { tariffVersionId: 'tariff-v1' }),
+    makeRollupRow('2024-11-02', { tariffVersionId: 'tariff-v1' }),
+    makeRollupRow('2024-11-03', { tariffVersionId: 'tariff-v2' }),
+  ];
+  const tariffV2: ScheduledTariffVersion = { ...baseTariff, id: 'tariff-v2', validFromLocalDate: '2024-11-03' };
+  const allDates = allDatesInRange('2024-11-01', '2024-11-03');
+  const { health } = computeRangeSummaryFromRollups(rollups, allDates, TZ, [baseTariff, tariffV2]);
+
+  it('detects hasTariffChange when rollups reference multiple version ids', () => {
+    expect(health.hasTariffChange).toBe(true);
+    expect(health.tariffVersionIds).toContain('tariff-v1');
+    expect(health.tariffVersionIds).toContain('tariff-v2');
   });
 });

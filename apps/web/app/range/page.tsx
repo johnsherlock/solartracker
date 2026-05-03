@@ -1,11 +1,10 @@
 import {
   loadRangeInstallationContext,
   loadTariffVersionsForInstallation,
-  loadFixedChargeVersionsForInstallation,
-  loadIntervalReadingsForRange,
+  loadDailyPricedRollupsForRange,
   loadEarliestIntervalDate,
 } from '@/src/range/loader';
-import { allDatesInRange, computeRangeSummary } from '@/src/range/billing';
+import { allDatesInRange, computeRangeSummaryFromRollups } from '@/src/range/billing';
 import type { RangeSummaryPayload } from '@/src/range/types';
 import {
   computeAllTimeSavings,
@@ -79,22 +78,20 @@ export default async function RangePage({ searchParams }: PageProps) {
   );
 
   try {
-    const [tariffVersions, fixedCharges, intervals, allTimeIntervals] = await Promise.all([
+    const [tariffVersions, rollups, allTimeRollups] = await Promise.all([
       loadTariffVersionsForInstallation(installationId),
-      loadFixedChargeVersionsForInstallation(installationId),
-      loadIntervalReadingsForRange(installationId, windowStart, windowEnd, timezone),
+      loadDailyPricedRollupsForRange(installationId, windowStart, windowEnd),
       needsAllTimeLoad
-        ? loadIntervalReadingsForRange(installationId, earliestDate!, today, timezone)
+        ? loadDailyPricedRollupsForRange(installationId, earliestDate!, today)
         : Promise.resolve(null),
     ]);
 
     const allDates = allDatesInRange(windowStart, windowEnd);
-    const { summary, series, health } = computeRangeSummary(
-      intervals,
+    const { summary, series, health } = computeRangeSummaryFromRollups(
+      rollups,
       allDates,
       timezone,
       tariffVersions,
-      fixedCharges,
     );
 
     let financeContext: RangeFinanceContext | null = null;
@@ -103,14 +100,13 @@ export default async function RangePage({ searchParams }: PageProps) {
       let allTimeCoveredDays = 0;
 
       if (earliestDate != null) {
-        const intervalsForAllTime = allTimeIntervals ?? intervals;
+        const rollupsForAllTime = allTimeRollups ?? rollups;
         const allTimeDates = allDatesInRange(earliestDate, today);
-        const { series: allTimeSeries } = computeRangeSummary(
-          intervalsForAllTime,
+        const { series: allTimeSeries } = computeRangeSummaryFromRollups(
+          rollupsForAllTime,
           allTimeDates,
           timezone,
           tariffVersions,
-          fixedCharges,
         );
         ({ savings: allTimeSavings, coveredDays: allTimeCoveredDays } =
           computeAllTimeSavings(allTimeSeries));

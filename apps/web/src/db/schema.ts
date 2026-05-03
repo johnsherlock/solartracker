@@ -237,6 +237,34 @@ export const systemAdditions = pgTable('system_additions', {
   ),
 }));
 
+export const dailyPricedRollups = pgTable('daily_priced_rollups', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  installationId: uuid('installation_id').notNull().references(() => installations.id, { onDelete: 'cascade' }),
+  localDate: date('local_date').notNull(),
+  tariffVersionId: uuid('tariff_version_id').references((): AnyPgColumn => tariffPlanVersions.id, { onDelete: 'set null' }),
+  // Energy totals derived from interval_readings for this local date
+  generatedKwh: numeric('generated_kwh', { precision: 10, scale: 6 }).notNull(),
+  importKwh: numeric('import_kwh', { precision: 10, scale: 6 }).notNull(),
+  exportKwh: numeric('export_kwh', { precision: 10, scale: 6 }).notNull(),
+  consumedKwh: numeric('consumed_kwh', { precision: 10, scale: 6 }).notNull(),
+  immersionDivertedKwh: numeric('immersion_diverted_kwh', { precision: 10, scale: 6 }).notNull(),
+  // Coverage metadata used to determine isPartial
+  totalReadingCount: integer('total_reading_count').notNull(),
+  slotCount: smallint('slot_count').notNull(),
+  isPartial: boolean('is_partial').notNull(),
+  // Tariff-priced outputs — null when no tariff was available at derivation time
+  importCost: numeric('import_cost', { precision: 12, scale: 6 }),
+  exportCredit: numeric('export_credit', { precision: 12, scale: 6 }),
+  selfConsumedSolarValue: numeric('self_consumed_solar_value', { precision: 12, scale: 6 }),
+  withoutSolarImportCost: numeric('without_solar_import_cost', { precision: 12, scale: 6 }),
+  fixedCharges: numeric('fixed_charges', { precision: 12, scale: 6 }),
+  freeImportKwh: numeric('free_import_kwh', { precision: 10, scale: 6 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  uniqueInstallationDateIdx: uniqueIndex('daily_priced_rollups_installation_date_idx').on(table.installationId, table.localDate),
+}));
+
 export const deletionRequests = pgTable('deletion_requests', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),

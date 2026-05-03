@@ -14,7 +14,8 @@
     "db:seed": "tsx src/db/seed.ts",
     "db:studio": "drizzle-kit studio",
     "job:daily-summary": "tsx src/scripts/job-daily-summary.ts",
-    "job:catch-up": "tsx src/scripts/job-daily-summary.ts --catch-up"
+    "job:catch-up": "tsx src/scripts/job-daily-summary.ts --catch-up",
+    "job:build-rollups": "tsx src/scripts/job-build-rollups.ts"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.2.2",
