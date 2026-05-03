@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
   BarChart3,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   Home,
@@ -46,11 +47,13 @@ import { PerDayBarChart } from './PerDayBarChart';
 import { CostHistogramChart } from './CostHistogramChart';
 import { PeriodCostDonutChart } from './PeriodCostDonutChart';
 import { RangePickerPopover } from '@/src/components/RangePickerPopover';
+import { WarningsCallout } from '@/src/components/WarningsCallout';
 import type { NavigationTarget } from '@/src/components/RangePickerPopover';
 import { SolarCoverageChart } from './SolarCoverageChart';
 import { ExportRatioChart } from './ExportRatioChart';
 import { StaleTariffBanner } from '@/src/components/StaleTariffBanner';
 import type { StaleTariffWarning } from '@/src/tariffs/stale-check';
+import { setCachedYear } from '@/src/calendar/yearCache';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -99,6 +102,25 @@ export function RangeHistoryScreen({ payload, today, financeContext, initialMode
     if (!hasMounted.current) { hasMounted.current = true; return; }
     window.history.replaceState(null, '', buildRangeUrl(activeRange));
   }, [activeRange]);
+
+  // Warm the shared year cache when viewing a full calendar year in Range History.
+  useEffect(() => {
+    if (activeRange.mode !== 'years' || !payload) return;
+    const year = activeRange.from.slice(0, 4);
+    const yearFrom = `${year}-01-01`;
+    const yearTo = `${year}-12-31`;
+    if (payload.meta.from <= yearFrom && (payload.meta.to >= yearTo || payload.meta.to === today)) {
+      setCachedYear(year, {
+        ...payload,
+        meta: {
+          ...payload.meta,
+          from: yearFrom,
+          to: payload.meta.to >= yearTo ? yearTo : payload.meta.to,
+        },
+        series: payload.series.filter((d) => d.date >= yearFrom && d.date <= yearTo),
+      });
+    }
+  }, [activeRange, payload, today]);
 
   // ---------------------------------------------------------------------------
   // Effective range clamped to what's loaded server-side
@@ -206,6 +228,13 @@ export function RangeHistoryScreen({ payload, today, financeContext, initialMode
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <Link
+              href="/calendar"
+              title="Calendar"
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-400 hover:border-slate-600 hover:text-slate-200 transition-colors"
+            >
+              <CalendarDays size={14} />
+            </Link>
             <Link
               href="/settings"
               title="Settings"
@@ -481,66 +510,6 @@ function BillMetric({
         {value}
       </p>
       <p className="mt-0.5 text-[10px] text-slate-400">{note}</p>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// §2a — Combined warnings callout
-// ---------------------------------------------------------------------------
-
-function WarningsCallout({
-  missingDays,
-  partialDays,
-  coveredDays,
-  hasTariffChange,
-  series,
-  onDismiss,
-}: {
-  missingDays: number;
-  partialDays: number;
-  coveredDays: number;
-  hasTariffChange: boolean;
-  series: RangeSeriesDay[];
-  onDismiss: () => void;
-}) {
-  const totalDays = coveredDays + missingDays;
-  const coveragePct = totalDays > 0 ? Math.round((coveredDays / totalDays) * 100) : 100;
-  const tariffVersionCount = new Set(series.map((d) => d.tariffVersionId).filter(Boolean)).size;
-
-  const completenessParts: string[] = [];
-  if (missingDays > 0)
-    completenessParts.push(`${missingDays} day${missingDays !== 1 ? 's are' : ' is'} missing from this period`);
-  if (partialDays > 0)
-    completenessParts.push(`${partialDays} day${partialDays !== 1 ? 's' : ''} recorded < 90% expected data`);
-
-  const hasCompleteness = completenessParts.length > 0;
-
-  return (
-    <div className="rounded-2xl border border-amber-500/25 bg-amber-500/8 px-4 py-3">
-      <div className="flex items-start gap-3">
-        <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-400" />
-        <div className="flex-1 space-y-1.5">
-          {hasCompleteness && (
-            <p className="text-sm text-amber-300/90">
-              <span className="font-semibold text-amber-200">{completenessParts.join(', ')}</span>
-              {' — '}
-              Totals calculated from {coveragePct}% of possible recoverable data.
-            </p>
-          )}
-          {hasTariffChange && (
-            <p className="text-sm text-amber-300/90">
-              <span className="font-semibold text-amber-200">Tariff changed during this period</span>
-              {' — '}
-              {tariffVersionCount} tariff version{tariffVersionCount !== 1 ? 's' : ''} applied.
-              Financial totals reflect each day's applicable rate.
-            </p>
-          )}
-        </div>
-        <button onClick={onDismiss} className="shrink-0 text-amber-500/50 hover:text-amber-400">
-          <X size={13} />
-        </button>
-      </div>
     </div>
   );
 }

@@ -289,6 +289,13 @@ function NavBar({
         <div className="flex items-center gap-3">
           <TrustBadge screenState={screenState} health={health} onOpenDetails={onOpenDetails} />
           <Link
+            href="/calendar"
+            title="Calendar"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-400 hover:border-slate-600 hover:text-slate-200 transition-colors"
+          >
+            <Calendar size={14} />
+          </Link>
+          <Link
             href="/settings"
             title="Settings"
             className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-400 hover:border-slate-600 hover:text-slate-200 transition-colors"
