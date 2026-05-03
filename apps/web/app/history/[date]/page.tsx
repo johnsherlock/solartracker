@@ -1,8 +1,8 @@
 import { redirect } from 'next/navigation';
-import { fetchMinuteData } from '@/src/providers/v1/adapter';
 import { buildDayDetail } from '@/src/live/normalizer';
 import {
   loadInstallationContext,
+  loadProviderConnection,
   loadTariffContext,
   computeFinancialEstimate,
   getLastReadingLocalTime,
@@ -10,6 +10,10 @@ import {
   periodDataToChartPoints,
   periodDataToCostPoints,
 } from '@/src/live/loader';
+import type { MinuteReading } from '@/src/live/types';
+import { fetchDayRecords } from '@/src/providers/myenergi/client';
+import { normaliseEddiRecords } from '@/src/providers/myenergi/adapter';
+import { resolveMyEnergiCredentials } from '@/src/providers/myenergi/credentials';
 import { HistoricalDayScreen } from './HistoricalDayScreen';
 import { resolveEffectiveInstallationId } from '@/src/installation-helpers';
 import { loadStaleTariffWarning } from '@/src/tariffs/stale-check';
@@ -75,11 +79,22 @@ export default async function HistoricalDayPage({
 
   const fetchedAt = now.toISOString();
 
-  const [tariffContext, minuteData, staleTariffWarning] = await Promise.all([
+  const [tariffContext, providerConnection, staleTariffWarning] = await Promise.all([
     loadTariffContext(installationId, date),
-    fetchMinuteData(date, effectiveTimezone),
+    loadProviderConnection(installationId),
     loadStaleTariffWarning(installationId, effectiveTimezone),
   ]);
+
+  const credentials = resolveMyEnergiCredentials(providerConnection?.credentialRef);
+  let minuteData: MinuteReading[] = [];
+  if (credentials) {
+    const fetchResult = await fetchDayRecords(date, effectiveTimezone, credentials);
+    if (fetchResult.ok) {
+      minuteData = normaliseEddiRecords(fetchResult.records, date, effectiveTimezone);
+    } else if (fetchResult.kind === 'empty-day') {
+      minuteData = normaliseEddiRecords([], date, effectiveTimezone);
+    }
+  }
 
   const dayDetail = buildDayDetail(date, minuteData, fetchedAt, effectiveTimezone);
 
