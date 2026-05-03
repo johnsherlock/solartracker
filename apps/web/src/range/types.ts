@@ -30,6 +30,7 @@ export type RangeWithoutSolarBreakdown = {
 export type RangeSolarSummary = {
   savings: number;
   exportValue: number;
+  selfConsumedSolarValue: number;
   selfConsumptionRatio: number;
   gridDependenceRatio: number;
 };
@@ -55,6 +56,9 @@ export type RangeSeriesDayBilling = {
   exportCredit: number;
   importCost: number;
   fixedCharges: number;
+  selfConsumedSolarValue: number;
+  /** kWh imported during slots whose scheduled rate is exactly zero. Cost is €0 by definition. */
+  freeImportKwh: number;
 };
 
 export type RangeSeriesDay = {

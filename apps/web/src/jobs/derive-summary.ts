@@ -22,6 +22,8 @@ export type IntervalSlot = {
   readingCount: number;
 };
 
+export const PARTIAL_DAY_COVERAGE_THRESHOLD = 0.9;
+
 // ---------------------------------------------------------------------------
 // Local-date helpers
 // ---------------------------------------------------------------------------
@@ -109,6 +111,19 @@ export function expectedMinutesForDay(localDate: string, timezone: string): numb
   }
 
   return count;
+}
+
+/**
+ * Return true when the observed minute-level coverage for a local day falls
+ * below the tolerated completeness threshold.
+ */
+export function isPartialDay(
+  totalReadingCount: number,
+  expectedMinutes: number,
+  threshold = PARTIAL_DAY_COVERAGE_THRESHOLD,
+): boolean {
+  if (expectedMinutes <= 0) return false;
+  return totalReadingCount / expectedMinutes < threshold;
 }
 
 // ---------------------------------------------------------------------------

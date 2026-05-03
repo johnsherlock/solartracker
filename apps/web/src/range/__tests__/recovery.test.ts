@@ -23,6 +23,8 @@ function makeDay(date: string, savings: number): RangeSeriesDay {
       fixedCharges: 0,
       savings,
       actualNetCost: 0,
+      selfConsumedSolarValue: 0,
+      freeImportKwh: 0,
     },
     tariffVersionId: 'v1',
     dayImportKwh: null,
@@ -118,14 +120,30 @@ describe('computeAllTimeSavings', () => {
 // ---------------------------------------------------------------------------
 
 describe('computePayoffOutlook', () => {
-  it('returns null when already paid off', () => {
+  it('returns a recovered-state outlook when already paid off', () => {
     const ctx = makeContext({ allTimeSavings: 10000, totalSystemInvestment: 10000 });
-    expect(computePayoffOutlook(ctx, '2025-01-01')).toBeNull();
+    expect(computePayoffOutlook(ctx, '2025-01-01')).toEqual({
+      status: 'recovered',
+      avgDailySavings: 27.4,
+      observedDays: 365,
+      basisDate: '2025-01-01',
+      estimatedDaysSinceRecovery: 0,
+      estimatedRecoveredDate: '2025-01-01',
+    });
   });
 
-  it('returns null when savings exceed investment', () => {
+  it('returns a recovered-state outlook when savings exceed investment', () => {
     const ctx = makeContext({ allTimeSavings: 12000, totalSystemInvestment: 10000 });
-    expect(computePayoffOutlook(ctx, '2025-01-01')).toBeNull();
+    const result = computePayoffOutlook(ctx, '2025-01-01');
+    expect(result).not.toBeNull();
+    if (result == null) {
+      throw new Error('expected recovered payoff outlook');
+    }
+    expect(result.status).toBe('recovered');
+    if (result.status === 'recovered') {
+      expect(result.estimatedDaysSinceRecovery).toBeGreaterThan(0);
+      expect(result.estimatedRecoveredDate < result.basisDate).toBe(true);
+    }
   });
 
   it('returns null when covered days < 30 (insufficient history)', () => {
@@ -148,10 +166,18 @@ describe('computePayoffOutlook', () => {
     const ctx = makeContext();
     const result = computePayoffOutlook(ctx, '2025-01-01');
     expect(result).not.toBeNull();
-    expect(result!.remainingInvestment).toBe(8000);
-    expect(result!.avgDailySavings).toBeCloseTo(5.48, 1);
-    expect(result!.estimatedDaysRemaining).toBeGreaterThan(0);
-    expect(result!.estimatedPayoffDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    if (result == null) {
+      throw new Error('expected in_progress payoff outlook');
+    }
+    expect(result.status).toBe('in_progress');
+    if (result.status !== 'in_progress') {
+      throw new Error('expected in_progress payoff outlook');
+    }
+    expect(result.remainingInvestment).toBe(8000);
+    expect(result.avgDailySavings).toBeCloseTo(5.48, 1);
+    expect(result.observedDays).toBe(365);
+    expect(result.estimatedDaysRemaining).toBeGreaterThan(0);
+    expect(result.estimatedPayoffDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it('returns an outlook at exactly 30 covered days (minimum threshold)', () => {
@@ -164,7 +190,14 @@ describe('computePayoffOutlook', () => {
     const today = '2025-01-01';
     const ctx = makeContext();
     const result = computePayoffOutlook(ctx, today);
-    expect(result!.estimatedPayoffDate > today).toBe(true);
+    if (result == null) {
+      throw new Error('expected in_progress payoff outlook');
+    }
+    expect(result.status).toBe('in_progress');
+    if (result.status !== 'in_progress') {
+      throw new Error('expected in_progress payoff outlook');
+    }
+    expect(result.estimatedPayoffDate > today).toBe(true);
   });
 
   // ---------------------------------------------------------------------------
@@ -195,7 +228,14 @@ describe('computePayoffOutlook', () => {
     });
     const result = computePayoffOutlook(ctx, '2025-01-01');
     expect(result).not.toBeNull();
-    expect(result!.remainingInvestment).toBe(15000);
+    if (result == null) {
+      throw new Error('expected in_progress payoff outlook');
+    }
+    expect(result.status).toBe('in_progress');
+    if (result.status !== 'in_progress') {
+      throw new Error('expected in_progress payoff outlook');
+    }
+    expect(result.remainingInvestment).toBe(15000);
   });
 
   // ---------------------------------------------------------------------------

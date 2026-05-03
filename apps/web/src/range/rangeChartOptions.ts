@@ -399,7 +399,9 @@ export function buildCostHistogramOption(series: RangeSeriesDay[], currency = 'E
 
   const actualData = series.map((d) => {
     if (!d.hasSummary || !d.billing) return null;
-    return round2(d.billing.actualNetCost);
+    const value = round2(d.billing.actualNetCost);
+    // Negative bars extend downward — round the bottom corners, not the top.
+    return { value, itemStyle: { borderRadius: value < 0 ? [0, 0, 3, 3] : [3, 3, 0, 0] } };
   });
 
   const withoutSolarData = series.map((d) => {
@@ -666,34 +668,41 @@ export type PeriodCostTotals = {
   fixedCharges: number;
   exportCredit: number;
   savings: number;
+  /** kWh imported during zero-rate slots — for display in tooltip. */
+  freeImportKwh?: number;
+  /** Estimated euro value of freeImportKwh at the period's average paid import rate. */
+  freeImportValue?: number;
+  /** Average paid import rate (€/kWh) used to value free import, shown in tooltip. */
+  avgPaidRate?: number;
 };
 
 const DONUT_IMPORT_COLOR = '#818cf8';   // indigo-400
 const DONUT_FIXED_COLOR = '#94a3b8';    // slate-400
 const DONUT_EXPORT_COLOR = '#34d399';   // emerald-400
 const DONUT_SAVINGS_COLOR = '#a5b4fc';  // indigo-300
-const DONUT_FREE_COLOR = '#1e293b';     // slate-800 (inactive placeholder)
+const DONUT_FREE_COLOR = '#5eead4';     // teal-300
+
+export const PERIOD_COST_COLORS = {
+  importCost: DONUT_IMPORT_COLOR,
+  fixedCharges: DONUT_FIXED_COLOR,
+} as const;
 
 /**
  * Build an ECharts option for the period cost breakdown donut chart.
+ *
+ * 100% = gross bill = importCost + fixedCharges. Only actual charged costs
+ * are slices; savings and credits are surfaced below the chart in the
+ * PeriodCostDonutChart component.
  */
 export function buildPeriodCostDonutOption(totals: PeriodCostTotals, currency = 'EUR') {
-  const { importCost, fixedCharges, exportCredit, savings } = totals;
+  const { importCost, fixedCharges } = totals;
 
   const fmt = (n: number) => new Intl.NumberFormat('en-IE', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+  const grossBill = Math.max(0, importCost) + Math.max(0, fixedCharges);
 
   const data = [
     { value: Math.max(0, importCost), name: 'Import cost', itemStyle: { color: DONUT_IMPORT_COLOR } },
     { value: Math.max(0, fixedCharges), name: 'Fixed charges', itemStyle: { color: DONUT_FIXED_COLOR } },
-    { value: Math.max(0, exportCredit), name: 'Export credit', itemStyle: { color: DONUT_EXPORT_COLOR } },
-    { value: Math.max(0, savings), name: 'Solar savings', itemStyle: { color: DONUT_SAVINGS_COLOR } },
-    {
-      value: 0.001, // near-zero so it renders as a thin slice placeholder
-      name: 'Free import',
-      itemStyle: { color: DONUT_FREE_COLOR },
-      label: { show: false },
-      emphasis: { disabled: true },
-    },
   ];
 
   return {
@@ -702,33 +711,16 @@ export function buildPeriodCostDonutOption(totals: PeriodCostTotals, currency = 
       ...TOOLTIP_BASE,
       trigger: 'item' as const,
       formatter(param: { name: string; value: number; percent: number; color: string }) {
-        if (param.name === 'Free import') {
-          return `<div style="font-size:11px;color:#94a3b8">Free import<br><span style="color:#475569">Not active</span></div>`;
-        }
         const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${param.color};margin-right:5px;"></span>`;
-        return `${dot}${param.name}: <b>${fmt(param.value)}</b> (${param.percent}%)`;
+        return `${dot}${param.name}: <b>${fmt(param.value)}</b> (${param.percent}% of gross bill)`;
       },
     },
-    legend: {
-      orient: 'vertical' as const,
-      right: 0,
-      top: 'middle',
-      itemWidth: 10,
-      itemHeight: 10,
-      itemGap: 10,
-      textStyle: { color: '#94a3b8', fontSize: 11 },
-      formatter(name: string) {
-        if (name === 'Free import') return 'Free import (not active)';
-        const item = data.find((d) => d.name === name);
-        if (!item || item.value < 0.01) return name;
-        return `${name}  ${fmt(item.value)}`;
-      },
-    },
+    legend: { show: false },
     series: [
       {
         type: 'pie',
-        radius: ['42%', '70%'],
-        center: ['35%', '50%'],
+        radius: ['42%', '80%'],
+        center: ['50%', '50%'],
         avoidLabelOverlap: true,
         label: { show: false },
         emphasis: {

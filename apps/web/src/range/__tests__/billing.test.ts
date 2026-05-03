@@ -406,22 +406,147 @@ describe('computeRangeSummary — per-day savings includes export credit', () =>
 // ---------------------------------------------------------------------------
 
 describe('computeRangeSummary — partial days', () => {
-  it('reports partial day count based on readingCount', () => {
+  it('reports partial day count when captured minutes fall below 90%', () => {
     const intervals = [
       ...makeDaySlots('2024-11-01T00:00:00Z', 48, STD, 30), // full
-      ...makeDaySlots('2024-11-02T00:00:00Z', 48, STD, 15), // partial (readingCount < 30)
-      ...makeDaySlots('2024-11-03T00:00:00Z', 48, STD, 15), // partial
+      ...makeDaySlots('2024-11-02T00:00:00Z', 48, STD, 27), // exactly 90% complete
+      ...makeDaySlots('2024-11-03T00:00:00Z', 48, STD, 26), // below 90%
     ];
     const allDates = allDatesInRange('2024-11-01', '2024-11-03');
-    const { health } = computeRangeSummary(intervals, allDates, TZ, [baseTariff], []);
-    expect(health.partialDays).toBe(2);
+    const { health, series } = computeRangeSummary(intervals, allDates, TZ, [baseTariff], []);
+    expect(health.partialDays).toBe(1);
+    expect(series.find((day) => day.date === '2024-11-02')!.isPartial).toBe(false);
+    expect(series.find((day) => day.date === '2024-11-03')!.isPartial).toBe(true);
   });
 
-  it('detects a partial day when whole slots are missing (fewer than 48 slots)', () => {
-    // 47 of 48 expected slots — all with full readingCount, but one entire slot is absent
-    const intervals = makeDaySlots('2024-11-01T00:00:00Z', 47, STD, 30);
+  it('detects a partial day when whole-slot gaps push coverage below 90%', () => {
+    // 43 of 48 expected slots = 89.6% coverage, so the day is partial
+    const intervals = makeDaySlots('2024-11-01T00:00:00Z', 43, STD, 30);
     const allDates = allDatesInRange('2024-11-01', '2024-11-01');
     const { health } = computeRangeSummary(intervals, allDates, TZ, [baseTariff], []);
     expect(health.partialDays).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeRangeSummary — selfConsumedSolarValue exposed in output
+// ---------------------------------------------------------------------------
+
+describe('computeRangeSummary — selfConsumedSolarValue', () => {
+  it('exposes selfConsumedSolarValue in per-day billing', () => {
+    // import=5, gen=8, export=3, immersionDiverted=0 → selfConsumed = 8-3-0 = 5 kWh
+    const intervals = makeDaySlots('2024-11-01T00:00:00Z', 48, {
+      importKwh: 5 / 48,
+      generationKwh: 8 / 48,
+      exportKwh: 3 / 48,
+      consumedKwh: 10 / 48,
+      immersionDivertedKwh: 0,
+    });
+    const allDates = allDatesInRange('2024-11-01', '2024-11-01');
+    const { series } = computeRangeSummary(intervals, allDates, TZ, [baseTariff], []);
+    const day = series[0];
+    // selfConsumed = 5 kWh, import rate = 0.3, VAT = 1.09
+    // selfConsumedSolarValue = r2(5 × 0.3 × 1.09) = r2(1.635) = 1.64
+    expect(day.billing!.selfConsumedSolarValue).toBeCloseTo(1.64, 2);
+  });
+
+  it('exposes selfConsumedSolarValue in summary.solar', () => {
+    const intervals = [
+      ...makeDaySlots('2024-11-01T00:00:00Z', 48, {
+        importKwh: 5 / 48, generationKwh: 8 / 48, exportKwh: 3 / 48,
+        consumedKwh: 10 / 48, immersionDivertedKwh: 0,
+      }),
+      ...makeDaySlots('2024-11-02T00:00:00Z', 48, {
+        importKwh: 5 / 48, generationKwh: 8 / 48, exportKwh: 3 / 48,
+        consumedKwh: 10 / 48, immersionDivertedKwh: 0,
+      }),
+    ];
+    const allDates = allDatesInRange('2024-11-01', '2024-11-02');
+    const { summary } = computeRangeSummary(intervals, allDates, TZ, [baseTariff], []);
+    // 2 days × 1.635 = 3.27
+    expect(summary.solar.selfConsumedSolarValue).toBeCloseTo(3.27, 1);
+  });
+
+  it('returns zero selfConsumedSolarValue when no tariff', () => {
+    const intervals = makeDaySlots('2024-11-01T00:00:00Z', 48, STD);
+    const allDates = allDatesInRange('2024-11-01', '2024-11-01');
+    const { summary } = computeRangeSummary(intervals, allDates, TZ, [], []);
+    expect(summary.solar.selfConsumedSolarValue).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeRangeSummary — U-054 worked example
+// ---------------------------------------------------------------------------
+
+describe('computeRangeSummary — U-054 worked example', () => {
+  // One day, simplified to a single slot for clarity (48 identical slots, daily totals):
+  //   import = 2 kWh, generation = 5 kWh, export = 1 kWh, consumed = 6 kWh, immersion = 0
+  //   import rate = 0.30/kWh, export rate = 0.10/kWh, VAT = 0%, no fixed charges
+  //
+  // Expected:
+  //   selfConsumed            = gen − export − immersion = 5 − 1 − 0 = 4 kWh
+  //   selfConsumedSolarValue  = 4 × 0.30 = €1.20
+  //   exportCredit            = 1 × 0.10 = €0.10
+  //   totalSolarValue         = 1.20 + 0.10 = €1.30
+  //   importCost              = 2 × 0.30 = €0.60
+  //   netEnergyBill           = importCost − exportCredit = 0.60 − 0.10 = €0.50
+  //   withoutSolarImport      = import + gen − export − immersion = 2+5−1−0 = 6 kWh
+  //   withoutSolarCost        = 6 × 0.30 = €1.80
+  //   billReductionFromSolar  = withoutSolarCost − netEnergyBill = 1.80 − 0.50 = €1.30
+  //   (= totalSolarValue ✓)
+
+  const noVatTariff: ScheduledTariffVersion = {
+    ...baseTariff,
+    id: 'tariff-no-vat',
+    vatRate: 0,
+    exportRate: 0.10,
+    dayRate: 0.30,
+  };
+
+  const intervals = makeDaySlots('2024-11-01T00:00:00Z', 48, {
+    importKwh: 2 / 48,
+    generationKwh: 5 / 48,
+    exportKwh: 1 / 48,
+    consumedKwh: 6 / 48,
+    immersionDivertedKwh: 0,
+  });
+
+  it('selfConsumedSolarValue = self-consumed kWh × import rate', () => {
+    const allDates = allDatesInRange('2024-11-01', '2024-11-01');
+    const { series } = computeRangeSummary(intervals, allDates, TZ, [noVatTariff], []);
+    expect(series[0].billing!.selfConsumedSolarValue).toBeCloseTo(1.20, 2);
+  });
+
+  it('totalSolarValue = selfConsumedSolarValue + exportCredit', () => {
+    const allDates = allDatesInRange('2024-11-01', '2024-11-01');
+    const { series } = computeRangeSummary(intervals, allDates, TZ, [noVatTariff], []);
+    const b = series[0].billing!;
+    const totalSolarValue = b.selfConsumedSolarValue + b.exportCredit;
+    expect(totalSolarValue).toBeCloseTo(1.30, 2);
+  });
+
+  it('billReductionFromSolar = totalSolarValue (per-slot pricing equivalence)', () => {
+    const allDates = allDatesInRange('2024-11-01', '2024-11-01');
+    const { series } = computeRangeSummary(intervals, allDates, TZ, [noVatTariff], []);
+    const b = series[0].billing!;
+    const netEnergyBill = b.importCost - b.exportCredit;           // 0.60 − 0.10 = 0.50
+    const withoutSolarNetCost = b.actualNetCost + b.savings;        // approximation
+    const billReduction = withoutSolarNetCost - netEnergyBill;
+    const totalSolarValue = b.selfConsumedSolarValue + b.exportCredit;
+    // With per-slot same-rate pricing, billReduction and totalSolarValue are equal
+    expect(billReduction).toBeCloseTo(totalSolarValue, 2);
+  });
+
+  it('importCost is the tariff-priced actual import bill before export credit', () => {
+    const allDates = allDatesInRange('2024-11-01', '2024-11-01');
+    const { series } = computeRangeSummary(intervals, allDates, TZ, [noVatTariff], []);
+    expect(series[0].billing!.importCost).toBeCloseTo(0.60, 2);
+  });
+
+  it('exportCredit is the tariff-priced value of exported energy', () => {
+    const allDates = allDatesInRange('2024-11-01', '2024-11-01');
+    const { series } = computeRangeSummary(intervals, allDates, TZ, [noVatTariff], []);
+    expect(series[0].billing!.exportCredit).toBeCloseTo(0.10, 2);
   });
 });

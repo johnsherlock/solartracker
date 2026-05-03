@@ -5,6 +5,7 @@ import {
   getPreviousLocalDate,
   isAfterMidnightBuffer,
   expectedMinutesForDay,
+  isPartialDay,
   utcStartOfLocalDate,
   aggregateToIntervalReadings,
 } from '../derive-summary';
@@ -142,6 +143,25 @@ describe('expectedMinutesForDay', () => {
 
   it('returns 1500 for the fall-back day (2024-10-27, 25-hour day)', () => {
     expect(expectedMinutesForDay('2024-10-27', 'Europe/Dublin')).toBe(1500);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isPartialDay
+// ---------------------------------------------------------------------------
+
+describe('isPartialDay', () => {
+  it('returns false at exactly 90% coverage', () => {
+    expect(isPartialDay(1296, 1440)).toBe(false);
+  });
+
+  it('returns true below 90% coverage', () => {
+    expect(isPartialDay(1295, 1440)).toBe(true);
+  });
+
+  it('handles DST-short days with the same threshold', () => {
+    expect(isPartialDay(1242, 1380)).toBe(false);
+    expect(isPartialDay(1241, 1380)).toBe(true);
   });
 });
 

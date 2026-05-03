@@ -527,43 +527,53 @@ export function RangePickerPopover({
 
         {activeTab === 'months' && (
           <>
-            <div className="mb-3 flex items-center justify-between">
-              <button
-                onClick={() => setMonthsYear((y) => y - 1)}
-                className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-                aria-label="Previous year"
-              >
-                <ChevronLeft size={13} />
-              </button>
-              <span className="text-xs font-semibold text-slate-300">{monthsYear}</span>
-              <button
-                onClick={() => setMonthsYear((y) => y + 1)}
-                className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-                aria-label="Next year"
-              >
-                <ChevronRight size={13} />
-              </button>
-            </div>
+            {(() => {
+              const earliestYear = earliestDate ? parseInt(earliestDate.slice(0, 4)) : null;
+              const monthsBwdDisabled = earliestYear != null && monthsYear <= earliestYear;
+              return (
+                <div className="mb-3 flex items-center justify-between">
+                  <button
+                    onClick={() => setMonthsYear((y) => y - 1)}
+                    disabled={monthsBwdDisabled}
+                    className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                    aria-label="Previous year"
+                  >
+                    <ChevronLeft size={13} />
+                  </button>
+                  <span className="text-xs font-semibold text-slate-300">{monthsYear}</span>
+                  <button
+                    onClick={() => setMonthsYear((y) => y + 1)}
+                    disabled={monthsYear >= todayYear}
+                    className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                    aria-label="Next year"
+                  >
+                    <ChevronRight size={13} />
+                  </button>
+                </div>
+              );
+            })()}
             <div className="grid grid-cols-3 gap-1.5">
               {MONTH_ABBR.map((abbr, idx) => {
                 const { from, to } = calendarMonthBounds(monthsYear, idx);
                 const isFuture = from > today;
+                const isBefore = earliestDate ? to < earliestDate : false;
+                const isDisabled = isFuture || isBefore;
                 const isSelected = activeRange?.mode === 'months' && activeRange?.from === from;
                 return (
                   <button
                     key={abbr}
-                    disabled={isFuture}
+                    disabled={isDisabled}
                     onClick={() => {
-                      if (!isFuture) {
+                      if (!isDisabled) {
                         onNavigate({ type: 'range', range: { mode: 'months', from, to: to > today ? today : to } });
                       }
                     }}
                     className={[
                       'rounded-xl py-2 text-xs font-medium transition-colors',
-                      isFuture ? 'cursor-default opacity-25 text-slate-600' : 'cursor-pointer',
+                      isDisabled ? 'cursor-default opacity-25 text-slate-600' : 'cursor-pointer',
                       isSelected
                         ? 'bg-emerald-700 text-white'
-                        : isFuture ? '' : 'text-slate-300 hover:bg-slate-800',
+                        : isDisabled ? '' : 'text-slate-300 hover:bg-slate-800',
                     ].join(' ')}
                   >
                     {abbr}
@@ -576,45 +586,55 @@ export function RangePickerPopover({
 
         {activeTab === 'years' && (
           <>
-            <div className="mb-3 flex items-center justify-between">
-              <button
-                onClick={() => setDecStart((s) => s - 10)}
-                className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-                aria-label="Previous decade"
-              >
-                <ChevronLeft size={13} />
-              </button>
-              <span className="text-xs font-semibold text-slate-300">
-                {decStart} – {decStart + 9}
-              </span>
-              <button
-                onClick={() => setDecStart((s) => s + 10)}
-                className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-                aria-label="Next decade"
-              >
-                <ChevronRight size={13} />
-              </button>
-            </div>
+            {(() => {
+              const earliestYear = earliestDate ? parseInt(earliestDate.slice(0, 4)) : null;
+              const yearsBwdDisabled = earliestYear != null && decStart <= decadeStart(earliestYear);
+              return (
+                <div className="mb-3 flex items-center justify-between">
+                  <button
+                    onClick={() => setDecStart((s) => s - 10)}
+                    disabled={yearsBwdDisabled}
+                    className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                    aria-label="Previous decade"
+                  >
+                    <ChevronLeft size={13} />
+                  </button>
+                  <span className="text-xs font-semibold text-slate-300">
+                    {decStart} – {decStart + 9}
+                  </span>
+                  <button
+                    onClick={() => setDecStart((s) => s + 10)}
+                    disabled={decStart >= decadeStart(todayYear)}
+                    className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                    aria-label="Next decade"
+                  >
+                    <ChevronRight size={13} />
+                  </button>
+                </div>
+              );
+            })()}
             <div className="grid grid-cols-3 gap-1.5">
               {Array.from({ length: 10 }, (_, i) => decStart + i).map((year) => {
                 const { from, to } = yearBounds(year);
                 const isFuture = from > today;
+                const isBefore = earliestDate ? to < earliestDate : false;
+                const isDisabled = isFuture || isBefore;
                 const isSelected = activeRange?.mode === 'years' && activeRange?.from.slice(0, 4) === String(year);
                 return (
                   <button
                     key={year}
-                    disabled={isFuture}
+                    disabled={isDisabled}
                     onClick={() => {
-                      if (!isFuture) {
+                      if (!isDisabled) {
                         onNavigate({ type: 'range', range: { mode: 'years', from, to: to > today ? today : to } });
                       }
                     }}
                     className={[
                       'rounded-xl py-2 text-xs font-medium transition-colors',
-                      isFuture ? 'cursor-default opacity-25 text-slate-600' : 'cursor-pointer',
+                      isDisabled ? 'cursor-default opacity-25 text-slate-600' : 'cursor-pointer',
                       isSelected
                         ? 'bg-emerald-700 text-white'
-                        : isFuture ? '' : 'text-slate-300 hover:bg-slate-800',
+                        : isDisabled ? '' : 'text-slate-300 hover:bg-slate-800',
                     ].join(' ')}
                   >
                     {year}

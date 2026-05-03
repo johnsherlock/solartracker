@@ -29,6 +29,7 @@ import {
   getPreviousLocalDate,
   isAfterMidnightBuffer,
   expectedMinutesForDay,
+  isPartialDay,
   utcStartOfLocalDate,
   aggregateToIntervalReadings,
   type IntervalSlot,
@@ -174,7 +175,7 @@ async function summariseInstallation(
   await upsertIntervalReadings(inst.installationId, slots);
 
   const totalReadingCount = slots.reduce((s, slot) => s + slot.readingCount, 0);
-  const isPartial = totalReadingCount < expected;
+  const isPartial = isPartialDay(totalReadingCount, expected);
 
   return {
     ...base,
