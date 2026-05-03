@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import {
   calculateIntervalExportCredit,
   calculateIntervalImportCost,
@@ -167,21 +167,21 @@ export async function loadTariffContext(
   date: string,
 ): Promise<TariffContext | null> {
   const { db, tariffPlans, tariffPlanVersions } = await getDbDeps();
+
+  // Load all plans for the installation — there may be one per tariff year.
   const planRows = await db
     .select()
     .from(tariffPlans)
-    .where(eq(tariffPlans.installationId, installationId))
-    .limit(1);
+    .where(eq(tariffPlans.installationId, installationId));
 
   if (planRows.length === 0) return null;
-  const plan = planRows[0];
 
+  // Load all versions across all plans, then find the one covering the date.
   const allVersions = await db
     .select()
     .from(tariffPlanVersions)
-    .where(eq(tariffPlanVersions.tariffPlanId, plan.id));
+    .where(inArray(tariffPlanVersions.tariffPlanId, planRows.map((p) => p.id)));
 
-  // Find the version whose validity window covers the requested date.
   const active = allVersions.find(
     (v) =>
       v.validFromLocalDate <= date &&
@@ -189,6 +189,8 @@ export async function loadTariffContext(
   );
 
   if (!active) return null;
+
+  const plan = planRows.find((p) => p.id === active.tariffPlanId)!;
 
   return {
     versionId: active.id,
