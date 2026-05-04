@@ -21,6 +21,7 @@ import {
   normalizeSeries,
   formatDayValue,
   extractExportCredit,
+  extractImmersionValue,
   findBestDates,
   getMetricHue,
   interpolateBarColor,
@@ -210,8 +211,21 @@ export function CalendarScreen({
     const firstBestDate = [...bestDates].sort()[0];
     const normalized = normalizedMap.get(firstBestDate);
     if (!normalized || normalized.rawValue === null) return null;
-    return `${formatDayMD(firstBestDate)} (${formatDayValue(normalized.rawValue, activeMetric, currency)})`;
-  }, [bestDates, normalizedMap, activeMetric, currency]);
+    const primary = formatDayValue(normalized.rawValue, activeMetric, currency);
+    const bestDay = activeSeries.find((d) => d.date === firstBestDate);
+    const formatSecondary = (v: number) => new Intl.NumberFormat('en-IE', {
+      style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2,
+    }).format(v);
+    if (activeMetric === 'export_kwh') {
+      const credit = bestDay ? extractExportCredit(bestDay) : null;
+      if (credit !== null) return `${formatDayMD(firstBestDate)} (${primary} | ${formatSecondary(credit)})`;
+    }
+    if (activeMetric === 'immersion_kwh') {
+      const value = bestDay ? extractImmersionValue(bestDay) : null;
+      if (value !== null) return `${formatDayMD(firstBestDate)} (${primary} | ${formatSecondary(value)})`;
+    }
+    return `${formatDayMD(firstBestDate)} (${primary})`;
+  }, [bestDates, normalizedMap, activeMetric, currency, activeSeries]);
 
   // ---------------------------------------------------------------------------
   // Year total
@@ -255,16 +269,28 @@ export function CalendarScreen({
     }
     if (!hasAny) return null;
 
+    const formatCurrencyVal = (v: number) => new Intl.NumberFormat('en-IE', {
+      style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2,
+    }).format(v);
+
     if (activeMetric === 'export_kwh') {
       let creditSum = 0;
       for (const day of activeSeries) {
         const c = extractExportCredit(day);
         if (c !== null) creditSum += c;
       }
-      const creditFormatted = new Intl.NumberFormat('en-IE', {
-        style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2,
-      }).format(creditSum);
-      return { value: formatDayValue(sum, activeMetric, currency), secondaryValue: creditFormatted, label: baseLabel };
+      return { value: formatDayValue(sum, activeMetric, currency), secondaryValue: formatCurrencyVal(creditSum), label: baseLabel };
+    }
+
+    if (activeMetric === 'immersion_kwh') {
+      let valueSum = 0;
+      for (const day of activeSeries) {
+        const v = extractImmersionValue(day);
+        if (v !== null) valueSum += v;
+      }
+      if (valueSum > 0) {
+        return { value: formatDayValue(sum, activeMetric, currency), secondaryValue: formatCurrencyVal(valueSum), label: baseLabel };
+      }
     }
 
     return { value: formatDayValue(sum, activeMetric, currency), label: baseLabel };
@@ -295,13 +321,20 @@ export function CalendarScreen({
       }
 
       let secondaryFormatted: string | undefined;
+      const day = activeSeries.find((d) => d.date === date);
       if (activeMetric === 'export_kwh') {
-        const day = activeSeries.find((d) => d.date === date);
         const credit = day ? extractExportCredit(day) : null;
         if (credit !== null) {
           secondaryFormatted = new Intl.NumberFormat('en-IE', {
             style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2,
           }).format(credit);
+        }
+      } else if (activeMetric === 'immersion_kwh') {
+        const value = day ? extractImmersionValue(day) : null;
+        if (value !== null) {
+          secondaryFormatted = new Intl.NumberFormat('en-IE', {
+            style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2,
+          }).format(value);
         }
       }
       setTooltip({ date, rawValue: normalized.rawValue, secondaryFormatted, x, y });

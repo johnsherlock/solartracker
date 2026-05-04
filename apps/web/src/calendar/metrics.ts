@@ -104,6 +104,30 @@ export function extractExportCredit(day: RangeSeriesDay): number | null {
   return day.billing?.exportCredit ?? null;
 }
 
+/**
+ * Secondary value for the Immersion metric — the estimated € value of
+ * diverted energy, computed at the day's average paid import rate.
+ * Falls back to the self-consumed solar rate when there were no paid imports.
+ */
+export function extractImmersionValue(day: RangeSeriesDay): number | null {
+  if (!day.hasSummary || !day.billing) return null;
+  const immersionKwh = day.immersionDivertedKwh;
+  if (!immersionKwh || immersionKwh <= 0) return null;
+
+  const paidImportKwh = day.importKwh - day.billing.freeImportKwh;
+  if (paidImportKwh > 0) {
+    return immersionKwh * (day.billing.importCost / paidImportKwh);
+  }
+
+  // Fallback: derive rate from self-consumed solar value
+  const selfConsumedKwh = Math.max(0, day.generatedKwh - day.exportKwh);
+  if (selfConsumedKwh > 0 && day.billing.selfConsumedSolarValue > 0) {
+    return immersionKwh * (day.billing.selfConsumedSolarValue / selfConsumedKwh);
+  }
+
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Normalization
 // ---------------------------------------------------------------------------
