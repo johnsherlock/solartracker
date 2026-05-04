@@ -207,7 +207,7 @@ export function CalendarScreen({
   );
 
   const bestDayLabel = useMemo(() => {
-    if (activeMetric === 'prorata_coverage' || bestDates.size === 0) return null;
+    if (bestDates.size === 0) return null;
     const firstBestDate = [...bestDates].sort()[0];
     const normalized = normalizedMap.get(firstBestDate);
     if (!normalized || normalized.rawValue === null) return null;

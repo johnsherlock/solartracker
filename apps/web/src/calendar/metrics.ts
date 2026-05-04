@@ -221,12 +221,10 @@ export function isLowerBetter(metric: CalendarMetric): boolean {
 
 /**
  * Returns the set of dates that share the best value for the metric.
- * Returns an empty set for prorata_coverage (no single "best day" concept).
  * For lower-is-better metrics the best day has the minimum raw value.
- * For all others the best day has the maximum raw value (> 0).
+ * For all others (including prorata_coverage) the best day has the maximum raw value (> 0).
  */
 export function findBestDates(days: NormalizedDay[], metric: CalendarMetric): Set<string> {
-  if (metric === 'prorata_coverage') return new Set();
 
   const withData = days.filter((d) => d.rawValue !== null);
   if (withData.length === 0) return new Set();
