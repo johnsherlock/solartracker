@@ -16,13 +16,16 @@ export type CalendarMetricDescriptor = {
 
 export const CALENDAR_METRICS: CalendarMetricDescriptor[] = [
   { id: 'generation_kwh',       label: 'Generation',          requiresTariff: false, requiresFinance: false },
+  { id: 'consumed_kwh',         label: 'Consumed',            requiresTariff: false, requiresFinance: false },
   { id: 'self_consumed_kwh',    label: 'Self-consumed',        requiresTariff: false, requiresFinance: false },
-  { id: 'self_consumed_value',  label: 'Solar value',          requiresTariff: true,  requiresFinance: false },
+  { id: 'self_consumed_value',  label: 'Onsite solar value',   requiresTariff: true,  requiresFinance: false },
+  { id: 'total_solar_value',    label: 'Total solar value',    requiresTariff: true,  requiresFinance: false },
   { id: 'solar_coverage',       label: 'Solar coverage',       requiresTariff: false, requiresFinance: false },
   { id: 'import_kwh',           label: 'Import',               requiresTariff: false, requiresFinance: false },
   { id: 'import_cost',          label: 'Import cost',          requiresTariff: true,  requiresFinance: false },
   { id: 'export_kwh',           label: 'Export',               requiresTariff: false, requiresFinance: false },
   { id: 'immersion_kwh',        label: 'Immersion',            requiresTariff: false, requiresFinance: false },
+  { id: 'net_energy_bill',      label: 'Net energy bill',      requiresTariff: true,  requiresFinance: false },
   { id: 'net_solar_position',   label: 'Net solar position',   requiresTariff: true,  requiresFinance: false },
   { id: 'prorata_coverage',     label: 'Repayment coverage',   requiresTariff: true,  requiresFinance: true  },
 ];
@@ -56,6 +59,9 @@ export function extractDayValue(
     case 'generation_kwh':
       return day.generatedKwh;
 
+    case 'consumed_kwh':
+      return day.consumedKwh;
+
     case 'self_consumed_kwh': {
       const sc = day.generatedKwh - day.exportKwh;
       return Math.max(0, sc);
@@ -63,6 +69,9 @@ export function extractDayValue(
 
     case 'self_consumed_value':
       return day.billing?.selfConsumedSolarValue ?? null;
+
+    case 'total_solar_value':
+      return day.billing ? day.billing.selfConsumedSolarValue + day.billing.exportCredit : null;
 
     case 'solar_coverage': {
       if (!day.consumedKwh || day.consumedKwh <= 0) return null;
@@ -79,8 +88,14 @@ export function extractDayValue(
     case 'export_kwh':
       return day.exportKwh;
 
+    case 'export_credit':
+      return day.billing?.exportCredit ?? null;
+
     case 'immersion_kwh':
       return day.immersionDivertedKwh ?? null;
+
+    case 'net_energy_bill':
+      return day.billing?.actualNetCost ?? null;
 
     case 'net_solar_position':
       return day.billing?.savings ?? null;
@@ -125,6 +140,20 @@ export function extractImmersionValue(day: RangeSeriesDay): number | null {
     return immersionKwh * (day.billing.selfConsumedSolarValue / selfConsumedKwh);
   }
 
+  return null;
+}
+
+/**
+ * Secondary export-equivalent value for the Immersion metric — what the
+ * diverted immersion energy would have earned if it had been exported instead.
+ */
+export function extractImmersionExportEquivalent(day: RangeSeriesDay): number | null {
+  if (!day.hasSummary || !day.billing) return null;
+  const immersionKwh = day.immersionDivertedKwh;
+  if (!immersionKwh || immersionKwh <= 0) return null;
+  if (day.exportKwh > 0 && day.billing.exportCredit > 0) {
+    return immersionKwh * (day.billing.exportCredit / day.exportKwh);
+  }
   return null;
 }
 
@@ -188,6 +217,7 @@ export function formatDayValue(
 ): string {
   switch (metric) {
     case 'generation_kwh':
+    case 'consumed_kwh':
     case 'self_consumed_kwh':
     case 'import_kwh':
     case 'export_kwh':
@@ -195,7 +225,10 @@ export function formatDayValue(
       return `${rawValue.toFixed(2)} kWh`;
 
     case 'self_consumed_value':
+    case 'total_solar_value':
     case 'import_cost':
+    case 'export_credit':
+    case 'net_energy_bill':
     case 'net_solar_position':
       return new Intl.NumberFormat('en-IE', {
         style: 'currency',
@@ -216,7 +249,7 @@ export function formatDayValue(
 
 /** True for metrics where a lower value is better (import kWh / cost). */
 export function isLowerBetter(metric: CalendarMetric): boolean {
-  return metric === 'import_kwh' || metric === 'import_cost';
+  return metric === 'import_kwh' || metric === 'import_cost' || metric === 'net_energy_bill';
 }
 
 /**
@@ -247,13 +280,17 @@ export function findBestDates(days: NormalizedDay[], metric: CalendarMetric): Se
 export function getMetricHue(metric: CalendarMetric): number {
   switch (metric) {
     case 'generation_kwh':      return 45;   // amber / yellow
+    case 'consumed_kwh':        return 20;   // orange
     case 'self_consumed_kwh':   return 140;  // green
     case 'self_consumed_value': return 152;  // emerald
+    case 'total_solar_value':   return 165;  // teal / emerald
     case 'import_kwh':          return 215;  // blue
     case 'import_cost':         return 350;  // rose / red
     case 'export_kwh':          return 198;  // sky
+    case 'export_credit':       return 188;  // cyan
     case 'solar_coverage':      return 28;   // orange
     case 'immersion_kwh':       return 330;  // pink
+    case 'net_energy_bill':     return 12;   // warm red
     case 'net_solar_position':  return 152;  // emerald
     case 'prorata_coverage':    return 145;  // green
   }

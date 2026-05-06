@@ -1,9 +1,17 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import Link from 'next/link';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { EChart } from '@/src/live/EChartsWrapper';
 import { ChevronRight, Eye, EyeOff } from 'lucide-react';
-import type { CostPoint, FinancialEstimate, LivePoint } from '@/src/live/loader';
+import type {
+  CostPoint,
+  FinancialEstimate,
+  GenerationRank,
+  HistoricalMetricRanks,
+  LivePoint,
+} from '@/src/live/loader';
+import type { CalendarMetric } from '@/src/calendar/types';
 import {
   SERIES_ORDER,
   SERIES_COLORS,
@@ -53,6 +61,53 @@ export {
 import type { Resolution, ViewMode, SeriesKey } from '@/src/live/chartUtils';
 
 type ScreenState = 'healthy' | 'stale' | 'warning' | 'disconnected';
+type TrendDirection = 'up' | 'down' | 'same';
+type TrendStrength = 'light' | 'medium' | 'strong';
+type TrendIndicatorData = {
+  direction: TrendDirection;
+  strength: TrendStrength;
+};
+
+function trendTone(trend: TrendIndicatorData): string {
+  if (trend.direction === 'same') {
+    return trend.strength === 'strong'
+      ? 'text-amber-200'
+      : trend.strength === 'medium'
+        ? 'text-amber-300'
+        : 'text-amber-400';
+  }
+
+  if (trend.direction === 'up') {
+    return trend.strength === 'strong'
+      ? 'text-emerald-200'
+      : trend.strength === 'medium'
+        ? 'text-emerald-300'
+        : 'text-emerald-400';
+  }
+
+  return trend.strength === 'strong'
+    ? 'text-rose-200'
+    : trend.strength === 'medium'
+      ? 'text-rose-300'
+      : 'text-rose-400';
+}
+
+function trendArrow(trend: TrendIndicatorData): string {
+  if (trend.direction === 'same') return '→';
+  return trend.direction === 'up' ? '↑' : '↓';
+}
+
+function TrendPill({ trend }: { trend?: TrendIndicatorData }) {
+  if (!trend) {
+    return <span className="text-right font-mono text-sm text-slate-600">—</span>;
+  }
+
+  return (
+    <span className={`text-right font-mono text-xl font-bold leading-none ${trendTone(trend)}`}>
+      {trendArrow(trend)}
+    </span>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // ToggleGroup
@@ -96,6 +151,7 @@ export function DayTrendChart({
   mode,
   data,
   costData,
+  sunMarkers,
   screenState,
   resolution,
   onResolutionChange,
@@ -103,10 +159,15 @@ export function DayTrendChart({
   onViewModeChange,
   activeSeries,
   onToggleSeries,
+  footer,
 }: {
   mode: 'live' | 'historical';
   data: LivePoint[];
   costData: CostPoint[];
+  sunMarkers?: {
+    energy: { time: string; label: string }[];
+    cost: { time: string; label: string }[];
+  };
   screenState: ScreenState;
   resolution: Resolution;
   onResolutionChange: (resolution: Resolution) => void;
@@ -114,6 +175,7 @@ export function DayTrendChart({
   onViewModeChange: (viewMode: ViewMode) => void;
   activeSeries: SeriesKey[];
   onToggleSeries: (series: SeriesKey) => void;
+  footer?: ReactNode;
 }) {
   const [hoveredSeries, setHoveredSeries] = useState<SeriesKey | null>(null);
   const isStale = screenState === 'stale' || screenState === 'warning';
@@ -126,15 +188,27 @@ export function DayTrendChart({
   const title = mode === 'historical' ? 'Energy trend' : 'Live trend';
   const emptyLabel = mode === 'historical' ? 'No data for this day' : 'No live data available';
 
-  const energyOption = buildEnergyTrendOption(
-    data,
-    activeSeries,
-    viewMode,
-    resolution,
-    hoveredSeries,
+  const energyOption = useMemo(
+    () =>
+      buildEnergyTrendOption(
+        data,
+        activeSeries,
+        viewMode,
+        resolution,
+        hoveredSeries,
+        sunMarkers?.energy,
+      ),
+    [activeSeries, data, hoveredSeries, resolution, sunMarkers, viewMode],
   );
 
-  const costOption = buildCostOption(costData, viewMode);
+  const costOption = useMemo(
+    () => buildCostOption(costData, viewMode, sunMarkers?.cost),
+    [costData, sunMarkers, viewMode],
+  );
+  const resolutionOptions =
+    mode === 'historical'
+      ? (['1min', '30min'] as const)
+      : (['1min', '30min', '1hour'] as const);
 
   return (
     <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5 shadow-[0_30px_70px_rgba(2,6,23,0.34)]">
@@ -150,10 +224,10 @@ export function DayTrendChart({
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-row flex-wrap items-center gap-2 xl:flex-nowrap">
           <ToggleGroup
             value={resolution}
-            options={['1min', '30min', '1hour'] as const}
+            options={resolutionOptions}
             onChange={onResolutionChange}
             renderLabel={formatResolutionLabel}
           />
@@ -231,7 +305,7 @@ export function DayTrendChart({
             Energy value
           </p>
           <p className="mt-1 text-sm text-slate-400">
-            Half-hour import cost, solar savings, and export value through the day.
+            Half-hour import cost, self-consumed solar value, and export value through the day.
           </p>
         </div>
         <div
@@ -253,6 +327,8 @@ export function DayTrendChart({
           )}
         </div>
       </div>
+
+      {footer ? <div className="mt-5 border-t border-slate-800/80 pt-5">{footer}</div> : null}
     </div>
   );
 }
@@ -261,14 +337,30 @@ export function DayTrendChart({
 // DayValuePanel
 // ---------------------------------------------------------------------------
 
+function buildCalendarMetricUrl(selectedDate: string, metric: CalendarMetric): string {
+  return `/calendar?year=${selectedDate.slice(0, 4)}&metric=${metric}`;
+}
+
+function formatRank(rank: GenerationRank | undefined): string {
+  return rank ? `#${rank.rank}` : '—';
+}
+
 export function DayValuePanel({
   mode,
   hasTariff,
   estimate,
+  selectedDate,
+  rankings,
+  repaymentCoverage,
+  trends,
 }: {
   mode: 'live' | 'historical';
   hasTariff: boolean;
   estimate: FinancialEstimate | null;
+  selectedDate?: string;
+  rankings?: HistoricalMetricRanks;
+  repaymentCoverage?: { amount: number; percent: number } | null;
+  trends?: Partial<Record<string, TrendIndicatorData>>;
 }) {
   if (!hasTariff || !estimate) {
     return (
@@ -285,31 +377,51 @@ export function DayValuePanel({
           Keep the live energy view useful now, then layer in cost, export value, and savings once
           the tariff setup is complete.
         </p>
-        <button className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-amber-300">
+        <Link href="/settings/tariffs" className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-amber-300">
           Add tariff details <ChevronRight size={14} />
-        </button>
+        </Link>
       </div>
     );
   }
 
   const items = [
-    { label: 'Import cost', value: formatEuro(estimate.importCost), tone: 'text-rose-300' },
+    {
+      label: 'Import cost',
+      value: formatEuro(estimate.importCost),
+      tone: 'text-rose-300',
+      metric: 'import_cost' as const,
+      trendKey: 'import_cost',
+    },
     {
       label: 'Export credit',
       value: formatEuro(estimate.exportCredit),
       tone: 'text-emerald-300',
+      metric: 'export_credit' as const,
+      trendKey: 'export_credit',
     },
     {
-      label: 'Solar savings',
+      label: 'Onsite solar value',
       value: formatEuro(estimate.solarSavings),
       tone: 'text-amber-300',
+      metric: 'self_consumed_value' as const,
+      trendKey: 'onsite_solar_value',
     },
     {
-      label: 'Net bill impact',
+      label: 'Net energy bill',
       value: formatEuro(estimate.netBillImpact, true),
       tone: estimate.netBillImpact <= 0 ? 'text-emerald-300' : 'text-cyan-300',
+      metric: 'net_energy_bill' as const,
+      trendKey: 'net_energy_bill',
     },
   ];
+  const showRankings = mode === 'historical' && !!selectedDate && !!rankings;
+  const repaymentRank = rankings?.prorata_coverage;
+  const showTrends = !!trends;
+  const gridClass = showRankings
+    ? 'grid grid-cols-[minmax(0,1fr)_120px_32px_44px] items-baseline gap-3'
+    : showTrends
+      ? 'grid grid-cols-[minmax(0,1fr)_120px_32px] items-baseline gap-3'
+      : 'flex items-baseline justify-between gap-3';
 
   return (
     <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
@@ -320,22 +432,72 @@ export function DayValuePanel({
         {mode === 'historical' ? 'Cost and savings' : 'Cost and savings so far'}
       </h3>
       <div className="mt-4 space-y-3">
-        {items.map((item) => (
-          <div key={item.label} className="flex items-baseline justify-between gap-3">
-            <span className="text-sm text-slate-400">{item.label}</span>
-            <span className={`font-mono text-sm font-semibold ${item.tone}`}>{item.value}</span>
+        {(showRankings || showTrends) && (
+          <div
+            className={`${
+              showRankings
+                ? 'grid grid-cols-[minmax(0,1fr)_120px_32px_44px]'
+                : 'grid grid-cols-[minmax(0,1fr)_120px_32px]'
+            } gap-3 border-b border-slate-800/80 pb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500`}
+          >
+            <span>Metric</span>
+            <span className="text-right">Value</span>
+            {showTrends && <span className="text-right">Trend</span>}
+            {showRankings && <span className="text-right">Rank</span>}
           </div>
-        ))}
+        )}
+        {items.map((item) => {
+          const rank = item.metric ? rankings?.[item.metric] : undefined;
+          const trend = item.trendKey ? trends?.[item.trendKey] : undefined;
+          return (
+            <div
+              key={item.label}
+              className={gridClass}
+            >
+              <span className="text-sm text-slate-400">{item.label}</span>
+              <span className={`text-right font-mono text-sm font-semibold whitespace-nowrap ${item.tone}`}>{item.value}</span>
+              {showTrends && <TrendPill trend={trend} />}
+              {showRankings && selectedDate && item.metric && (
+                <Link
+                  href={buildCalendarMetricUrl(selectedDate, item.metric)}
+                  className="text-right font-mono text-sm font-semibold text-slate-300 transition-colors hover:text-sky-300"
+                >
+                  {formatRank(rank)}
+                </Link>
+              )}
+            </div>
+          );
+        })}
+        {mode === 'historical' && repaymentCoverage && (
+          <div className={`${gridClass} border-t border-slate-800/80 pt-3`}>
+            <span className="text-sm text-slate-400">Repayment coverage</span>
+            <span className="text-right font-mono text-xs font-semibold whitespace-nowrap text-violet-300 sm:text-sm">
+              {`${formatEuro(repaymentCoverage.amount)} (${repaymentCoverage.percent}%)`}
+            </span>
+            {showTrends && <TrendPill trend={trends?.prorata_coverage} />}
+            {showRankings && selectedDate ? (
+              <Link
+                href={buildCalendarMetricUrl(selectedDate, 'prorata_coverage')}
+                className="text-right font-mono text-sm font-semibold text-slate-300 transition-colors hover:text-sky-300"
+              >
+                {formatRank(repaymentRank)}
+              </Link>
+            ) : null}
+          </div>
+        )}
       </div>
       <details className="mt-4 rounded-2xl border border-slate-700/40 bg-slate-900/40 px-3 py-2 text-xs text-slate-400">
         <summary className="cursor-pointer list-none font-semibold text-amber-300">
           How these values are calculated
         </summary>
         <div className="mt-3 space-y-2 text-slate-300">
-          <p>Import cost = total imported kWh x active tariff rate x VAT.</p>
+          <p>Import cost = each half-hour imported kWh x that period&apos;s tariff rate x VAT, summed across the day.</p>
           <p>Export credit = total exported kWh x export rate.</p>
-          <p>Solar savings = generated minus exported kWh x active tariff rate x VAT.</p>
-          <p>Net bill impact = import cost - export credit.</p>
+          <p>Onsite solar value = each half-hour kWh used onsite from solar x that period&apos;s tariff rate x VAT, summed across the day.</p>
+          <p>Net energy bill = import cost - export credit.</p>
+          {mode === 'historical' && repaymentCoverage && (
+            <p>Repayment coverage = total solar value compared with that day&apos;s pro-rata repayment amount.</p>
+          )}
         </div>
       </details>
     </div>
@@ -358,24 +520,63 @@ export function DayTotalsPanel({
   mode,
   totals,
   screenState,
+  selectedDate,
+  rankings,
+  trends,
 }: {
   mode: 'live' | 'historical';
   totals: DayTotals | null;
   screenState: ScreenState;
+  selectedDate?: string;
+  rankings?: HistoricalMetricRanks;
+  trends?: Partial<Record<string, TrendIndicatorData>>;
 }) {
   const items = totals
     ? [
-        { label: 'Generated', value: formatKwh(totals.generatedKwh), tone: 'text-amber-300' },
-        { label: 'Consumed', value: formatKwh(totals.consumedKwh), tone: 'text-slate-200' },
-        { label: 'Imported', value: formatKwh(totals.importKwh), tone: 'text-slate-400' },
-        { label: 'Exported', value: formatKwh(totals.exportKwh), tone: 'text-emerald-300' },
+        {
+          label: 'Generated',
+          value: formatKwh(totals.generatedKwh),
+          tone: 'text-amber-300',
+          metric: 'generation_kwh' as const,
+          trendKey: 'generation_kwh',
+        },
+        {
+          label: 'Consumed',
+          value: formatKwh(totals.consumedKwh),
+          tone: 'text-slate-200',
+          metric: 'consumed_kwh' as const,
+          trendKey: 'consumed_kwh',
+        },
+        {
+          label: 'Imported',
+          value: formatKwh(totals.importKwh),
+          tone: 'text-slate-400',
+          metric: 'import_kwh' as const,
+          trendKey: 'import_kwh',
+        },
+        {
+          label: 'Exported',
+          value: formatKwh(totals.exportKwh),
+          tone: 'text-emerald-300',
+          metric: 'export_kwh' as const,
+          trendKey: 'export_kwh',
+        },
         {
           label: 'Immersion',
           value: formatKwh(totals.immersionDivertedKwh),
           tone: 'text-rose-300',
+          metric: 'immersion_kwh' as const,
+          trendKey: 'immersion_kwh',
         },
       ]
     : [];
+  const showRankings = mode === 'historical' && !!selectedDate && !!rankings;
+  const showTrends = !!trends;
+  const gridClass = showRankings
+    ? 'grid grid-cols-[minmax(0,1fr)_92px_32px_44px] items-baseline gap-3'
+    : showTrends
+      ? 'grid grid-cols-[minmax(0,1fr)_92px_32px] items-baseline gap-3'
+      : 'flex items-baseline justify-between gap-3';
 
   return (
     <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
@@ -386,22 +587,52 @@ export function DayTotalsPanel({
         {mode === 'historical' ? 'Final day totals' : 'The day is still building'}
       </h3>
       <div className="mt-4 space-y-3">
-        {items.map((item) => (
-          <div key={item.label} className="flex items-baseline justify-between gap-3">
-            <span className="text-sm text-slate-400">{item.label}</span>
-            <span className={`font-mono text-sm font-semibold ${item.tone}`}>{item.value}</span>
+        {(showRankings || showTrends) && (
+          <div
+            className={`${
+              showRankings
+                ? 'grid grid-cols-[minmax(0,1fr)_92px_32px_44px]'
+                : 'grid grid-cols-[minmax(0,1fr)_92px_32px]'
+            } gap-3 border-b border-slate-800/80 pb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500`}
+          >
+            <span>Metric</span>
+            <span className="text-right">Value</span>
+            {showTrends && <span className="text-right">Trend</span>}
+            {showRankings && <span className="text-right">Rank</span>}
           </div>
-        ))}
+        )}
+        {items.map((item) => {
+          const rank = item.metric ? rankings?.[item.metric] : undefined;
+          const trend = item.trendKey ? trends?.[item.trendKey] : undefined;
+          return (
+            <div
+              key={item.label}
+              className={gridClass}
+            >
+              <span className="text-sm text-slate-400">{item.label}</span>
+              <span className={`text-right font-mono text-sm font-semibold ${item.tone}`}>{item.value}</span>
+              {showTrends && <TrendPill trend={trend} />}
+              {showRankings && selectedDate && item.metric && (
+                <Link
+                  href={buildCalendarMetricUrl(selectedDate, item.metric)}
+                  className="text-right font-mono text-sm font-semibold text-slate-300 transition-colors hover:text-sky-300"
+                >
+                  {formatRank(rank)}
+                </Link>
+              )}
+            </div>
+          );
+        })}
       </div>
       {mode === 'live' && (screenState === 'stale' || screenState === 'warning') && (
         <div className="mt-4 rounded-2xl border border-orange-500/20 bg-orange-500/10 px-3 py-2 text-xs text-orange-200">
           Current-day totals may still change once the live feed stabilizes again.
         </div>
       )}
-      {mode === 'live' && (
-        <button className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-amber-300">
+      {mode === 'live' && selectedDate && (
+        <Link href={`/history/${selectedDate}`} className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-amber-300">
           View full day <ChevronRight size={14} />
-        </button>
+        </Link>
       )}
     </div>
   );
@@ -414,15 +645,21 @@ export function DayTotalsPanel({
 export function SolarCoveragePanel({
   mode,
   chartData,
-  currentSolarShare,
+  sunMarkers,
   overallSolarCoverage,
+  currentSolarShare,
   currentGridDraw,
+  historicalHoursAboveThreshold,
+  historicalDaylightCoverage,
 }: {
   mode: 'live' | 'historical';
   chartData: LivePoint[];
-  currentSolarShare: number;
+  sunMarkers?: { time: string; label: string }[];
   overallSolarCoverage: number | null;
-  currentGridDraw: number;
+  currentSolarShare?: number;
+  currentGridDraw?: number;
+  historicalHoursAboveThreshold?: number | null;
+  historicalDaylightCoverage?: number | null;
 }) {
   const coverageData = chartData.map((pt) => ({
     time: pt.time,
@@ -441,11 +678,33 @@ export function SolarCoveragePanel({
       ? 'Solar coverage for the day'
       : 'How much of the home solar has covered today';
 
-  const firstStatLabel = mode === 'historical' ? 'Final Solar Coverage' : 'Current Solar Coverage';
+  const firstStatLabel = mode === 'historical' ? 'Hours >80% Solar' : 'Current Solar Coverage';
   const secondStatLabel = mode === 'historical' ? "Day's Total Coverage" : "Today's Total Coverage";
-  const thirdStatLabel = mode === 'historical' ? 'Final Grid Draw' : 'Current Grid Draw';
+  const thirdStatLabel = mode === 'historical' ? 'Daylight Hours Coverage' : 'Current Grid Draw';
 
-  const coverageOption = buildCoverageOption(coverageData);
+  const firstStatValue =
+    mode === 'historical'
+      ? historicalHoursAboveThreshold != null
+        ? `${Number.isInteger(historicalHoursAboveThreshold) ? historicalHoursAboveThreshold.toFixed(0) : historicalHoursAboveThreshold.toFixed(1)}h`
+        : '—'
+      : `${currentSolarShare ?? 0}%`;
+
+  const thirdStatValue =
+    mode === 'historical'
+      ? historicalDaylightCoverage != null
+        ? `${historicalDaylightCoverage}%`
+        : '—'
+      : `${currentGridDraw ?? 100}%`;
+
+  const coverageSunMarkers = useMemo(
+    () => sunMarkers?.filter((marker) => marker.label !== 'Solar noon'),
+    [sunMarkers],
+  );
+
+  const coverageOption = useMemo(
+    () => buildCoverageOption(coverageData, coverageSunMarkers),
+    [coverageData, coverageSunMarkers],
+  );
 
   return (
     <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
@@ -470,7 +729,7 @@ export function SolarCoveragePanel({
         <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2">
           <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">{firstStatLabel}</p>
           <p className="mt-1 font-mono text-lg font-semibold text-amber-300">
-            {currentSolarShare}%
+            {firstStatValue}
           </p>
         </div>
         <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2">
@@ -483,7 +742,7 @@ export function SolarCoveragePanel({
         </div>
         <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2">
           <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">{thirdStatLabel}</p>
-          <p className="mt-1 font-mono text-lg font-semibold text-slate-300">{currentGridDraw}%</p>
+          <p className="mt-1 font-mono text-lg font-semibold text-slate-300">{thirdStatValue}</p>
         </div>
       </div>
     </div>

@@ -11,6 +11,7 @@ import {
   formatDayValue,
   extractExportCredit,
   extractImmersionValue,
+  extractImmersionExportEquivalent,
   findBestDates,
   getMetricHue,
   interpolateBarColor,
@@ -71,6 +72,13 @@ export function YearHeatMap({ series, year, today, repaymentSchedules, currency 
   const numCols = useMemo(() => totalColumns(year), [year]);
 
   const metricHue = getMetricHue(activeMetric);
+  const metricRows = useMemo(() => {
+    const splitIndex = Math.ceil(CALENDAR_METRICS.length / 2);
+    return [
+      CALENDAR_METRICS.slice(0, splitIndex),
+      CALENDAR_METRICS.slice(splitIndex),
+    ];
+  }, []);
 
   const bestDates = useMemo(
     () => findBestDates([...normalizedMap.values()], activeMetric),
@@ -93,12 +101,12 @@ export function YearHeatMap({ series, year, today, repaymentSchedules, currency 
     }
     if (activeMetric === 'immersion_kwh') {
       const value = bestDay ? extractImmersionValue(bestDay) : null;
-      if (value !== null) return `${formatDayMD(firstBestDate)} (${primary} | ${formatSecondary(value)})`;
+      if (value !== null) return `${formatDayMD(firstBestDate)} (${primary} | ${formatSecondary(value)} import)`;
     }
     return `${formatDayMD(firstBestDate)} (${primary})`;
   }, [bestDates, normalizedMap, activeMetric, currency, series]);
 
-  const yearSummary = useMemo((): { value: string; secondaryValue?: string; label: string } | null => {
+  const yearSummary = useMemo((): { value: string; secondaryValues?: string[]; label: string } | null => {
     const metricLabel = CALENDAR_METRICS.find((m) => m.id === activeMetric)?.label ?? '';
     const baseLabel = `${metricLabel} — ${year} total`;
 
@@ -142,18 +150,26 @@ export function YearHeatMap({ series, year, today, repaymentSchedules, currency 
         const c = extractExportCredit(day);
         if (c !== null) creditSum += c;
       }
-      return { value: formatDayValue(sum, activeMetric, currency), secondaryValue: formatCurrencyVal(creditSum), label: baseLabel };
+      return { value: formatDayValue(sum, activeMetric, currency), secondaryValues: creditSum > 0 ? [formatCurrencyVal(creditSum)] : undefined, label: baseLabel };
     }
 
     if (activeMetric === 'immersion_kwh') {
-      let valueSum = 0;
+      let importEquivalentSum = 0;
+      let exportEquivalentSum = 0;
       for (const day of series) {
-        const v = extractImmersionValue(day);
-        if (v !== null) valueSum += v;
+        const importEquivalent = extractImmersionValue(day);
+        const exportEquivalent = extractImmersionExportEquivalent(day);
+        if (importEquivalent !== null) importEquivalentSum += importEquivalent;
+        if (exportEquivalent !== null) exportEquivalentSum += exportEquivalent;
       }
-      if (valueSum > 0) {
-        return { value: formatDayValue(sum, activeMetric, currency), secondaryValue: formatCurrencyVal(valueSum), label: baseLabel };
-      }
+      return {
+        value: formatDayValue(sum, activeMetric, currency),
+        secondaryValues: [
+          `${formatCurrencyVal(importEquivalentSum)} (equivalent import value)`,
+          `${formatCurrencyVal(exportEquivalentSum)} (equivalent export value)`,
+        ],
+        label: baseLabel,
+      };
     }
 
     return { value: formatDayValue(sum, activeMetric, currency), label: baseLabel };
@@ -229,20 +245,24 @@ export function YearHeatMap({ series, year, today, repaymentSchedules, currency 
       </div>
 
       {/* Metric strip */}
-      <div className="mb-4 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-        {CALENDAR_METRICS.map((m) => (
-          <button
-            key={m.id}
-            onClick={(e) => { e.stopPropagation(); setActiveMetric(m.id); }}
-            className={[
-              'shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-              activeMetric === m.id
-                ? 'border-indigo-500 bg-indigo-600/80 text-white'
-                : 'border-slate-600 bg-slate-900/70 text-slate-300 hover:border-slate-500 hover:text-slate-100',
-            ].join(' ')}
-          >
-            {m.label}
-          </button>
+      <div className="mb-4 space-y-2">
+        {metricRows.map((row, rowIndex) => (
+          <div key={rowIndex} className="flex flex-wrap justify-center gap-2">
+            {row.map((m) => (
+              <button
+                key={m.id}
+                onClick={(e) => { e.stopPropagation(); setActiveMetric(m.id); }}
+                className={[
+                  'shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                  activeMetric === m.id
+                    ? 'border-indigo-500 bg-indigo-600/80 text-white'
+                    : 'border-slate-600 bg-slate-900/70 text-slate-300 hover:border-slate-500 hover:text-slate-100',
+                ].join(' ')}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
         ))}
       </div>
 
@@ -251,12 +271,12 @@ export function YearHeatMap({ series, year, today, repaymentSchedules, currency 
         <div className="mb-4 flex items-baseline gap-2 flex-wrap">
           <span className="text-xs font-medium text-slate-400">{yearSummary.label}</span>
           <span className="text-sm font-semibold tabular-nums text-slate-100">{yearSummary.value}</span>
-          {yearSummary.secondaryValue && (
-            <>
+          {yearSummary.secondaryValues?.filter(Boolean).map((secondaryValue) => (
+            <span key={secondaryValue} className="contents">
               <span className="text-slate-600">|</span>
-              <span className="text-sm font-semibold tabular-nums text-slate-100">{yearSummary.secondaryValue}</span>
-            </>
-          )}
+              <span className="text-sm font-semibold tabular-nums text-slate-100">{secondaryValue}</span>
+            </span>
+          ))}
           {bestDayLabel && (
             <>
               <span className="text-xs font-medium text-slate-400">· Best day</span>

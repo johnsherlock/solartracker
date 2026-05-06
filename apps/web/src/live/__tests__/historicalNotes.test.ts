@@ -28,7 +28,7 @@ describe('buildHistoricalNotesModel', () => {
         exportCredit: 0.8,
         solarSavings: 4.2,
         netBillImpact: 0.7,
-        note: 'simplified-daily-rate',
+        note: 'interval-priced-half-hour',
       },
     });
 
@@ -38,7 +38,10 @@ describe('buildHistoricalNotesModel', () => {
       'complete',
     );
     expect(model.notes.find((note) => note.title === 'Tariff-aware value')?.body).toContain(
-      'Estimated net bill impact',
+      'Estimated net energy bill',
+    );
+    expect(model.notes.find((note) => note.title === 'Tariff-aware value')?.body).toContain(
+      'half-hour tariff intervals',
     );
   });
 
@@ -53,7 +56,7 @@ describe('buildHistoricalNotesModel', () => {
         exportCredit: 0.8,
         solarSavings: 4.2,
         netBillImpact: 0.7,
-        note: 'simplified-daily-rate',
+        note: 'interval-priced-half-hour',
       },
     });
 
@@ -87,7 +90,7 @@ describe('buildHistoricalNotesModel', () => {
         exportCredit: 0.8,
         solarSavings: 4.2,
         netBillImpact: 0.7,
-        note: 'simplified-daily-rate',
+        note: 'interval-priced-half-hour',
       },
     });
 
@@ -107,7 +110,7 @@ describe('buildHistoricalNotesModel', () => {
         exportCredit: 2.0,
         solarSavings: 4.2,
         netBillImpact: -1.5,
-        note: 'simplified-daily-rate',
+        note: 'interval-priced-half-hour',
       },
     });
 

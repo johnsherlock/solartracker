@@ -46,6 +46,12 @@ function clampPercent(value: number): number {
   return Math.min(100, Math.max(0, value));
 }
 
+function describeEstimateMethod(note: FinancialEstimate['note']): string {
+  return note === 'interval-priced-half-hour'
+    ? 'This is priced from the day\'s half-hour tariff intervals rather than flattened to a single day rate, but it still remains a live energy estimate rather than a full supplier-bill reconstruction.'
+    : 'This remains a simplified day-rate estimate rather than a full bill reconstruction.';
+}
+
 export function buildHistoricalNotesModel({
   screenState,
   dayTotals,
@@ -183,8 +189,8 @@ export function buildHistoricalNotesModel({
           title: 'Tariff-aware value',
           body:
             financialEstimate.netBillImpact < 0
-              ? `Solar and export produced an estimated net credit of ${formatEuro(Math.abs(financialEstimate.netBillImpact))} for the day, including ${formatEuro(financialEstimate.exportCredit)} of export credit and ${formatEuro(financialEstimate.solarSavings)} of solar savings. This remains a simplified day-rate estimate rather than a full bill reconstruction.`
-              : `Estimated net bill impact for the day was ${formatEuro(financialEstimate.netBillImpact)}, including ${formatEuro(financialEstimate.exportCredit)} of export credit and ${formatEuro(financialEstimate.solarSavings)} of solar savings. This remains a simplified day-rate estimate rather than a full bill reconstruction.`,
+              ? `Solar and export produced an estimated net credit of ${formatEuro(Math.abs(financialEstimate.netBillImpact))} for the day after ${formatEuro(financialEstimate.exportCredit)} of export credit, while self-consumed solar avoided about ${formatEuro(financialEstimate.solarSavings)} of import cost. ${describeEstimateMethod(financialEstimate.note)}`
+              : `Estimated net energy bill for the day was ${formatEuro(financialEstimate.netBillImpact)} after ${formatEuro(financialEstimate.exportCredit)} of export credit, while self-consumed solar avoided about ${formatEuro(financialEstimate.solarSavings)} of import cost. ${describeEstimateMethod(financialEstimate.note)}`,
           tone: 'neutral',
         }
       : {
@@ -195,7 +201,7 @@ export function buildHistoricalNotesModel({
 
   return {
     heading: 'Day story',
-    summary: 'A calm interpretation of the selected day using only that day’s energy and trust signals.',
+    summary: '',
     notes: [generationNote, gridNote, mixNote, trustNote, financialNote],
   };
 }

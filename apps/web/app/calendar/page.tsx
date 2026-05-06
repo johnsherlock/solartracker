@@ -9,6 +9,7 @@ import type { RangeSummaryPayload } from '@/src/range/types';
 import { resolveEffectiveInstallationId } from '@/src/installation-helpers';
 import { redirect } from 'next/navigation';
 import { CalendarScreen } from './CalendarScreen';
+import { isCalendarMetric, type CalendarMetric } from '@/src/calendar/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,11 +28,11 @@ function getTodayLocalDate(timezone: string): string {
 }
 
 type PageProps = {
-  searchParams: Promise<{ year?: string }>;
+  searchParams: Promise<{ year?: string; metric?: string }>;
 };
 
 export default async function CalendarPage({ searchParams }: PageProps) {
-  const { year: yearParam } = await searchParams;
+  const { year: yearParam, metric: metricParam } = await searchParams;
 
   const installationId = await resolveEffectiveInstallationId();
   if (!installationId) redirect('/connect-provider');
@@ -46,6 +47,8 @@ export default async function CalendarPage({ searchParams }: PageProps) {
 
   const requestedYear = yearParam ? parseInt(yearParam, 10) : currentYear;
   const year = Number.isNaN(requestedYear) ? currentYear : Math.min(requestedYear, currentYear);
+  const initialMetric: CalendarMetric =
+    metricParam && isCalendarMetric(metricParam) ? metricParam : 'generation_kwh';
 
   const from = `${year}-01-01`;
   const to = `${year}-12-31`;
@@ -76,6 +79,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
       <CalendarScreen
         payload={payload}
         year={year}
+        initialMetric={initialMetric}
         today={today}
         earliestDate={earliestDate}
         repaymentSchedules={installationContext.repaymentSchedules}
@@ -88,6 +92,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
       <CalendarScreen
         payload={null}
         year={year}
+        initialMetric={initialMetric}
         today={today}
         earliestDate={null}
         repaymentSchedules={installationContext.repaymentSchedules}

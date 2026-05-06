@@ -1,12 +1,22 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, gte, inArray, lte } from 'drizzle-orm';
+import SunCalc from 'suncalc';
 import {
   calculateIntervalExportCredit,
   calculateIntervalImportCost,
+  calculateIntervalImportCostScheduled,
   calculateWithoutSolarImportKwh,
+  getScheduledRateForInterval,
+  getPricePeriodForSlot,
+  type TariffPricePeriod,
   type IntervalReading,
   type TariffVersion,
+  type WeeklySchedule,
 } from '../domain/billing';
+import type { CalendarMetric } from '../calendar/types';
+import { computeRepaymentsForPeriod, type RepaymentSchedule } from '../range/recovery';
 import type { MinuteReading, PeriodReading, DayDetailResponse } from './types';
+import type { SunEvents } from '../weather/types';
+import { migrateWindowsToSchedule } from '../domain/tariff-compat';
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -17,6 +27,8 @@ export type InstallationContext = {
   name: string;
   timezone: string;
   arrayCapacityKw: number | null;
+  locationLatitude: number | null;
+  locationLongitude: number | null;
 };
 
 export type TariffContext = {
@@ -34,6 +46,8 @@ export type TariffContext = {
   nightEndLocalTime: string | null;
   peakStartLocalTime: string | null;
   peakEndLocalTime: string | null;
+  weeklySchedule: WeeklySchedule | null;
+  pricePeriods: TariffPricePeriod[];
 };
 
 export type FinancialEstimate = {
@@ -41,8 +55,25 @@ export type FinancialEstimate = {
   exportCredit: number;
   solarSavings: number;
   netBillImpact: number;
-  /** Estimate uses the day rate for all intervals — time-of-use splitting requires interval data. */
-  note: 'simplified-daily-rate';
+  /** Describes whether the estimate is interval-priced or uses the fallback flat day rate. */
+  note: 'interval-priced-half-hour' | 'simplified-daily-rate';
+};
+
+export type GenerationRank = {
+  rank: number;
+  total: number;
+};
+
+export type HistoricalMetricRanks = Partial<Record<CalendarMetric, GenerationRank>>;
+
+export type TariffBreakdownSlice = {
+  key: string;
+  label: string;
+  importKwh: number;
+  importCost: number;
+  solarKwh: number;
+  solarValue: number;
+  color: string;
 };
 
 export type CurrentMetrics = {
@@ -89,6 +120,8 @@ let _dbDeps:
       providerConnections: LiveLoaderSchemaModule['providerConnections'];
       tariffPlans: LiveLoaderSchemaModule['tariffPlans'];
       tariffPlanVersions: LiveLoaderSchemaModule['tariffPlanVersions'];
+      tariffPricePeriods: LiveLoaderSchemaModule['tariffPricePeriods'];
+      dailyPricedRollups: LiveLoaderSchemaModule['dailyPricedRollups'];
     }>
   | null = null;
 
@@ -101,6 +134,8 @@ async function getDbDeps() {
         providerConnections: schema.providerConnections,
         tariffPlans: schema.tariffPlans,
         tariffPlanVersions: schema.tariffPlanVersions,
+        tariffPricePeriods: schema.tariffPricePeriods,
+        dailyPricedRollups: schema.dailyPricedRollups,
       }),
     );
   }
@@ -159,14 +194,223 @@ export async function loadInstallationContext(
     name: row.name,
     timezone: row.timezone,
     arrayCapacityKw: row.arrayCapacityKw != null ? Number(row.arrayCapacityKw) : null,
+    locationLatitude: row.locationLatitude != null ? Number(row.locationLatitude) : null,
+    locationLongitude: row.locationLongitude != null ? Number(row.locationLongitude) : null,
   };
+}
+
+function parseClockMinutes(time: string): number | null {
+  const [hoursRaw, minutesRaw] = time.split(':');
+  const hours = Number(hoursRaw);
+  const minutes = Number(minutesRaw);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  return (hours * 60) + minutes;
+}
+
+function getLocalClockMinutes(date: Date, timezone: string): number {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: timezone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+
+  const hours = Number(parts.find((part) => part.type === 'hour')?.value ?? '0');
+  const minutes = Number(parts.find((part) => part.type === 'minute')?.value ?? '0');
+
+  return (hours * 60) + minutes;
+}
+
+export function computeDaylightCoverage(
+  date: string,
+  timezone: string,
+  latitude: number | null,
+  longitude: number | null,
+  minuteChartData: LivePoint[],
+): number | null {
+  if (
+    latitude == null ||
+    longitude == null ||
+    minuteChartData.length === 0
+  ) {
+    return null;
+  }
+
+  const sunTimes = SunCalc.getTimes(new Date(`${date}T12:00:00Z`), latitude, longitude);
+  const sunriseMinutes = getLocalClockMinutes(sunTimes.sunrise, timezone);
+  const sunsetMinutes = getLocalClockMinutes(sunTimes.sunset, timezone);
+
+  if (sunsetMinutes <= sunriseMinutes) {
+    return null;
+  }
+
+  let daylightConsumedKwh = 0;
+  let daylightSolarSuppliedKwh = 0;
+
+  for (const point of minuteChartData) {
+    const pointMinutes = parseClockMinutes(point.time);
+    if (pointMinutes == null || pointMinutes < sunriseMinutes || pointMinutes >= sunsetMinutes) {
+      continue;
+    }
+
+    const consumedKwh = point.consumption * point.intervalHours;
+    const importedKwh = point.import * point.intervalHours;
+    const solarSuppliedKwh = Math.max(0, Math.min(consumedKwh, consumedKwh - importedKwh));
+
+    daylightConsumedKwh += consumedKwh;
+    daylightSolarSuppliedKwh += solarSuppliedKwh;
+  }
+
+  if (daylightConsumedKwh <= 0) {
+    return null;
+  }
+
+  return Math.round((daylightSolarSuppliedKwh / daylightConsumedKwh) * 100);
+}
+
+export function computeHistoricalSunEvents(
+  date: string,
+  latitude: number | null,
+  longitude: number | null,
+): SunEvents | null {
+  if (latitude == null || longitude == null) {
+    return null;
+  }
+
+  const sunTimes = SunCalc.getTimes(new Date(`${date}T12:00:00Z`), latitude, longitude);
+  const sunriseMs = sunTimes.sunrise.getTime();
+  const sunsetMs = sunTimes.sunset.getTime();
+
+  if (!Number.isFinite(sunriseMs) || !Number.isFinite(sunsetMs) || sunsetMs <= sunriseMs) {
+    return null;
+  }
+
+  const solarNoonMs = sunriseMs + Math.floor((sunsetMs - sunriseMs) / 2);
+
+  return {
+    localDate: date,
+    sunriseUtc: sunTimes.sunrise.toISOString(),
+    sunsetUtc: sunTimes.sunset.toISOString(),
+    solarNoonUtc: new Date(solarNoonMs).toISOString(),
+    daylightSeconds: Math.round((sunsetMs - sunriseMs) / 1000),
+  };
+}
+
+const DEFAULT_PERIOD_COLORS = ['#f59e0b', '#38bdf8', '#fb7185', '#34d399', '#a78bfa', '#f97316'];
+
+function getEffectiveTariffPeriods(
+  tariff: TariffContext,
+  date: string,
+): { tariffVersion: TariffVersion; pricePeriods: TariffPricePeriod[]; weeklySchedule: WeeklySchedule } {
+  const tariffVersion = toBillingTariffVersion(tariff, date);
+  if (tariff.weeklySchedule && tariff.pricePeriods.length > 0) {
+    return {
+      tariffVersion,
+      pricePeriods: tariff.pricePeriods,
+      weeklySchedule: tariff.weeklySchedule,
+    };
+  }
+
+  const migrated = migrateWindowsToSchedule(tariffVersion);
+  return {
+    tariffVersion,
+    pricePeriods: migrated.periods,
+    weeklySchedule: migrated.schedule,
+  };
+}
+
+export function getTariffStateAt(
+  tariff: TariffContext,
+  date: string,
+  time: string,
+): { label: string; ratePerKwh: number; isFreeImport: boolean } {
+  const { tariffVersion, pricePeriods, weeklySchedule } = getEffectiveTariffPeriods(tariff, date);
+  const localDateTime = `${date}T${time}`;
+  const matchedPeriod = getPricePeriodForSlot(pricePeriods, weeklySchedule, localDateTime);
+  const ratePerKwh = matchedPeriod
+    ? getScheduledRateForInterval(pricePeriods, weeklySchedule, localDateTime)
+    : tariffVersion.dayRate;
+
+  return {
+    label: matchedPeriod?.periodLabel ?? 'Day',
+    ratePerKwh,
+    isFreeImport: matchedPeriod?.isFreeImport ?? ratePerKwh === 0,
+  };
+}
+
+function getPeriodColor(period: TariffPricePeriod, index: number): string {
+  return period.colourHex ?? DEFAULT_PERIOD_COLORS[index % DEFAULT_PERIOD_COLORS.length];
+}
+
+export function computeTariffBreakdown(
+  periods: PeriodReading[],
+  date: string,
+  tariff: TariffContext,
+): TariffBreakdownSlice[] {
+  const { tariffVersion, pricePeriods, weeklySchedule } = getEffectiveTariffPeriods(tariff, date);
+  const pricePeriodIndex = new Map(pricePeriods.map((period, index) => [period.id, index]));
+  const buckets = new Map<string, TariffBreakdownSlice>();
+
+  for (const period of periods) {
+    const reading = toIntervalReading(date, period);
+    const matchedPeriod = getPricePeriodForSlot(pricePeriods, weeklySchedule, reading.intervalStartLocal);
+    const key = matchedPeriod?.id ?? 'unclassified';
+    const label = matchedPeriod?.periodLabel ?? 'Standard';
+    const color = matchedPeriod
+      ? getPeriodColor(matchedPeriod, pricePeriodIndex.get(matchedPeriod.id) ?? 0)
+      : DEFAULT_PERIOD_COLORS[0];
+    const importCost = calculateIntervalImportCostScheduled(
+      reading,
+      tariffVersion,
+      pricePeriods,
+      weeklySchedule,
+    );
+    const withoutSolarReading: IntervalReading = {
+      ...reading,
+      importKwh: calculateWithoutSolarImportKwh(reading),
+    };
+    const solarValue =
+      calculateIntervalImportCostScheduled(
+        withoutSolarReading,
+        tariffVersion,
+        pricePeriods,
+        weeklySchedule,
+      ) - importCost;
+
+    const current = buckets.get(key) ?? {
+      key,
+      label,
+      color,
+      importKwh: 0,
+      importCost: 0,
+      solarKwh: 0,
+      solarValue: 0,
+    };
+    const solarKwh = Math.max(0, reading.consumedKwh - reading.importKwh);
+    current.importKwh += reading.importKwh;
+    current.importCost += importCost;
+    current.solarKwh += solarKwh;
+    current.solarValue += solarValue;
+    buckets.set(key, current);
+  }
+
+  return Array.from(buckets.values())
+    .map((slice) => ({
+      ...slice,
+      importKwh: r2(slice.importKwh),
+      importCost: r2(slice.importCost),
+      solarKwh: r2(slice.solarKwh),
+      solarValue: r2(slice.solarValue),
+    }))
+    .filter((slice) => slice.importCost > 0 || slice.solarValue > 0)
+    .sort((a, b) => b.importCost - a.importCost);
 }
 
 export async function loadTariffContext(
   installationId: string,
   date: string,
 ): Promise<TariffContext | null> {
-  const { db, tariffPlans, tariffPlanVersions } = await getDbDeps();
+  const { db, tariffPlans, tariffPlanVersions, tariffPricePeriods } = await getDbDeps();
 
   // Load all plans for the installation — there may be one per tariff year.
   const planRows = await db
@@ -182,15 +426,22 @@ export async function loadTariffContext(
     .from(tariffPlanVersions)
     .where(inArray(tariffPlanVersions.tariffPlanId, planRows.map((p) => p.id)));
 
-  const active = allVersions.find(
-    (v) =>
-      v.validFromLocalDate <= date &&
-      (v.validToLocalDate === null || v.validToLocalDate >= date),
-  );
+  const active = allVersions
+    .filter(
+      (v) =>
+        v.validFromLocalDate <= date &&
+        (v.validToLocalDate === null || v.validToLocalDate >= date),
+    )
+    .sort((a, b) => b.validFromLocalDate.localeCompare(a.validFromLocalDate))[0];
 
   if (!active) return null;
 
   const plan = planRows.find((p) => p.id === active.tariffPlanId)!;
+  const pricePeriodRows = await db
+    .select()
+    .from(tariffPricePeriods)
+    .where(eq(tariffPricePeriods.tariffPlanVersionId, active.id))
+    .orderBy(tariffPricePeriods.sortOrder);
 
   return {
     versionId: active.id,
@@ -208,6 +459,16 @@ export async function loadTariffContext(
     nightEndLocalTime: active.nightEndLocalTime ?? null,
     peakStartLocalTime: active.peakStartLocalTime ?? null,
     peakEndLocalTime: active.peakEndLocalTime ?? null,
+    weeklySchedule: active.weeklyScheduleJson as WeeklySchedule | null,
+    pricePeriods: pricePeriodRows.map((period) => ({
+      id: period.id,
+      tariffPlanVersionId: period.tariffPlanVersionId,
+      periodLabel: period.periodLabel,
+      ratePerKwh: Number(period.ratePerKwh),
+      isFreeImport: period.isFreeImport,
+      sortOrder: period.sortOrder,
+      colourHex: period.colourHex ?? null,
+    })),
   };
 }
 
@@ -237,6 +498,111 @@ export async function loadProviderConnection(
   return { id: row.id, credentialRef: row.credentialRef ?? null };
 }
 
+export async function loadHistoricalMetricRanksForYear(
+  installationId: string,
+  date: string,
+  comparisonEndDate: string,
+  repaymentSchedules: RepaymentSchedule[] = [],
+): Promise<HistoricalMetricRanks> {
+  const { db, dailyPricedRollups } = await getDbDeps();
+  const year = date.slice(0, 4);
+  const yearStart = `${year}-01-01`;
+
+  const rows = await db
+    .select({
+      localDate: dailyPricedRollups.localDate,
+      generatedKwh: dailyPricedRollups.generatedKwh,
+      consumedKwh: dailyPricedRollups.consumedKwh,
+      importKwh: dailyPricedRollups.importKwh,
+      exportKwh: dailyPricedRollups.exportKwh,
+      immersionDivertedKwh: dailyPricedRollups.immersionDivertedKwh,
+      importCost: dailyPricedRollups.importCost,
+      exportCredit: dailyPricedRollups.exportCredit,
+      selfConsumedSolarValue: dailyPricedRollups.selfConsumedSolarValue,
+      fixedCharges: dailyPricedRollups.fixedCharges,
+    })
+    .from(dailyPricedRollups)
+    .where(
+      and(
+        eq(dailyPricedRollups.installationId, installationId),
+        eq(dailyPricedRollups.isPartial, false),
+        gte(dailyPricedRollups.localDate, yearStart),
+        lte(dailyPricedRollups.localDate, comparisonEndDate),
+      ),
+    );
+
+  const days = rows.map((row) => ({
+    localDate: row.localDate,
+    generatedKwh: Number(row.generatedKwh),
+    consumedKwh: Number(row.consumedKwh),
+    importKwh: Number(row.importKwh),
+    exportKwh: Number(row.exportKwh),
+    immersionDivertedKwh: Number(row.immersionDivertedKwh),
+    importCost: row.importCost != null ? Number(row.importCost) : null,
+    exportCredit: row.exportCredit != null ? Number(row.exportCredit) : null,
+    selfConsumedSolarValue:
+      row.selfConsumedSolarValue != null ? Number(row.selfConsumedSolarValue) : null,
+    fixedCharges: row.fixedCharges != null ? Number(row.fixedCharges) : null,
+  }));
+
+  const selectedDay = days.find((day) => day.localDate === date);
+  if (!selectedDay || days.length === 0) return {};
+
+  const total = days.length;
+  const rankMetric = (
+    getter: (day: (typeof days)[number]) => number | null,
+    lowerBetter = false,
+  ): GenerationRank | undefined => {
+    const selectedValue = getter(selectedDay);
+    if (selectedValue == null) return undefined;
+
+    const betterDays = days.filter((day) => {
+      const value = getter(day);
+      if (value == null) return false;
+      return lowerBetter ? value < selectedValue : value > selectedValue;
+    }).length;
+
+    return { rank: betterDays + 1, total };
+  };
+
+  return {
+    generation_kwh: rankMetric((day) => day.generatedKwh),
+    consumed_kwh: rankMetric((day) => day.consumedKwh),
+    import_kwh: rankMetric((day) => day.importKwh, true),
+    export_kwh: rankMetric((day) => day.exportKwh),
+    immersion_kwh: rankMetric((day) => day.immersionDivertedKwh),
+    import_cost: rankMetric((day) => day.importCost, true),
+    export_credit: rankMetric((day) => day.exportCredit),
+    self_consumed_value: rankMetric((day) => day.selfConsumedSolarValue),
+    net_energy_bill: rankMetric(
+      (day) =>
+        day.importCost != null && day.fixedCharges != null && day.exportCredit != null
+          ? day.importCost + day.fixedCharges - day.exportCredit
+          : null,
+      true,
+    ),
+    total_solar_value: rankMetric(
+      (day) =>
+        day.selfConsumedSolarValue != null && day.exportCredit != null
+          ? day.selfConsumedSolarValue + day.exportCredit
+          : null,
+    ),
+    prorata_coverage: rankMetric((day) => {
+      if (day.selfConsumedSolarValue == null || day.exportCredit == null || repaymentSchedules.length === 0) {
+        return null;
+      }
+      const dailyRepayment = computeRepaymentsForPeriod(
+        repaymentSchedules,
+        day.localDate,
+        day.localDate,
+        false,
+      ).amount;
+      if (dailyRepayment <= 0) return null;
+      return (day.selfConsumedSolarValue + day.exportCredit) / dailyRepayment;
+    }),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Financial estimate
 // ---------------------------------------------------------------------------
@@ -262,6 +628,15 @@ export function computeFinancialEstimate(
   const netBillImpact = r2(importCost - exportCredit);
 
   return { importCost, exportCredit, solarSavings, netBillImpact, note: 'simplified-daily-rate' };
+}
+
+export function computeFinancialEstimateFromCostPoints(costPoints: CostPoint[]): FinancialEstimate {
+  const importCost = r2(costPoints.reduce((sum, point) => sum + point.importCost, 0));
+  const exportCredit = r2(costPoints.reduce((sum, point) => sum + point.exportCredit, 0));
+  const solarSavings = r2(costPoints.reduce((sum, point) => sum + point.savings, 0));
+  const netBillImpact = r2(importCost - exportCredit);
+
+  return { importCost, exportCredit, solarSavings, netBillImpact, note: 'interval-priced-half-hour' };
 }
 
 // ---------------------------------------------------------------------------
@@ -448,17 +823,28 @@ export function periodDataToCostPoints(
   date: string,
   tariff: TariffContext,
 ): CostPoint[] {
-  const tariffVersion = toBillingTariffVersion(tariff, date);
+  const { tariffVersion, pricePeriods, weeklySchedule } = getEffectiveTariffPeriods(tariff, date);
 
   return periods.map((period) => {
     const reading = toIntervalReading(date, period);
-    const importCost = calculateIntervalImportCost(reading, tariffVersion);
+    const importCost = calculateIntervalImportCostScheduled(
+      reading,
+      tariffVersion,
+      pricePeriods,
+      weeklySchedule,
+    );
     const exportCredit = calculateIntervalExportCredit(reading, tariffVersion);
     const withoutSolarReading: IntervalReading = {
       ...reading,
       importKwh: calculateWithoutSolarImportKwh(reading),
     };
-    const savings = calculateIntervalImportCost(withoutSolarReading, tariffVersion) - importCost;
+    const savings =
+      calculateIntervalImportCostScheduled(
+        withoutSolarReading,
+        tariffVersion,
+        pricePeriods,
+        weeklySchedule,
+      ) - importCost;
 
     return {
       time: `${pad2(period.hour)}:${pad2(period.minute)}`,

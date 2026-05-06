@@ -9,6 +9,7 @@ import {
   loadTariffContext,
   loadProviderConnection,
   computeFinancialEstimate,
+  computeFinancialEstimateFromCostPoints,
   deriveScreenState,
   getMinutesStale,
   getLastReadingLocalTime,
@@ -108,13 +109,6 @@ export default async function LivePage({
   // Current instantaneous metrics from the most recent reading.
   const currentMetrics = getCurrentMetrics(minuteData);
 
-  // Financial estimate is only meaningful when tariff context is present
-  // and we have some data to compute against.
-  const financialEstimate =
-    tariffContext && screenState !== 'disconnected'
-      ? computeFinancialEstimate(dayDetail.summary, tariffContext)
-      : null;
-
   // Pre-compute chart data at all three resolutions so the client can
   // switch resolution without a server round-trip.
   const minuteChartData = minuteDataToChartPoints(minuteData);
@@ -124,6 +118,13 @@ export default async function LivePage({
     tariffContext && screenState !== 'disconnected'
       ? periodDataToCostPoints(dayDetail.halfHourData, selectedDate, tariffContext)
       : [];
+
+  const financialEstimate =
+    tariffContext && screenState !== 'disconnected'
+      ? costChartData.length > 0
+        ? computeFinancialEstimateFromCostPoints(costChartData)
+        : computeFinancialEstimate(dayDetail.summary, tariffContext)
+      : null;
 
   const todayTotals =
     screenState !== 'disconnected'
@@ -175,6 +176,7 @@ export default async function LivePage({
       }}
       timezone={effectiveTimezone}
       hasTariff={tariffContext !== null}
+      tariffContext={tariffContext}
       weatherResult={weatherResult}
       hasCapacity={installationContext?.arrayCapacityKw != null}
       currentMetrics={currentMetrics}

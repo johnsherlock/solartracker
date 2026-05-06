@@ -4,15 +4,23 @@ import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } f
 import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
+  Activity,
   Calendar,
   ChevronLeft,
   ChevronRight,
   Clock,
+  PieChart,
+  Sun,
+  Sunrise,
+  Sunset,
   WifiOff,
 } from 'lucide-react';
-import type { FinancialEstimate, LivePoint } from '@/src/live/loader';
+import type { FinancialEstimate, HistoricalMetricRanks, LivePoint } from '@/src/live/loader';
+import type { TariffBreakdownSlice } from '@/src/live/loader';
 import { StaleTariffBanner } from '@/src/components/StaleTariffBanner';
 import type { StaleTariffWarning } from '@/src/tariffs/stale-check';
+import { EChart } from '@/src/live/EChartsWrapper';
+import { LiveClockChip } from '@/src/components/LiveClockChip';
 import {
   DayTrendChart,
   DayValuePanel,
@@ -27,11 +35,11 @@ import {
   MINUTE_DEFAULT_SERIES,
   applyViewMode,
   applyCostViewMode,
-  formatClockTime,
   addDays,
 } from '@/src/live/chartUtils';
 import type { CostPoint } from '@/src/live/loader';
 import { buildHistoricalNotesModel, type HistoricalNotesModel } from '@/src/live/historicalNotes';
+import { buildTariffBreakdownOption } from '@/src/live/echartsOptions';
 import {
   resolveHistoricalSwipeTarget,
   shouldIgnoreSwipeTarget,
@@ -42,19 +50,31 @@ import type { HistoricalDayPayload } from '@/app/api/history/[date]/route';
 import { buildRangeUrl } from '@/src/range/presets';
 import { RangePickerPopover } from '@/src/components/RangePickerPopover';
 import type { NavigationTarget } from '@/src/components/RangePickerPopover';
+import type { SunEvents } from '@/src/weather/types';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 type ScreenState = 'healthy' | 'stale' | 'warning' | 'disconnected';
+type TrendDirection = 'up' | 'down' | 'same';
+type TrendStrength = 'light' | 'medium' | 'strong';
+type TrendIndicatorData = {
+  direction: TrendDirection;
+  strength: TrendStrength;
+};
 
 export type HistoricalDayScreenProps = {
   today: string;
   displayDate: string;
   initialLiveTime: string;
   selectedDate: string;
-  installationContext: { name: string; arrayCapacityKw: number | null } | null;
+  installationContext: {
+    name: string;
+    arrayCapacityKw: number | null;
+    locationLatitude: number | null;
+    locationLongitude: number | null;
+  } | null;
   timezone: string;
   screenState: ScreenState;
   health: {
@@ -93,7 +113,12 @@ export type HistoricalDayScreenProps = {
     exportKwh: number;
     immersionDivertedKwh: number;
   } | null;
+  ytdMetricRanks: HistoricalMetricRanks;
+  daylightCoverage: number | null;
+  historicalSunEvents: SunEvents | null;
+  tariffBreakdown: TariffBreakdownSlice[];
   financialEstimate: FinancialEstimate | null;
+  repaymentCoverage: { amount: number; percent: number } | null;
   staleTariffWarning: StaleTariffWarning;
 };
 
@@ -167,6 +192,65 @@ function getChartPrefsStorageKey(timezone: string): string {
   return `pv-manager:live-chart-prefs:${timezone}`;
 }
 
+function formatSunTime(utcIso: string, timezone: string): string {
+  return new Intl.DateTimeFormat('en-IE', {
+    timeZone: timezone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(utcIso));
+}
+
+function formatDaylightHours(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return `${hours}h ${minutes}m`;
+}
+
+function buildTrend(current: number | null | undefined, previous: number | null | undefined): TrendIndicatorData | undefined {
+  if (current == null || previous == null) return undefined;
+
+  const diff = current - previous;
+  const scale = Math.max(Math.abs(previous), Math.abs(current), 1);
+  const relativeDiff = Math.abs(diff) / scale;
+
+  if (Math.abs(diff) < 0.01 || relativeDiff < 0.02) {
+    return { direction: 'same', strength: relativeDiff < 0.005 ? 'light' : 'medium' };
+  }
+
+  const strength: TrendStrength =
+    relativeDiff >= 0.25 ? 'strong' : relativeDiff >= 0.1 ? 'medium' : 'light';
+
+  return {
+    direction: diff > 0 ? 'up' : 'down',
+    strength,
+  };
+}
+
+function snapMarkerTime(availableTimes: string[], utcIso: string, timezone: string): string | null {
+  if (availableTimes.length === 0) return null;
+
+  const targetTime = formatSunTime(utcIso, timezone);
+  if (availableTimes.includes(targetTime)) {
+    return targetTime;
+  }
+
+  const targetMinutes = Number(targetTime.slice(0, 2)) * 60 + Number(targetTime.slice(3, 5));
+  let closestTime = availableTimes[0];
+  let closestDistance = Number.POSITIVE_INFINITY;
+
+  for (const time of availableTimes) {
+    const timeMinutes = Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+    const distance = Math.abs(timeMinutes - targetMinutes);
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestTime = time;
+    }
+  }
+
+  return closestTime;
+}
+
 function isResolution(value: string): value is Resolution {
   return value === '1min' || value === '30min' || value === '1hour';
 }
@@ -194,7 +278,12 @@ function propsToPayload(props: HistoricalDayScreenProps): HistoricalDayPayload {
     hourChartData: props.hourChartData,
     costChartData: props.costChartData,
     dayTotals: props.dayTotals,
+    ytdMetricRanks: props.ytdMetricRanks,
+    daylightCoverage: props.daylightCoverage,
+    historicalSunEvents: props.historicalSunEvents,
+    tariffBreakdown: props.tariffBreakdown,
     financialEstimate: props.financialEstimate,
+    repaymentCoverage: props.repaymentCoverage,
   };
 }
 
@@ -441,6 +530,7 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
   // Per-day display state — initialized from SSR props, updated on cache hits.
   // ---------------------------------------------------------------------------
   const [dayData, setDayData] = useState<HistoricalDayPayload>(() => propsToPayload(props));
+  const [previousDayData, setPreviousDayData] = useState<HistoricalDayPayload | null>(null);
 
   // Re-sync from SSR props when the server provides a fresh date after a
   // cache-miss router.push() navigates to a new /history/[date] page.
@@ -449,10 +539,39 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.selectedDate]);
 
+  useEffect(() => {
+    dayCache.prime(dayData.selectedDate, dayData);
+
+    const previousDate = addDays(dayData.selectedDate, -1);
+    setPreviousDayData(null);
+    dayCache.prefetch(previousDate, dayData.today);
+
+    const cached = dayCache.get(previousDate);
+    if (!cached) return;
+
+    let cancelled = false;
+    cached
+      .then((payload) => {
+        if (!cancelled) {
+          setPreviousDayData(payload);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPreviousDayData(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dayData]);
+
   const {
     today,
     displayDate,
     selectedDate,
+    installationContext,
     timezone,
     screenState,
     health,
@@ -462,7 +581,12 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
     hourChartData,
     costChartData,
     dayTotals,
+    ytdMetricRanks,
+    daylightCoverage,
+    historicalSunEvents,
+    tariffBreakdown,
     financialEstimate,
+    repaymentCoverage,
   } = dayData;
   const chartPrefsStorageKey = useMemo(() => getChartPrefsStorageKey(timezone), [timezone]);
   const [resolution, setResolution] = useState<Resolution>('1min');
@@ -473,7 +597,6 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
   const [warningDetailsOpen, setWarningDetailsOpen] = useState(false);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
   const [dismissedIncidentIds, setDismissedIncidentIds] = useState<string[]>([]);
-  const [liveTime, setLiveTime] = useState(initialLiveTime);
 
   // Swipe navigation — disabled; charts need free touch for drag/zoom
   const SWIPE_NAVIGATION_ENABLED = false;
@@ -508,6 +631,67 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
           ),
         )
       : null;
+
+  const hoursAboveEightyPercentSolar = useMemo(() => {
+    const qualifyingHours = minuteChartData.reduce((sum, point) => {
+      const coverageRatio =
+        point.consumption > 0
+          ? Math.min(1, Math.max(0, (point.generation - point.export) / point.consumption))
+          : point.generation > 0
+            ? 1
+            : 0;
+
+      return coverageRatio > 0.8 ? sum + point.intervalHours : sum;
+    }, 0);
+
+    return Math.round(qualifyingHours * 10) / 10;
+  }, [minuteChartData]);
+
+  const dayValueTrends = useMemo(() => ({
+    import_cost: buildTrend(
+      financialEstimate?.importCost ?? null,
+      previousDayData?.financialEstimate?.importCost ?? null,
+    ),
+    export_credit: buildTrend(
+      financialEstimate?.exportCredit ?? null,
+      previousDayData?.financialEstimate?.exportCredit ?? null,
+    ),
+    onsite_solar_value: buildTrend(
+      financialEstimate?.solarSavings ?? null,
+      previousDayData?.financialEstimate?.solarSavings ?? null,
+    ),
+    net_energy_bill: buildTrend(
+      financialEstimate?.netBillImpact ?? null,
+      previousDayData?.financialEstimate?.netBillImpact ?? null,
+    ),
+    prorata_coverage: buildTrend(
+      repaymentCoverage?.percent ?? null,
+      previousDayData?.repaymentCoverage?.percent ?? null,
+    ),
+  }), [financialEstimate, previousDayData, repaymentCoverage]);
+
+  const dayTotalTrends = useMemo(() => ({
+    generation_kwh: buildTrend(
+      dayTotals?.generatedKwh ?? null,
+      previousDayData?.dayTotals?.generatedKwh ?? null,
+    ),
+    consumed_kwh: buildTrend(
+      dayTotals?.consumedKwh ?? null,
+      previousDayData?.dayTotals?.consumedKwh ?? null,
+    ),
+    import_kwh: buildTrend(
+      dayTotals?.importKwh ?? null,
+      previousDayData?.dayTotals?.importKwh ?? null,
+    ),
+    export_kwh: buildTrend(
+      dayTotals?.exportKwh ?? null,
+      previousDayData?.dayTotals?.exportKwh ?? null,
+    ),
+    immersion_kwh: buildTrend(
+      dayTotals?.immersionDivertedKwh ?? null,
+      previousDayData?.dayTotals?.immersionDivertedKwh ?? null,
+    ),
+  }), [dayTotals, previousDayData]);
 
   const dismissalStorageKey = useMemo(
     () => getDismissalStorageKey(selectedDate, timezone),
@@ -618,14 +802,6 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
       dayCache.prefetch(nextDate, today);
     }
   }, [selectedDate, today]);
-
-  // Clock tick
-  useEffect(() => {
-    const updateClock = () => setLiveTime(formatClockTime(new Date(), timezone));
-    updateClock();
-    const clockIntervalId = window.setInterval(updateClock, 1_000);
-    return () => window.clearInterval(clockIntervalId);
-  }, [timezone]);
 
   async function navigateToDate(date: string) {
     // Today or future → go to Live (not a historical-day cache concern).
@@ -780,17 +956,34 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
     ],
   );
 
-  // Last chart point for current solar share / grid draw (use last minute point)
-  const lastPoint = baseChartData[baseChartData.length - 1];
-  const currentSolarShare =
-    lastPoint && lastPoint.consumption > 0
-      ? Math.round(
-          Math.min(100, Math.max(0, ((lastPoint.generation - lastPoint.export) / lastPoint.consumption) * 100)),
-        )
-      : lastPoint && lastPoint.generation > 0
-        ? 100
-        : 0;
-  const currentGridDraw = 100 - currentSolarShare;
+  const sunMarkers = useMemo(() => {
+    if (!historicalSunEvents) {
+      return { energy: [], cost: [] };
+    }
+
+    const energyTimes = baseChartData.map((point) => point.time);
+    const costTimes = valueChartData.map((point) => point.time);
+    const markerSpecs = [
+      { utcIso: historicalSunEvents.sunriseUtc, label: 'Sunrise' },
+      { utcIso: historicalSunEvents.solarNoonUtc, label: 'Solar noon' },
+      { utcIso: historicalSunEvents.sunsetUtc, label: 'Sunset' },
+    ];
+
+    return {
+      energy: markerSpecs
+        .map((marker) => ({
+          time: snapMarkerTime(energyTimes, marker.utcIso, timezone),
+          label: marker.label,
+        }))
+        .filter((marker): marker is { time: string; label: string } => marker.time != null),
+      cost: markerSpecs
+        .map((marker) => ({
+          time: snapMarkerTime(costTimes, marker.utcIso, timezone),
+          label: marker.label,
+        }))
+        .filter((marker): marker is { time: string; label: string } => marker.time != null),
+    };
+  }, [baseChartData, historicalSunEvents, timezone, valueChartData]);
 
   return (
     <div
@@ -894,9 +1087,11 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
 
           {/* Right: live time + uptime (desktop only) */}
           <div className="flex flex-1 items-center justify-end gap-2 text-xs text-slate-400">
-            <span className="hidden sm:inline-flex min-w-[92px] justify-center rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5">
-              {liveTime}
-            </span>
+            <LiveClockChip
+              timezone={timezone}
+              initialTime={initialLiveTime}
+              className="hidden sm:inline-flex min-w-[92px] justify-center rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5"
+            />
             <span className="hidden sm:inline-flex">
               <UptimeBadge
                 uptimePercent={health.uptimePercent}
@@ -921,6 +1116,7 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
               mode="historical"
               data={chartData}
               costData={valueChartData}
+              sunMarkers={sunMarkers}
               screenState={displayScreenState}
               resolution={resolution}
               onResolutionChange={setResolution}
@@ -928,6 +1124,7 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
               onViewModeChange={setViewMode}
               activeSeries={activeSeries}
               onToggleSeries={toggleSeries}
+              footer={<HistoricalStoryArticle model={historicalNotes} />}
             />
 
             <div className="space-y-4">
@@ -935,21 +1132,39 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
                 mode="historical"
                 hasTariff={hasTariff}
                 estimate={financialEstimate}
+                selectedDate={selectedDate}
+                rankings={ytdMetricRanks}
+                repaymentCoverage={repaymentCoverage}
+                trends={dayValueTrends}
               />
               <DayTotalsPanel
                 mode="historical"
                 totals={dayTotals}
                 screenState={displayScreenState}
+                selectedDate={selectedDate}
+                rankings={ytdMetricRanks}
+                trends={dayTotalTrends}
               />
               <SolarCoveragePanel
                 mode="historical"
                 chartData={baseChartData}
-                currentSolarShare={currentSolarShare}
+                sunMarkers={sunMarkers.energy}
                 overallSolarCoverage={overallSolarCoverage}
-                currentGridDraw={currentGridDraw}
+                historicalHoursAboveThreshold={hoursAboveEightyPercentSolar}
+                historicalDaylightCoverage={daylightCoverage}
               />
-
-              <HistoricalNotesPanel model={historicalNotes} />
+              <SolarContextHistoryPanel
+                sunEvents={historicalSunEvents}
+                timezone={timezone}
+                hasLocation={
+                  installationContext?.locationLatitude != null &&
+                  installationContext?.locationLongitude != null
+                }
+              />
+              <TariffBreakdownPanel
+                hasTariff={hasTariff}
+                breakdown={tariffBreakdown}
+              />
             </div>
           </div>
         </section>
@@ -976,34 +1191,189 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
   );
 }
 
-function HistoricalNotesPanel({
+function storyEmoji(title: string): string {
+  if (title.includes('Generation')) return '☀️';
+  if (title.includes('Grid')) return '🏠';
+  if (title.includes('Export')) return '🔁';
+  if (title.includes('Coverage')) return '🧭';
+  if (title.includes('Tariff')) return '💶';
+  return '•';
+}
+
+function HistoricalStoryArticle({
   model,
 }: {
   model: HistoricalNotesModel;
 }) {
   return (
-    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
+    <article>
       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-        Notes
+        Story
       </p>
-      <h3 className="mt-1 text-lg font-semibold text-slate-50">{model.heading}</h3>
-      <p className="mt-2 text-sm text-slate-400">{model.summary}</p>
-      <div className="mt-4 space-y-3">
+      <h3 className="mt-1 text-xl font-semibold text-slate-50">{model.heading}</h3>
+      <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-400">{model.summary}</p>
+      <div className="mt-5 space-y-5">
         {model.notes.map((note) => {
           const toneClasses =
             note.tone === 'good'
-              ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-50'
+              ? 'text-emerald-50'
               : note.tone === 'caution'
-                ? 'border-amber-500/20 bg-amber-500/10 text-amber-50'
-                : 'border-slate-800 bg-slate-950/70 text-slate-100';
+                ? 'text-amber-50'
+                : 'text-slate-100';
 
           return (
-            <div key={note.title} className={`rounded-2xl border p-3 ${toneClasses}`}>
-              <p className="font-semibold">{note.title}</p>
-              <p className="mt-1 text-sm leading-6 opacity-80">{note.body}</p>
-            </div>
+            <section key={note.title}>
+              <h4 className={`text-base font-semibold ${toneClasses}`}>
+                {storyEmoji(note.title)} {note.title}
+              </h4>
+              <p className="mt-1 text-sm leading-7 text-slate-300">{note.body}</p>
+            </section>
           );
         })}
+      </div>
+    </article>
+  );
+}
+
+function HistoryInfoTile({
+  icon,
+  label,
+  value,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
+      <div className="flex items-center gap-2 text-xs text-slate-500">
+        <span className="text-amber-300">{icon}</span>
+        {label}
+      </div>
+      <p className="mt-2 font-mono text-base font-semibold text-slate-100">{value}</p>
+    </div>
+  );
+}
+
+function SolarContextHistoryPanel({
+  sunEvents,
+  timezone,
+  hasLocation,
+}: {
+  sunEvents: SunEvents | null;
+  timezone: string;
+  hasLocation: boolean;
+}) {
+  if (!hasLocation) {
+    return (
+      <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+          Solar context
+        </p>
+        <h3 className="mt-1 text-lg font-semibold text-slate-50">
+          Add coordinates to unlock daylight context
+        </h3>
+        <p className="mt-2 text-sm text-slate-400">
+          Sunrise, sunset, solar noon, and daylight hours all come from the installation location.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Solar context
+          </p>
+          <h3 className="mt-1 text-lg font-semibold text-slate-50">Sun timings for the day</h3>
+        </div>
+        <div className="rounded-full border border-amber-400/20 bg-amber-400/10 p-2 text-amber-300">
+          <Sun size={18} />
+        </div>
+      </div>
+      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        <HistoryInfoTile
+          icon={<Sunrise size={14} />}
+          label="Sunrise"
+          value={sunEvents ? formatSunTime(sunEvents.sunriseUtc, timezone) : '—'}
+        />
+        <HistoryInfoTile
+          icon={<Sun size={14} />}
+          label="Solar noon"
+          value={sunEvents ? formatSunTime(sunEvents.solarNoonUtc, timezone) : '—'}
+        />
+        <HistoryInfoTile
+          icon={<Sunset size={14} />}
+          label="Sunset"
+          value={sunEvents ? formatSunTime(sunEvents.sunsetUtc, timezone) : '—'}
+        />
+        <HistoryInfoTile
+          icon={<Activity size={14} />}
+          label="Daylight hours"
+          value={sunEvents ? formatDaylightHours(sunEvents.daylightSeconds) : '—'}
+        />
+      </div>
+    </div>
+  );
+}
+
+function TariffBreakdownPanel({
+  hasTariff,
+  breakdown,
+}: {
+  hasTariff: boolean;
+  breakdown: TariffBreakdownSlice[];
+}) {
+  if (!hasTariff) {
+    return (
+      <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+          Value breakdown
+        </p>
+        <h3 className="mt-1 text-lg font-semibold text-slate-50">
+          Add tariff details to unlock period breakdown
+        </h3>
+        <p className="mt-2 text-sm text-slate-400">
+          This view splits import cost and onsite solar value by the tariff periods that applied on the selected day.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Value breakdown
+          </p>
+          <h3 className="mt-1 text-lg font-semibold text-slate-50">Tariff-period value mix</h3>
+          <p className="mt-1 text-sm text-slate-400">
+            Outer ring shows import cost by tariff period. Inner ring shows the value of self-consumed solar in those same periods.
+          </p>
+        </div>
+        <div className="rounded-full border border-cyan-400/20 bg-cyan-400/10 p-2 text-cyan-300">
+          <PieChart size={18} />
+        </div>
+      </div>
+      <div className="mt-4 h-[320px] rounded-[24px] border border-slate-800 bg-[#0b1321] p-3">
+        {breakdown.length === 0 ? (
+          <div className="flex h-full items-center justify-center text-sm text-slate-500">
+            No tariff-backed period data available
+          </div>
+        ) : (
+          <EChart
+            option={buildTariffBreakdownOption(breakdown)}
+            style={{ height: '100%', width: '100%' }}
+            notMerge={true}
+          />
+        )}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-slate-500">
+        <span>Outer ring: import cost</span>
+        <span>Inner ring: onsite solar value</span>
       </div>
     </div>
   );

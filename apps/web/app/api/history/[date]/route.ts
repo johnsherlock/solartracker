@@ -4,20 +4,30 @@ import {
   loadInstallationContext,
   loadProviderConnection,
   loadTariffContext,
+  loadHistoricalMetricRanksForYear,
   computeFinancialEstimate,
+  computeFinancialEstimateFromCostPoints,
+  computeDaylightCoverage,
+  computeHistoricalSunEvents,
+  computeTariffBreakdown,
   getLastReadingLocalTime,
   minuteDataToChartPoints,
   periodDataToChartPoints,
   periodDataToCostPoints,
   type FinancialEstimate,
+  type HistoricalMetricRanks,
   type LivePoint,
   type CostPoint,
+  type TariffBreakdownSlice,
 } from '../../../../src/live/loader';
 import { fetchDayRecords } from '../../../../src/providers/myenergi/client';
 import { normaliseEddiRecords } from '../../../../src/providers/myenergi/adapter';
 import { resolveMyEnergiCredentials } from '../../../../src/providers/myenergi/credentials';
 import type { HealthIncident } from '../../../../src/live/types';
+import type { SunEvents } from '../../../../src/weather/types';
 import { resolveEffectiveInstallationId } from '../../../../src/installation-helpers';
+import { loadRangeInstallationContext } from '../../../../src/range/loader';
+import { computeRepaymentsForPeriod } from '../../../../src/range/recovery';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -48,7 +58,12 @@ export type HistoricalDayPayload = {
   today: string;
   displayDate: string;
   selectedDate: string;
-  installationContext: { name: string; arrayCapacityKw: number | null } | null;
+  installationContext: {
+    name: string;
+    arrayCapacityKw: number | null;
+    locationLatitude: number | null;
+    locationLongitude: number | null;
+  } | null;
   timezone: string;
   screenState: 'healthy' | 'warning' | 'disconnected';
   health: {
@@ -73,7 +88,12 @@ export type HistoricalDayPayload = {
     exportKwh: number;
     immersionDivertedKwh: number;
   } | null;
+  ytdMetricRanks: HistoricalMetricRanks;
+  daylightCoverage: number | null;
+  historicalSunEvents: SunEvents | null;
+  tariffBreakdown: TariffBreakdownSlice[];
   financialEstimate: FinancialEstimate | null;
+  repaymentCoverage: { amount: number; percent: number } | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -97,6 +117,7 @@ export async function GET(
   const installationContext = await loadInstallationContext(installationId);
   const effectiveTimezone = installationContext?.timezone ?? 'Europe/Dublin';
   const today = getTodayLocalDate(effectiveTimezone);
+  const comparisonEndDate = date.slice(0, 4) < today.slice(0, 4) ? `${date.slice(0, 4)}-12-31` : today;
 
   if (date >= today) {
     return Response.json(
@@ -109,6 +130,7 @@ export async function GET(
 
   const providerConnection = await loadProviderConnection(installationId);
   const credentials = resolveMyEnergiCredentials(providerConnection?.credentialRef);
+  const rangeInstallationContext = await loadRangeInstallationContext(installationId);
 
   if (!credentials) {
     return Response.json(
@@ -117,9 +139,15 @@ export async function GET(
     );
   }
 
-  const [tariffContext, fetchResult] = await Promise.all([
+  const [tariffContext, fetchResult, ytdMetricRanks] = await Promise.all([
     loadTariffContext(installationId, date),
     fetchDayRecords(date, effectiveTimezone, credentials),
+    loadHistoricalMetricRanksForYear(
+      installationId,
+      date,
+      comparisonEndDate,
+      rangeInstallationContext?.repaymentSchedules ?? [],
+    ),
   ]);
 
   let minuteData = fetchResult.ok
@@ -139,11 +167,6 @@ export async function GET(
         ? 'warning'
         : 'healthy';
 
-  const financialEstimate =
-    tariffContext && screenState !== 'disconnected'
-      ? computeFinancialEstimate(dayDetail.summary, tariffContext)
-      : null;
-
   const minuteChartData = minuteDataToChartPoints(minuteData);
   const halfHourChartData = periodDataToChartPoints(dayDetail.halfHourData, 30);
   const hourChartData = periodDataToChartPoints(dayDetail.hourData, 60);
@@ -151,6 +174,27 @@ export async function GET(
     tariffContext && screenState !== 'disconnected'
       ? periodDataToCostPoints(dayDetail.halfHourData, date, tariffContext)
       : [];
+
+  const financialEstimate =
+    tariffContext && screenState !== 'disconnected'
+      ? costChartData.length > 0
+        ? computeFinancialEstimateFromCostPoints(costChartData)
+        : computeFinancialEstimate(dayDetail.summary, tariffContext)
+      : null;
+  const dailyRepayment = computeRepaymentsForPeriod(
+    rangeInstallationContext?.repaymentSchedules ?? [],
+    date,
+    date,
+    false,
+  ).amount;
+  const totalSolarValue = financialEstimate ? financialEstimate.solarSavings + financialEstimate.exportCredit : null;
+  const repaymentCoverage =
+    totalSolarValue != null && dailyRepayment > 0
+      ? {
+          amount: Math.round(totalSolarValue * 100) / 100,
+          percent: Math.round((totalSolarValue / dailyRepayment) * 100),
+        }
+      : null;
 
   const dayTotals =
     screenState !== 'disconnected'
@@ -176,7 +220,12 @@ export async function GET(
     displayDate: formatDisplayDate(date, effectiveTimezone),
     selectedDate: date,
     installationContext: installationContext
-      ? { name: installationContext.name, arrayCapacityKw: installationContext.arrayCapacityKw }
+      ? {
+          name: installationContext.name,
+          arrayCapacityKw: installationContext.arrayCapacityKw,
+          locationLatitude: installationContext.locationLatitude,
+          locationLongitude: installationContext.locationLongitude,
+        }
       : null,
     timezone: effectiveTimezone,
     screenState,
@@ -196,7 +245,25 @@ export async function GET(
     hourChartData,
     costChartData,
     dayTotals,
+    ytdMetricRanks,
+    daylightCoverage: computeDaylightCoverage(
+      date,
+      effectiveTimezone,
+      installationContext?.locationLatitude ?? null,
+      installationContext?.locationLongitude ?? null,
+      minuteChartData,
+    ),
+    historicalSunEvents: computeHistoricalSunEvents(
+      date,
+      installationContext?.locationLatitude ?? null,
+      installationContext?.locationLongitude ?? null,
+    ),
+    tariffBreakdown:
+      tariffContext && screenState !== 'disconnected'
+        ? computeTariffBreakdown(dayDetail.halfHourData, date, tariffContext)
+        : [],
     financialEstimate,
+    repaymentCoverage,
   };
 
   return Response.json(payload);

@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
   CalendarDays,
@@ -22,6 +21,7 @@ import {
   formatDayValue,
   extractExportCredit,
   extractImmersionValue,
+  extractImmersionExportEquivalent,
   findBestDates,
   getMetricHue,
   interpolateBarColor,
@@ -37,6 +37,7 @@ import { WarningsCallout } from '@/src/components/WarningsCallout';
 export type CalendarScreenProps = {
   payload: RangeSummaryPayload | null;
   year: number;
+  initialMetric: CalendarMetric;
   today: string;
   earliestDate: string | null;
   repaymentSchedules: RepaymentSchedule[];
@@ -74,6 +75,42 @@ function buildMonthRangeUrl(year: number, month: number): string {
   return `/range?from=${year}-${mm}-01&to=${year}-${mm}-${dd}&mode=months`;
 }
 
+function describeMetric(metric: CalendarMetric): string {
+  switch (metric) {
+    case 'generation_kwh':
+      return 'Total solar energy generated on each day.';
+    case 'consumed_kwh':
+      return 'Total household electricity used on each day, from any source.';
+    case 'self_consumed_kwh':
+      return 'Solar energy used directly in the home instead of being exported.';
+    case 'self_consumed_value':
+      return 'Value of solar used onsite, priced at the avoided import rate.';
+    case 'total_solar_value':
+      return 'Combined value from onsite solar use plus export credit.';
+    case 'solar_coverage':
+      return 'Share of the home’s demand that solar covered on each day.';
+    case 'import_kwh':
+      return 'Electricity imported from the grid on each day.';
+    case 'import_cost':
+      return 'Tariff-priced cost of imported electricity for each day.';
+    case 'export_kwh':
+      return 'Electricity exported to the grid, with export credit shown alongside it.';
+    case 'export_credit':
+      return 'Tariff-priced export credit earned from electricity sent to the grid.';
+    case 'immersion_kwh':
+      return 'Solar energy diverted to immersion heating on each day.';
+    case 'net_energy_bill':
+      return 'Import cost plus fixed charges minus export credit for each day.';
+    case 'net_solar_position':
+      return 'Estimated bill reduction from solar for each day.';
+    case 'prorata_coverage':
+      return 'How much of that day’s pro-rata repayment was covered by solar savings.';
+  }
+
+  const _exhaustive: never = metric;
+  return _exhaustive;
+}
+
 // ---------------------------------------------------------------------------
 // Root screen
 // ---------------------------------------------------------------------------
@@ -81,19 +118,18 @@ function buildMonthRangeUrl(year: number, month: number): string {
 export function CalendarScreen({
   payload: initialPayload,
   year: initialYear,
+  initialMetric,
   today,
   earliestDate: initialEarliestDate,
   repaymentSchedules,
   currency,
 }: CalendarScreenProps) {
-  const router = useRouter();
-
   const [activeYear, setActiveYear] = useState(initialYear);
   const [activeSeries, setActiveSeries] = useState<RangeSeriesDay[]>(
     initialPayload?.series ?? [],
   );
   const [earliestDate, setEarliestDate] = useState(initialEarliestDate);
-  const [activeMetric, setActiveMetric] = useState<CalendarMetric>('generation_kwh');
+  const [activeMetric, setActiveMetric] = useState<CalendarMetric>(initialMetric);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(initialPayload === null);
   const [warningsDismissed, setWarningsDismissed] = useState(false);
@@ -110,6 +146,11 @@ export function CalendarScreen({
   const currentYear = parseInt(today.slice(0, 4), 10);
   const earliestYear = earliestDate ? parseInt(earliestDate.slice(0, 4), 10) : currentYear;
 
+  const buildCalendarUrl = useCallback(
+    (year: number, metric: CalendarMetric) => `/calendar?year=${year}&metric=${metric}`,
+    [],
+  );
+
   // Seed the cache with the server-loaded payload on mount.
   const seededRef = useRef(false);
   useEffect(() => {
@@ -117,6 +158,10 @@ export function CalendarScreen({
     seededRef.current = true;
     setCachedYear(String(initialYear), initialPayload);
   }, [initialPayload, initialYear]);
+
+  useEffect(() => {
+    setActiveMetric(initialMetric);
+  }, [initialMetric]);
 
   // ---------------------------------------------------------------------------
   // Year navigation
@@ -130,7 +175,7 @@ export function CalendarScreen({
       setTooltip(null);
 
       // Update URL immediately.
-      window.history.replaceState(null, '', `/calendar?year=${newYear}`);
+      window.history.replaceState(null, '', buildCalendarUrl(newYear, activeMetric));
 
       try {
         const payload = await fetchOrGetYear(String(newYear));
@@ -145,7 +190,7 @@ export function CalendarScreen({
         setLoading(false);
       }
     },
-    [activeYear],
+    [activeMetric, activeYear, buildCalendarUrl],
   );
 
   // Retry load for the active year — navigateYear short-circuits on same-year.
@@ -222,7 +267,7 @@ export function CalendarScreen({
     }
     if (activeMetric === 'immersion_kwh') {
       const value = bestDay ? extractImmersionValue(bestDay) : null;
-      if (value !== null) return `${formatDayMD(firstBestDate)} (${primary} | ${formatSecondary(value)})`;
+      if (value !== null) return `${formatDayMD(firstBestDate)} (${primary} | ${formatSecondary(value)} import)`;
     }
     return `${formatDayMD(firstBestDate)} (${primary})`;
   }, [bestDates, normalizedMap, activeMetric, currency, activeSeries]);
@@ -231,7 +276,7 @@ export function CalendarScreen({
   // Year total
   // ---------------------------------------------------------------------------
 
-  const yearSummary = useMemo((): { value: string; secondaryValue?: string; label: string } | null => {
+  const yearSummary = useMemo((): { value: string; secondaryValues?: string[]; label: string } | null => {
     const metricLabel = CALENDAR_METRICS.find((m) => m.id === activeMetric)?.label ?? '';
     const baseLabel = `${metricLabel} — ${activeYear} total`;
 
@@ -279,18 +324,26 @@ export function CalendarScreen({
         const c = extractExportCredit(day);
         if (c !== null) creditSum += c;
       }
-      return { value: formatDayValue(sum, activeMetric, currency), secondaryValue: formatCurrencyVal(creditSum), label: baseLabel };
+      return { value: formatDayValue(sum, activeMetric, currency), secondaryValues: [creditSum > 0 ? formatCurrencyVal(creditSum) : ''], label: baseLabel };
     }
 
     if (activeMetric === 'immersion_kwh') {
-      let valueSum = 0;
+      let importEquivalentSum = 0;
+      let exportEquivalentSum = 0;
       for (const day of activeSeries) {
-        const v = extractImmersionValue(day);
-        if (v !== null) valueSum += v;
+        const importEquivalent = extractImmersionValue(day);
+        const exportEquivalent = extractImmersionExportEquivalent(day);
+        if (importEquivalent !== null) importEquivalentSum += importEquivalent;
+        if (exportEquivalent !== null) exportEquivalentSum += exportEquivalent;
       }
-      if (valueSum > 0) {
-        return { value: formatDayValue(sum, activeMetric, currency), secondaryValue: formatCurrencyVal(valueSum), label: baseLabel };
-      }
+      return {
+        value: formatDayValue(sum, activeMetric, currency),
+        secondaryValues: [
+          `${formatCurrencyVal(importEquivalentSum)} (equivalent import value)`,
+          `${formatCurrencyVal(exportEquivalentSum)} (equivalent export value)`,
+        ],
+        label: baseLabel,
+      };
     }
 
     return { value: formatDayValue(sum, activeMetric, currency), label: baseLabel };
@@ -456,22 +509,30 @@ export function CalendarScreen({
             )}
 
             {/* Metric strip */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-              {CALENDAR_METRICS.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => setActiveMetric(m.id)}
-                  className={[
-                    'shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-                    activeMetric === m.id
-                      ? 'border-indigo-500 bg-indigo-600/80 text-white'
-                      : 'border-slate-600 bg-slate-900/70 text-slate-300 hover:border-slate-500 hover:text-slate-100',
-                  ].join(' ')}
-                >
-                  {m.label}
-                </button>
+            <div className="flex flex-col items-center gap-2">
+              {[CALENDAR_METRICS.slice(0, 7), CALENDAR_METRICS.slice(7)].map((row, rowIndex) => (
+                <div key={rowIndex} className="flex flex-wrap justify-center gap-2">
+                  {row.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => {
+                        setActiveMetric(m.id);
+                        window.history.replaceState(null, '', buildCalendarUrl(activeYear, m.id));
+                      }}
+                      className={[
+                        'shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                        activeMetric === m.id
+                          ? 'border-indigo-500 bg-indigo-600/80 text-white'
+                          : 'border-slate-600 bg-slate-900/70 text-slate-300 hover:border-slate-500 hover:text-slate-100',
+                      ].join(' ')}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
               ))}
             </div>
+            <p className="text-sm text-slate-400">{describeMetric(activeMetric)}</p>
 
             {/* Year summary */}
             {yearSummary && (
@@ -479,17 +540,17 @@ export function CalendarScreen({
                 <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
                   {yearSummary.label}
                 </span>
-                <span className="font-mono text-lg font-semibold text-slate-100">{yearSummary.value}</span>
-                {yearSummary.secondaryValue && (
-                  <>
+                <span className="font-mono text-sm font-semibold text-slate-100">{yearSummary.value}</span>
+                {yearSummary.secondaryValues?.filter(Boolean).map((secondaryValue) => (
+                  <span key={secondaryValue} className="contents">
                     <span className="text-slate-600">|</span>
-                    <span className="font-mono text-lg font-semibold text-slate-100">{yearSummary.secondaryValue}</span>
-                  </>
-                )}
+                    <span className="font-mono text-sm font-semibold text-slate-100">{secondaryValue}</span>
+                  </span>
+                ))}
                 {bestDayLabel && (
                   <>
                     <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">· Best day</span>
-                    <span className="font-mono text-lg font-semibold text-slate-100">{bestDayLabel}</span>
+                    <span className="font-mono text-sm font-semibold text-slate-100">{bestDayLabel}</span>
                   </>
                 )}
               </div>

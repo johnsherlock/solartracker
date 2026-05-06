@@ -63,6 +63,10 @@ describe('extractDayValue', () => {
     expect(extractDayValue(makeDay(), 'generation_kwh', noSchedules)).toBe(10);
   });
 
+  it('consumed_kwh returns consumedKwh', () => {
+    expect(extractDayValue(makeDay(), 'consumed_kwh', noSchedules)).toBe(12);
+  });
+
   it('self_consumed_kwh returns generatedKwh - exportKwh', () => {
     expect(extractDayValue(makeDay(), 'self_consumed_kwh', noSchedules)).toBe(7);
   });
@@ -81,6 +85,10 @@ describe('extractDayValue', () => {
     expect(extractDayValue(day, 'self_consumed_value', noSchedules)).toBeNull();
   });
 
+  it('total_solar_value returns self-consumed value plus export credit', () => {
+    expect(extractDayValue(makeDay(), 'total_solar_value', noSchedules)).toBe(2.0);
+  });
+
   it('import_kwh returns importKwh', () => {
     expect(extractDayValue(makeDay(), 'import_kwh', noSchedules)).toBe(5);
   });
@@ -93,6 +101,10 @@ describe('extractDayValue', () => {
     expect(extractDayValue(makeDay(), 'export_kwh', noSchedules)).toBe(3);
   });
 
+  it('export_credit returns billing.exportCredit', () => {
+    expect(extractDayValue(makeDay(), 'export_credit', noSchedules)).toBe(0.9);
+  });
+
   it('immersion_kwh returns immersionDivertedKwh', () => {
     expect(extractDayValue(makeDay(), 'immersion_kwh', noSchedules)).toBe(2);
   });
@@ -100,6 +112,10 @@ describe('extractDayValue', () => {
   it('immersion_kwh returns null when null on day', () => {
     const day = makeDay({ immersionDivertedKwh: null });
     expect(extractDayValue(day, 'immersion_kwh', noSchedules)).toBeNull();
+  });
+
+  it('net_energy_bill returns billing.actualNetCost', () => {
+    expect(extractDayValue(makeDay(), 'net_energy_bill', noSchedules)).toBe(1.5);
   });
 
   it('solar_coverage returns selfConsumed / consumedKwh', () => {
@@ -244,9 +260,19 @@ describe('formatDayValue', () => {
     expect(formatDayValue(12.3, 'generation_kwh', 'EUR')).toBe('12.30 kWh');
   });
 
+  it('formats consumed_kwh as kWh', () => {
+    expect(formatDayValue(8.75, 'consumed_kwh', 'EUR')).toBe('8.75 kWh');
+  });
+
   it('formats currency metrics in EUR', () => {
     const result = formatDayValue(3.5, 'import_cost', 'EUR');
     expect(result).toContain('3.50');
+    expect(result).toContain('€');
+  });
+
+  it('formats total_solar_value as currency', () => {
+    const result = formatDayValue(4.25, 'total_solar_value', 'EUR');
+    expect(result).toContain('4.25');
     expect(result).toContain('€');
   });
 

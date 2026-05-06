@@ -41,6 +41,16 @@ export function get(date: string): Promise<HistoricalDayPayload> | null {
 }
 
 /**
+ * Prime the cache with a payload that is already available locally.
+ *
+ * Used so server-rendered historical pages can be revisited instantly without
+ * waiting for a later prefetch to populate the current day.
+ */
+export function prime(date: string, payload: HistoricalDayPayload): void {
+  cache.set(date, Promise.resolve(payload));
+}
+
+/**
  * Clear all cached entries. Intended for testing only.
  */
 export function _reset(): void {

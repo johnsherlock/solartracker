@@ -28,7 +28,12 @@ function makePayload(date: string): HistoricalDayPayload {
     hourChartData: [],
     costChartData: [],
     dayTotals: null,
+    ytdMetricRanks: {},
+    daylightCoverage: null,
+    historicalSunEvents: null,
+    tariffBreakdown: [],
     financialEstimate: null,
+    repaymentCoverage: null,
   };
 }
 

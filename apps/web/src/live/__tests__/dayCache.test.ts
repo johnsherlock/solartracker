@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { _reset, get, prefetch } from '../dayCache';
+import { _reset, get, prefetch, prime } from '../dayCache';
 import type { HistoricalDayPayload } from '../../../app/api/history/[date]/route';
 
 const TODAY = '2026-04-01';
@@ -28,7 +28,12 @@ function makePayload(date: string): HistoricalDayPayload {
     hourChartData: [],
     costChartData: [],
     dayTotals: null,
+    ytdMetricRanks: {},
+    daylightCoverage: null,
+    historicalSunEvents: null,
+    tariffBreakdown: [],
     financialEstimate: null,
+    repaymentCoverage: null,
   };
 }
 
@@ -132,6 +137,19 @@ describe('get', () => {
     const result = get(date);
 
     expect(result).toBeInstanceOf(Promise);
+    await expect(result).resolves.toEqual(payload);
+  });
+
+  it('returns a primed payload without fetching', async () => {
+    const date = '2026-03-29';
+    const payload = makePayload(date);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    prime(date, payload);
+
+    const result = get(date);
+    expect(fetchMock).not.toHaveBeenCalled();
     await expect(result).resolves.toEqual(payload);
   });
 });

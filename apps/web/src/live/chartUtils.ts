@@ -102,7 +102,7 @@ export function formatSeriesLabel(key: SeriesKey): string {
 export function formatCostSeriesLabel(key: CostSeriesKey): string {
   if (key === 'importCost') return 'Import €';
   if (key === 'exportCredit') return 'Export €';
-  return 'Savings €';
+  return 'Self-used solar €';
 }
 
 export function formatResolutionLabel(value: Resolution): string {

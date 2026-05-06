@@ -216,7 +216,7 @@ describe('formatCostSeriesLabel', () => {
   it('returns the correct label for each cost series', () => {
     expect(formatCostSeriesLabel('importCost')).toBe('Import €');
     expect(formatCostSeriesLabel('exportCredit')).toBe('Export €');
-    expect(formatCostSeriesLabel('savings')).toBe('Savings €');
+    expect(formatCostSeriesLabel('savings')).toBe('Self-used solar €');
   });
 });
 

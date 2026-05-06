@@ -19,6 +19,7 @@ import {
   formatEuro,
   formatEuroTick,
 } from './chartUtils';
+import type { TariffBreakdownSlice } from './loader';
 
 // ---------------------------------------------------------------------------
 // Shared axis / grid / tooltip theme
@@ -43,6 +44,21 @@ const GRID_DEFAULT = { top: 10, right: 8, bottom: 30, left: 42 };
 
 // Grid with extra bottom space for the dataZoom slider
 const GRID_WITH_ZOOM = { top: 10, right: 8, bottom: 64, left: 42 };
+const SUN_MARKER_LINE = {
+  symbol: 'none',
+  silent: true,
+  lineStyle: {
+    color: 'rgba(148,163,184,0.45)',
+    type: 'dotted' as const,
+    width: 1,
+  },
+  label: {
+    show: true,
+    color: '#94a3b8',
+    fontSize: 10,
+    position: 'insideEndTop' as const,
+  },
+};
 
 const TOOLBOX = {
   right: 8,
@@ -147,6 +163,7 @@ export function buildEnergyTrendOption(
   viewMode: ViewMode,
   resolution: Resolution,
   hoveredSeries: SeriesKey | null,
+  sunMarkers: { time: string; label: string }[] = [],
 ): object {
   const cumulativeUsesEnergyUnits = viewMode === 'cumulative' && resolution !== '1min';
   const showFill = resolution === '1min' && viewMode === 'line';
@@ -178,6 +195,14 @@ export function buildEnergyTrendOption(
           ? { color: areaGradient(color, showFill), opacity: areaOpacity }
           : { opacity: 0 },
       emphasis: { disabled: true },
+      ...(key === SERIES_ORDER[0] && sunMarkers.length > 0
+        ? {
+            markLine: {
+              ...SUN_MARKER_LINE,
+              data: sunMarkers.map((marker) => ({ xAxis: marker.time, name: marker.label })),
+            },
+          }
+        : {}),
     };
   });
 
@@ -232,7 +257,11 @@ export function buildEnergyTrendOption(
 // Cost / value chart
 // ---------------------------------------------------------------------------
 
-export function buildCostOption(data: CostPoint[], viewMode: ViewMode): object {
+export function buildCostOption(
+  data: CostPoint[],
+  viewMode: ViewMode,
+  sunMarkers: { time: string; label: string }[] = [],
+): object {
   const times = data.map((p) => p.time);
 
   const series = (COST_SERIES_ORDER as readonly CostSeriesKey[]).map((key) => ({
@@ -245,6 +274,14 @@ export function buildCostOption(data: CostPoint[], viewMode: ViewMode): object {
     itemStyle: { color: COST_SERIES_COLORS[key] },
     areaStyle: undefined,
     emphasis: { disabled: true },
+    ...(key === COST_SERIES_ORDER[0] && sunMarkers.length > 0
+      ? {
+          markLine: {
+            ...SUN_MARKER_LINE,
+            data: sunMarkers.map((marker) => ({ xAxis: marker.time, name: marker.label })),
+          },
+        }
+      : {}),
   }));
 
   void viewMode; // viewMode transform is applied by the caller before passing data in
@@ -256,7 +293,16 @@ export function buildCostOption(data: CostPoint[], viewMode: ViewMode): object {
     animationEasing: 'cubicOut',
     animationEasingUpdate: 'cubicOut',
     animationThreshold: 10000,
-    grid: GRID_DEFAULT,
+    grid: { ...GRID_DEFAULT, top: 34 },
+    legend: {
+      top: 0,
+      right: 0,
+      orient: 'horizontal' as const,
+      itemWidth: 12,
+      itemHeight: 8,
+      itemGap: 10,
+      textStyle: { color: '#94a3b8', fontSize: 10 },
+    },
     xAxis: {
       type: 'category',
       data: times,
@@ -294,11 +340,79 @@ export function buildCostOption(data: CostPoint[], viewMode: ViewMode): object {
   };
 }
 
+export function buildTariffBreakdownOption(data: TariffBreakdownSlice[]): object {
+  const outerSeries = data.map((slice) => ({
+    key: slice.key,
+    name: slice.label,
+    value: slice.importCost,
+    kwh: slice.importKwh,
+    itemStyle: { color: slice.color },
+  }));
+  const innerSeries = data.map((slice) => ({
+    key: slice.key,
+    name: slice.label,
+    value: slice.solarValue,
+    kwh: slice.solarKwh,
+    itemStyle: { color: hexAlpha(slice.color, 0.78) },
+  }));
+
+  return {
+    animation: true,
+    animationDuration: 500,
+    animationDurationUpdate: 500,
+    tooltip: {
+      ...TOOLTIP_BASE,
+      trigger: 'item' as const,
+      formatter: (params: { seriesName: string; name: string; value: number; data?: { kwh?: number } }) => {
+        const kwh = params.data?.kwh ?? 0;
+        return (
+          `<div style="font-size:11px;color:#94a3b8;margin-bottom:6px">${params.seriesName}</div>` +
+          `<div style="display:flex;justify-content:space-between;gap:16px"><span>${params.name}</span><span style="font-weight:600">${formatEuro(params.value)}</span></div>` +
+          `<div style="display:flex;justify-content:space-between;gap:16px"><span>Energy</span><span style="font-weight:600">${formatKwh(kwh)}</span></div>`
+        );
+      },
+    },
+    legend: {
+      bottom: 0,
+      left: 'center',
+      itemWidth: 10,
+      itemHeight: 10,
+      itemGap: 12,
+      textStyle: { color: '#94a3b8', fontSize: 11 },
+    },
+    series: [
+      {
+        name: 'Import cost by tariff period',
+        type: 'pie',
+        radius: ['52%', '74%'],
+        center: ['50%', '42%'],
+        avoidLabelOverlap: true,
+        label: { show: false },
+        labelLine: { show: false },
+        data: outerSeries,
+      },
+      {
+        name: 'Onsite solar value by tariff period',
+        type: 'pie',
+        radius: ['24%', '44%'],
+        center: ['50%', '42%'],
+        avoidLabelOverlap: true,
+        label: { show: false },
+        labelLine: { show: false },
+        data: innerSeries,
+      },
+    ],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Solar coverage chart
 // ---------------------------------------------------------------------------
 
-export function buildCoverageOption(data: { time: string; coverage: number }[]): object {
+export function buildCoverageOption(
+  data: { time: string; coverage: number }[],
+  sunMarkers: { time: string; label: string }[] = [],
+): object {
   const COVERAGE_COLOR = '#facc15';
 
   return {
@@ -360,6 +474,14 @@ export function buildCoverageOption(data: { time: string; coverage: number }[]):
           },
         },
         emphasis: { disabled: true },
+        ...(sunMarkers.length > 0
+          ? {
+              markLine: {
+                ...SUN_MARKER_LINE,
+                data: sunMarkers.map((marker) => ({ xAxis: marker.time, name: marker.label })),
+              },
+            }
+          : {}),
       },
     ],
   };
