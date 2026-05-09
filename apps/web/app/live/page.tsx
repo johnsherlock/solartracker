@@ -18,7 +18,10 @@ import {
   periodDataToChartPoints,
   periodDataToCostPoints,
 } from '@/src/live/loader';
+import { loadRangeInstallationContext } from '@/src/range/loader';
+import { computeRepaymentsForPeriod } from '@/src/range/recovery';
 import { getLiveWeatherContext } from '@/src/weather/getLiveWeatherContext';
+import { addDays } from '@/src/live/chartUtils';
 import { LiveScreen } from './LiveScreen';
 import { resolveEffectiveInstallationId } from '@/src/installation-helpers';
 import { loadStaleTariffWarning } from '@/src/tariffs/stale-check';
@@ -77,13 +80,15 @@ export default async function LivePage({
 
   const selectedDate = resolveSelectedDate(params?.date, today);
   const fetchedAt = now.toISOString();
+  const yesterday = addDays(selectedDate, -1);
 
   // Load tariff, provider credentials, weather, and stale-tariff check in parallel.
-  const [tariffContext, providerConnection, weatherResult, staleTariffWarning] = await Promise.all([
+  const [tariffContext, providerConnection, weatherResult, staleTariffWarning, rangeInstallationContext] = await Promise.all([
     loadTariffContext(installationId, selectedDate),
     loadProviderConnection(installationId),
     getLiveWeatherContext(installationId),
     loadStaleTariffWarning(installationId, effectiveTimezone),
+    loadRangeInstallationContext(installationId),
   ]);
 
   // Fetch live minute data from MyEnergi via the rewrite-owned adapter.
@@ -124,6 +129,27 @@ export default async function LivePage({
       ? costChartData.length > 0
         ? computeFinancialEstimateFromCostPoints(costChartData)
         : computeFinancialEstimate(dayDetail.summary, tariffContext)
+      : null;
+  const todayRepaymentAmount = computeRepaymentsForPeriod(
+    rangeInstallationContext?.repaymentSchedules ?? [],
+    selectedDate,
+    selectedDate,
+    false,
+  ).amount;
+  const yesterdayRepaymentAmount = computeRepaymentsForPeriod(
+    rangeInstallationContext?.repaymentSchedules ?? [],
+    yesterday,
+    yesterday,
+    false,
+  ).amount;
+  const totalSolarValue =
+    financialEstimate != null ? financialEstimate.solarSavings + financialEstimate.exportCredit : null;
+  const repaymentCoverage =
+    totalSolarValue != null && todayRepaymentAmount > 0
+      ? {
+          amount: Math.round(totalSolarValue * 100) / 100,
+          percent: Math.round((totalSolarValue / todayRepaymentAmount) * 100),
+        }
       : null;
 
   const todayTotals =
@@ -186,6 +212,8 @@ export default async function LivePage({
       costChartData={costChartData}
       todayTotals={todayTotals}
       financialEstimate={financialEstimate}
+      repaymentCoverage={repaymentCoverage}
+      yesterdayRepaymentAmount={yesterdayRepaymentAmount > 0 ? yesterdayRepaymentAmount : null}
       staleTariffWarning={staleTariffWarning}
     />
   );

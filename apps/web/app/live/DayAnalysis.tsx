@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { EChart } from '@/src/live/EChartsWrapper';
 import { ChevronRight, Eye, EyeOff } from 'lucide-react';
 import type {
@@ -25,6 +25,10 @@ import {
   formatEuro,
   formatEuroTick,
 } from '@/src/live/chartUtils';
+import {
+  type TrendIndicatorData,
+  resolveFinalCostRow,
+} from '@/src/live/dayCardModel';
 import {
   buildEnergyTrendOption,
   buildCostOption,
@@ -61,15 +65,9 @@ export {
 import type { Resolution, ViewMode, SeriesKey } from '@/src/live/chartUtils';
 
 type ScreenState = 'healthy' | 'stale' | 'warning' | 'disconnected';
-type TrendDirection = 'up' | 'down' | 'same';
-type TrendStrength = 'light' | 'medium' | 'strong';
-type TrendIndicatorData = {
-  direction: TrendDirection;
-  strength: TrendStrength;
-};
 
 function trendTone(trend: TrendIndicatorData): string {
-  if (trend.direction === 'same') {
+  if (trend.tone === 'neutral') {
     return trend.strength === 'strong'
       ? 'text-amber-200'
       : trend.strength === 'medium'
@@ -77,7 +75,7 @@ function trendTone(trend: TrendIndicatorData): string {
         : 'text-amber-400';
   }
 
-  if (trend.direction === 'up') {
+  if (trend.tone === 'positive') {
     return trend.strength === 'strong'
       ? 'text-emerald-200'
       : trend.strength === 'medium'
@@ -97,14 +95,59 @@ function trendArrow(trend: TrendIndicatorData): string {
   return trend.direction === 'up' ? '↑' : '↓';
 }
 
+function useOutsideClose(ref: RefObject<HTMLElement | null>, enabled: boolean, onClose: () => void) {
+  useEffect(() => {
+    if (!enabled) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        onClose();
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose();
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [ref, enabled, onClose]);
+}
+
 function TrendPill({ trend }: { trend?: TrendIndicatorData }) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLSpanElement>(null);
+  const close = () => setOpen(false);
+
+  useOutsideClose(wrapperRef, open, close);
+
   if (!trend) {
     return <span className="text-right font-mono text-sm text-slate-600">—</span>;
   }
 
   return (
-    <span className={`text-right font-mono text-xl font-bold leading-none ${trendTone(trend)}`}>
-      {trendArrow(trend)}
+    <span ref={wrapperRef} className="relative flex justify-end">
+      <button
+        type="button"
+        aria-label={trend.summary}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onClick={() => setOpen((current) => !current)}
+        className={`text-right font-mono text-xl font-bold leading-none ${trendTone(trend)}`}
+      >
+        {trendArrow(trend)}
+      </button>
+      {open && (
+        <span className="pointer-events-none absolute right-0 top-full z-20 mt-2 min-w-40 max-w-52 rounded-xl border border-slate-700 bg-slate-950 px-2.5 py-2 text-left text-[11px] font-medium leading-4 text-slate-200 shadow-[0_18px_40px_rgba(2,6,23,0.55)]">
+          {trend.summary}
+        </span>
+      )}
     </span>
   );
 }
@@ -414,8 +457,9 @@ export function DayValuePanel({
       trendKey: 'net_energy_bill',
     },
   ];
+  const finalRow = resolveFinalCostRow(repaymentCoverage ?? null);
+  const totalSolarValue = estimate.solarSavings + estimate.exportCredit;
   const showRankings = mode === 'historical' && !!selectedDate && !!rankings;
-  const repaymentRank = rankings?.prorata_coverage;
   const showTrends = !!trends;
   const gridClass = showRankings
     ? 'grid grid-cols-[minmax(0,1fr)_120px_32px_44px] items-baseline gap-3'
@@ -431,7 +475,7 @@ export function DayValuePanel({
       <h3 className="mt-1 text-lg font-semibold text-slate-50">
         {mode === 'historical' ? 'Cost and savings' : 'Cost and savings so far'}
       </h3>
-      <div className="mt-4 space-y-3">
+      <div className="mt-4 space-y-2.5">
         {(showRankings || showTrends) && (
           <div
             className={`${
@@ -468,23 +512,23 @@ export function DayValuePanel({
             </div>
           );
         })}
-        {mode === 'historical' && repaymentCoverage && (
-          <div className={`${gridClass} border-t border-slate-800/80 pt-3`}>
-            <span className="text-sm text-slate-400">Repayment coverage</span>
-            <span className="text-right font-mono text-xs font-semibold whitespace-nowrap text-violet-300 sm:text-sm">
-              {`${formatEuro(repaymentCoverage.amount)} (${repaymentCoverage.percent}%)`}
-            </span>
-            {showTrends && <TrendPill trend={trends?.prorata_coverage} />}
-            {showRankings && selectedDate ? (
-              <Link
-                href={buildCalendarMetricUrl(selectedDate, 'prorata_coverage')}
-                className="text-right font-mono text-sm font-semibold text-slate-300 transition-colors hover:text-sky-300"
-              >
-                {formatRank(repaymentRank)}
-              </Link>
-            ) : null}
-          </div>
-        )}
+        <div className={`${gridClass} border-t border-slate-800/80 pt-2.5`}>
+          <span className="text-sm text-slate-400">{finalRow.label}</span>
+          <span className="text-right font-mono text-xs font-semibold whitespace-nowrap text-violet-300 sm:text-sm">
+            {finalRow.metric === 'prorata_coverage' && repaymentCoverage
+              ? `${formatEuro(repaymentCoverage.amount)} (${repaymentCoverage.percent}%)`
+              : formatEuro(totalSolarValue)}
+          </span>
+          {showTrends && <TrendPill trend={trends?.[finalRow.trendKey]} />}
+          {showRankings && selectedDate ? (
+            <Link
+              href={buildCalendarMetricUrl(selectedDate, finalRow.metric)}
+              className="text-right font-mono text-sm font-semibold text-slate-300 transition-colors hover:text-sky-300"
+            >
+              {formatRank(rankings?.[finalRow.metric])}
+            </Link>
+          ) : null}
+        </div>
       </div>
       <details className="mt-4 rounded-2xl border border-slate-700/40 bg-slate-900/40 px-3 py-2 text-xs text-slate-400">
         <summary className="cursor-pointer list-none font-semibold text-amber-300">
@@ -495,9 +539,7 @@ export function DayValuePanel({
           <p>Export credit = total exported kWh x export rate.</p>
           <p>Onsite solar value = each half-hour kWh used onsite from solar x that period&apos;s tariff rate x VAT, summed across the day.</p>
           <p>Net energy bill = import cost - export credit.</p>
-          {mode === 'historical' && repaymentCoverage && (
-            <p>Repayment coverage = total solar value compared with that day&apos;s pro-rata repayment amount.</p>
-          )}
+          <p>{finalRow.explanation}</p>
         </div>
       </details>
     </div>
@@ -523,6 +565,7 @@ export function DayTotalsPanel({
   selectedDate,
   rankings,
   trends,
+  liveHeading,
 }: {
   mode: 'live' | 'historical';
   totals: DayTotals | null;
@@ -530,6 +573,7 @@ export function DayTotalsPanel({
   selectedDate?: string;
   rankings?: HistoricalMetricRanks;
   trends?: Partial<Record<string, TrendIndicatorData>>;
+  liveHeading?: string;
 }) {
   const items = totals
     ? [
@@ -584,7 +628,7 @@ export function DayTotalsPanel({
         {mode === 'historical' ? 'Day totals' : 'Today so far'}
       </p>
       <h3 className="mt-1 text-lg font-semibold text-slate-50">
-        {mode === 'historical' ? 'Final day totals' : 'The day is still building'}
+        {mode === 'historical' ? 'Final day totals' : liveHeading ?? 'The day is taking shape'}
       </h3>
       <div className="mt-4 space-y-3">
         {(showRankings || showTrends) && (

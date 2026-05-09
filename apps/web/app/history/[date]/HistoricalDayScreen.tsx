@@ -22,6 +22,10 @@ import type { StaleTariffWarning } from '@/src/tariffs/stale-check';
 import { EChart } from '@/src/live/EChartsWrapper';
 import { LiveClockChip } from '@/src/components/LiveClockChip';
 import {
+  buildHistoricalTrendIndicator,
+  getMetricPolarity,
+} from '@/src/live/dayCardModel';
+import {
   DayTrendChart,
   DayValuePanel,
   DayTotalsPanel,
@@ -36,6 +40,8 @@ import {
   applyViewMode,
   applyCostViewMode,
   addDays,
+  formatEuro,
+  formatKwh,
 } from '@/src/live/chartUtils';
 import type { CostPoint } from '@/src/live/loader';
 import { buildHistoricalNotesModel, type HistoricalNotesModel } from '@/src/live/historicalNotes';
@@ -57,12 +63,6 @@ import type { SunEvents } from '@/src/weather/types';
 // ---------------------------------------------------------------------------
 
 type ScreenState = 'healthy' | 'stale' | 'warning' | 'disconnected';
-type TrendDirection = 'up' | 'down' | 'same';
-type TrendStrength = 'light' | 'medium' | 'strong';
-type TrendIndicatorData = {
-  direction: TrendDirection;
-  strength: TrendStrength;
-};
 
 export type HistoricalDayScreenProps = {
   today: string;
@@ -205,26 +205,6 @@ function formatDaylightHours(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   return `${hours}h ${minutes}m`;
-}
-
-function buildTrend(current: number | null | undefined, previous: number | null | undefined): TrendIndicatorData | undefined {
-  if (current == null || previous == null) return undefined;
-
-  const diff = current - previous;
-  const scale = Math.max(Math.abs(previous), Math.abs(current), 1);
-  const relativeDiff = Math.abs(diff) / scale;
-
-  if (Math.abs(diff) < 0.01 || relativeDiff < 0.02) {
-    return { direction: 'same', strength: relativeDiff < 0.005 ? 'light' : 'medium' };
-  }
-
-  const strength: TrendStrength =
-    relativeDiff >= 0.25 ? 'strong' : relativeDiff >= 0.1 ? 'medium' : 'light';
-
-  return {
-    direction: diff > 0 ? 'up' : 'down',
-    strength,
-  };
 }
 
 function snapMarkerTime(availableTimes: string[], utcIso: string, timezone: string): string | null {
@@ -647,51 +627,103 @@ export function HistoricalDayScreen(props: HistoricalDayScreenProps) {
     return Math.round(qualifyingHours * 10) / 10;
   }, [minuteChartData]);
 
+  const previousDayLabel = useMemo(() => {
+    if (!previousDayData) return null;
+    return new Intl.DateTimeFormat('en-IE', {
+      day: 'numeric',
+      month: 'short',
+    }).format(new Date(`${previousDayData.selectedDate}T12:00:00`));
+  }, [previousDayData]);
+
   const dayValueTrends = useMemo(() => ({
-    import_cost: buildTrend(
-      financialEstimate?.importCost ?? null,
-      previousDayData?.financialEstimate?.importCost ?? null,
-    ),
-    export_credit: buildTrend(
-      financialEstimate?.exportCredit ?? null,
-      previousDayData?.financialEstimate?.exportCredit ?? null,
-    ),
-    onsite_solar_value: buildTrend(
-      financialEstimate?.solarSavings ?? null,
-      previousDayData?.financialEstimate?.solarSavings ?? null,
-    ),
-    net_energy_bill: buildTrend(
-      financialEstimate?.netBillImpact ?? null,
-      previousDayData?.financialEstimate?.netBillImpact ?? null,
-    ),
-    prorata_coverage: buildTrend(
-      repaymentCoverage?.percent ?? null,
-      previousDayData?.repaymentCoverage?.percent ?? null,
-    ),
-  }), [financialEstimate, previousDayData, repaymentCoverage]);
+    import_cost: buildHistoricalTrendIndicator({
+      current: financialEstimate?.importCost ?? null,
+      previous: previousDayData?.financialEstimate?.importCost ?? null,
+      polarity: getMetricPolarity('import_cost'),
+      formatter: (value) => formatEuro(value),
+      comparisonLabel: previousDayLabel ?? 'the previous day',
+    }),
+    export_credit: buildHistoricalTrendIndicator({
+      current: financialEstimate?.exportCredit ?? null,
+      previous: previousDayData?.financialEstimate?.exportCredit ?? null,
+      polarity: getMetricPolarity('export_credit'),
+      formatter: (value) => formatEuro(value),
+      comparisonLabel: previousDayLabel ?? 'the previous day',
+    }),
+    onsite_solar_value: buildHistoricalTrendIndicator({
+      current: financialEstimate?.solarSavings ?? null,
+      previous: previousDayData?.financialEstimate?.solarSavings ?? null,
+      polarity: getMetricPolarity('self_consumed_value'),
+      formatter: (value) => formatEuro(value),
+      comparisonLabel: previousDayLabel ?? 'the previous day',
+    }),
+    net_energy_bill: buildHistoricalTrendIndicator({
+      current: financialEstimate?.netBillImpact ?? null,
+      previous: previousDayData?.financialEstimate?.netBillImpact ?? null,
+      polarity: getMetricPolarity('net_energy_bill'),
+      formatter: (value) => formatEuro(value, true),
+      comparisonLabel: previousDayLabel ?? 'the previous day',
+    }),
+    total_solar_value: buildHistoricalTrendIndicator({
+      current:
+        financialEstimate != null
+          ? financialEstimate.solarSavings + financialEstimate.exportCredit
+          : null,
+      previous:
+        previousDayData?.financialEstimate != null
+          ? previousDayData.financialEstimate.solarSavings +
+            previousDayData.financialEstimate.exportCredit
+          : null,
+      polarity: getMetricPolarity('total_solar_value'),
+      formatter: (value) => formatEuro(value),
+      comparisonLabel: previousDayLabel ?? 'the previous day',
+    }),
+    prorata_coverage: buildHistoricalTrendIndicator({
+      current: repaymentCoverage?.percent ?? null,
+      previous: previousDayData?.repaymentCoverage?.percent ?? null,
+      polarity: getMetricPolarity('prorata_coverage'),
+      formatter: (value) => `${Math.round(value)}%`,
+      comparisonLabel: previousDayLabel ?? 'the previous day',
+    }),
+  }), [financialEstimate, previousDayData, previousDayLabel, repaymentCoverage]);
 
   const dayTotalTrends = useMemo(() => ({
-    generation_kwh: buildTrend(
-      dayTotals?.generatedKwh ?? null,
-      previousDayData?.dayTotals?.generatedKwh ?? null,
-    ),
-    consumed_kwh: buildTrend(
-      dayTotals?.consumedKwh ?? null,
-      previousDayData?.dayTotals?.consumedKwh ?? null,
-    ),
-    import_kwh: buildTrend(
-      dayTotals?.importKwh ?? null,
-      previousDayData?.dayTotals?.importKwh ?? null,
-    ),
-    export_kwh: buildTrend(
-      dayTotals?.exportKwh ?? null,
-      previousDayData?.dayTotals?.exportKwh ?? null,
-    ),
-    immersion_kwh: buildTrend(
-      dayTotals?.immersionDivertedKwh ?? null,
-      previousDayData?.dayTotals?.immersionDivertedKwh ?? null,
-    ),
-  }), [dayTotals, previousDayData]);
+    generation_kwh: buildHistoricalTrendIndicator({
+      current: dayTotals?.generatedKwh ?? null,
+      previous: previousDayData?.dayTotals?.generatedKwh ?? null,
+      polarity: getMetricPolarity('generation_kwh'),
+      formatter: (value) => formatKwh(value),
+      comparisonLabel: previousDayLabel ?? 'the previous day',
+    }),
+    consumed_kwh: buildHistoricalTrendIndicator({
+      current: dayTotals?.consumedKwh ?? null,
+      previous: previousDayData?.dayTotals?.consumedKwh ?? null,
+      polarity: getMetricPolarity('consumed_kwh'),
+      formatter: (value) => formatKwh(value),
+      comparisonLabel: previousDayLabel ?? 'the previous day',
+    }),
+    import_kwh: buildHistoricalTrendIndicator({
+      current: dayTotals?.importKwh ?? null,
+      previous: previousDayData?.dayTotals?.importKwh ?? null,
+      polarity: getMetricPolarity('import_kwh'),
+      formatter: (value) => formatKwh(value),
+      comparisonLabel: previousDayLabel ?? 'the previous day',
+    }),
+    export_kwh: buildHistoricalTrendIndicator({
+      current: dayTotals?.exportKwh ?? null,
+      previous: previousDayData?.dayTotals?.exportKwh ?? null,
+      polarity: getMetricPolarity('export_kwh'),
+      formatter: (value) => formatKwh(value),
+      comparisonLabel: previousDayLabel ?? 'the previous day',
+    }),
+    immersion_kwh: buildHistoricalTrendIndicator({
+      current: dayTotals?.immersionDivertedKwh ?? null,
+      previous: previousDayData?.dayTotals?.immersionDivertedKwh ?? null,
+      polarity: getMetricPolarity('immersion_kwh'),
+      formatter: (value) => formatKwh(value),
+      comparisonLabel: previousDayLabel ?? 'the previous day',
+    }),
+  }), [dayTotals, previousDayData, previousDayLabel]);
 
   const dismissalStorageKey = useMemo(
     () => getDismissalStorageKey(selectedDate, timezone),

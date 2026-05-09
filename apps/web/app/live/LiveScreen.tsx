@@ -38,6 +38,11 @@ import { formatDaylightStatus } from '@/src/weather/sunPosition';
 import type { CurrentMetrics, FinancialEstimate, LivePoint, TariffContext } from '@/src/live/loader';
 import { getTariffStateAt } from '@/src/live/tariffState';
 import {
+  buildLiveTrendIndicator,
+  getLiveDayTotalsHeading,
+  getMetricPolarity,
+} from '@/src/live/dayCardModel';
+import {
   DayTrendChart,
   DayValuePanel,
   DayTotalsPanel,
@@ -53,6 +58,7 @@ import {
   applyViewMode,
   applyCostViewMode,
   formatKw,
+  formatKwh,
   formatW,
   formatEuro,
   parseIsoDate,
@@ -78,12 +84,6 @@ import type { HistoricalDayPayload } from '@/app/api/history/[date]/route';
 // ---------------------------------------------------------------------------
 
 type ScreenState = 'healthy' | 'stale' | 'warning' | 'disconnected';
-type TrendDirection = 'up' | 'down' | 'same';
-type TrendStrength = 'light' | 'medium' | 'strong';
-type TrendIndicatorData = {
-  direction: TrendDirection;
-  strength: TrendStrength;
-};
 
 export type LiveScreenProps = {
   today: string;
@@ -134,6 +134,8 @@ export type LiveScreenProps = {
     immersionDivertedKwh: number;
   } | null;
   financialEstimate: FinancialEstimate | null;
+  repaymentCoverage: { amount: number; percent: number } | null;
+  yesterdayRepaymentAmount: number | null;
   staleTariffWarning: StaleTariffWarning;
 };
 
@@ -220,26 +222,6 @@ function isSeriesKey(value: string): value is SeriesKey {
 
 function buildLiveUrl(pathname: string, date: string, today: string): string {
   return date === today ? pathname : `${pathname}?date=${date}`;
-}
-
-function buildTrend(current: number | null | undefined, previous: number | null | undefined): TrendIndicatorData | undefined {
-  if (current == null || previous == null) return undefined;
-
-  const diff = current - previous;
-  const scale = Math.max(Math.abs(previous), Math.abs(current), 1);
-  const relativeDiff = Math.abs(diff) / scale;
-
-  if (Math.abs(diff) < 0.01 || relativeDiff < 0.02) {
-    return { direction: 'same', strength: relativeDiff < 0.005 ? 'light' : 'medium' };
-  }
-
-  const strength: TrendStrength =
-    relativeDiff >= 0.25 ? 'strong' : relativeDiff >= 0.1 ? 'medium' : 'light';
-
-  return {
-    direction: diff > 0 ? 'up' : 'down',
-    strength,
-  };
 }
 
 function sumUpToMinute<T extends { time: string }>(
@@ -1199,6 +1181,8 @@ export function LiveScreen({
   costChartData,
   todayTotals,
   financialEstimate,
+  repaymentCoverage,
+  yesterdayRepaymentAmount,
   staleTariffWarning,
 }: LiveScreenProps) {
   const hasCoordinates = weatherResult.status !== 'no-location';
@@ -1361,6 +1345,11 @@ export function LiveScreen({
       (point) => point.savings,
     );
     const netBillImpact = Math.round((importCost - exportCredit) * 100) / 100;
+    const totalSolarValue = Math.round((solarSavings + exportCredit) * 100) / 100;
+    const comparableRepaymentCoverage =
+      yesterdayRepaymentAmount && yesterdayRepaymentAmount > 0
+        ? Math.round((totalSolarValue / yesterdayRepaymentAmount) * 100)
+        : null;
 
     return {
       totals: {
@@ -1379,50 +1368,90 @@ export function LiveScreen({
               netBillImpact,
             }
           : null,
+      totalSolarValue,
+      repaymentCoveragePercent: comparableRepaymentCoverage,
     };
-  }, [currentMinute, yesterdayData]);
+  }, [currentMinute, yesterdayData, yesterdayRepaymentAmount]);
 
   const liveDayValueTrends = useMemo(() => ({
-    import_cost: buildTrend(
-      financialEstimate?.importCost ?? null,
-      yesterdayComparable?.financialEstimate?.importCost ?? null,
-    ),
-    export_credit: buildTrend(
-      financialEstimate?.exportCredit ?? null,
-      yesterdayComparable?.financialEstimate?.exportCredit ?? null,
-    ),
-    onsite_solar_value: buildTrend(
-      financialEstimate?.solarSavings ?? null,
-      yesterdayComparable?.financialEstimate?.solarSavings ?? null,
-    ),
-    net_energy_bill: buildTrend(
-      financialEstimate?.netBillImpact ?? null,
-      yesterdayComparable?.financialEstimate?.netBillImpact ?? null,
-    ),
-  }), [financialEstimate, yesterdayComparable]);
+    import_cost: buildLiveTrendIndicator({
+      current: financialEstimate?.importCost ?? null,
+      previous: yesterdayComparable?.financialEstimate?.importCost ?? null,
+      polarity: getMetricPolarity('import_cost'),
+      formatter: (value) => formatEuro(value),
+    }),
+    export_credit: buildLiveTrendIndicator({
+      current: financialEstimate?.exportCredit ?? null,
+      previous: yesterdayComparable?.financialEstimate?.exportCredit ?? null,
+      polarity: getMetricPolarity('export_credit'),
+      formatter: (value) => formatEuro(value),
+    }),
+    onsite_solar_value: buildLiveTrendIndicator({
+      current: financialEstimate?.solarSavings ?? null,
+      previous: yesterdayComparable?.financialEstimate?.solarSavings ?? null,
+      polarity: getMetricPolarity('self_consumed_value'),
+      formatter: (value) => formatEuro(value),
+    }),
+    net_energy_bill: buildLiveTrendIndicator({
+      current: financialEstimate?.netBillImpact ?? null,
+      previous: yesterdayComparable?.financialEstimate?.netBillImpact ?? null,
+      polarity: getMetricPolarity('net_energy_bill'),
+      formatter: (value) => formatEuro(value),
+    }),
+    total_solar_value: buildLiveTrendIndicator({
+      current:
+        financialEstimate != null
+          ? financialEstimate.solarSavings + financialEstimate.exportCredit
+          : null,
+      previous: yesterdayComparable?.totalSolarValue ?? null,
+      polarity: getMetricPolarity('total_solar_value'),
+      formatter: (value) => formatEuro(value),
+    }),
+    prorata_coverage: buildLiveTrendIndicator({
+      current: repaymentCoverage?.percent ?? null,
+      previous: yesterdayComparable?.repaymentCoveragePercent ?? null,
+      polarity: getMetricPolarity('prorata_coverage'),
+      formatter: (value) => `${Math.round(value)}%`,
+    }),
+  }), [financialEstimate, repaymentCoverage, yesterdayComparable]);
 
   const liveDayTotalTrends = useMemo(() => ({
-    generation_kwh: buildTrend(
-      todayTotals?.generatedKwh ?? null,
-      yesterdayComparable?.totals.generatedKwh ?? null,
-    ),
-    consumed_kwh: buildTrend(
-      todayTotals?.consumedKwh ?? null,
-      yesterdayComparable?.totals.consumedKwh ?? null,
-    ),
-    import_kwh: buildTrend(
-      todayTotals?.importKwh ?? null,
-      yesterdayComparable?.totals.importKwh ?? null,
-    ),
-    export_kwh: buildTrend(
-      todayTotals?.exportKwh ?? null,
-      yesterdayComparable?.totals.exportKwh ?? null,
-    ),
-    immersion_kwh: buildTrend(
-      todayTotals?.immersionDivertedKwh ?? null,
-      yesterdayComparable?.totals.immersionDivertedKwh ?? null,
-    ),
+    generation_kwh: buildLiveTrendIndicator({
+      current: todayTotals?.generatedKwh ?? null,
+      previous: yesterdayComparable?.totals.generatedKwh ?? null,
+      polarity: getMetricPolarity('generation_kwh'),
+      formatter: (value) => formatKwh(value),
+    }),
+    consumed_kwh: buildLiveTrendIndicator({
+      current: todayTotals?.consumedKwh ?? null,
+      previous: yesterdayComparable?.totals.consumedKwh ?? null,
+      polarity: getMetricPolarity('consumed_kwh'),
+      formatter: (value) => formatKwh(value),
+    }),
+    import_kwh: buildLiveTrendIndicator({
+      current: todayTotals?.importKwh ?? null,
+      previous: yesterdayComparable?.totals.importKwh ?? null,
+      polarity: getMetricPolarity('import_kwh'),
+      formatter: (value) => formatKwh(value),
+    }),
+    export_kwh: buildLiveTrendIndicator({
+      current: todayTotals?.exportKwh ?? null,
+      previous: yesterdayComparable?.totals.exportKwh ?? null,
+      polarity: getMetricPolarity('export_kwh'),
+      formatter: (value) => formatKwh(value),
+    }),
+    immersion_kwh: buildLiveTrendIndicator({
+      current: todayTotals?.immersionDivertedKwh ?? null,
+      previous: yesterdayComparable?.totals.immersionDivertedKwh ?? null,
+      polarity: getMetricPolarity('immersion_kwh'),
+      formatter: (value) => formatKwh(value),
+    }),
   }), [todayTotals, yesterdayComparable]);
+
+  const liveDayTotalsHeading = useMemo(
+    () => getLiveDayTotalsHeading(liveSunEvents, new Date()),
+    [liveSunEvents, currentMinute],
+  );
 
   const currentTariffState = useMemo(() => {
     if (!tariffContext) return null;
@@ -1863,6 +1892,7 @@ export function LiveScreen({
                     mode="live"
                     hasTariff={hasTariff}
                     estimate={financialEstimate}
+                    repaymentCoverage={repaymentCoverage}
                     trends={liveDayValueTrends}
                   />
                   <DayTotalsPanel
@@ -1871,6 +1901,7 @@ export function LiveScreen({
                     screenState={displayScreenState}
                     selectedDate={selectedDate}
                     trends={liveDayTotalTrends}
+                    liveHeading={liveDayTotalsHeading}
                   />
                   <SolarCoveragePanel
                     mode="live"
