@@ -3,10 +3,10 @@ import type { NextAuthOptions } from 'next-auth';
 import { db } from '@/src/db/client';
 import { users, installations, providerConnections } from '@/src/db/schema';
 import { eq, or } from 'drizzle-orm';
-import { UserRole, UserStatus } from '@/src/user-constants';
+import { UserStatus } from '@/src/user-constants';
 
 // Populated by signIn, consumed once by jwt — avoids a second DB round-trip per sign-in.
-const signInCache = new Map<string, { id: string; role: string; status: string }>();
+const signInCache = new Map<string, { id: string; status: string }>();
 
 /**
  * Query whether a user has an active provider connection.
@@ -52,7 +52,7 @@ export const authOptions: NextAuthOptions = {
       const displayName = profile.name ?? null;
 
       const existing = await db
-        .select({ id: users.id, role: users.role, status: users.status })
+        .select({ id: users.id, status: users.status })
         .from(users)
         .where(or(eq(users.authUserId, googleSub), eq(users.email, email)))
         .limit(1);
@@ -64,11 +64,10 @@ export const authOptions: NextAuthOptions = {
             authUserId: googleSub,
             email,
             displayName,
-            role: UserRole.User,
             status: UserStatus.AwaitingApproval,
             termsAcceptedAt: new Date(),
           })
-          .returning({ id: users.id, role: users.role, status: users.status });
+          .returning({ id: users.id, status: users.status });
         signInCache.set(googleSub, inserted);
       } else {
         // Ensure the real Google sub is stored (fixes seeded placeholder subs)
@@ -88,29 +87,25 @@ export const authOptions: NextAuthOptions = {
         const googleSub = account.providerAccountId;
         const cached = signInCache.get(googleSub);
         let userId: string;
-        let role: string;
         let status: string;
 
         if (cached) {
           signInCache.delete(googleSub);
           userId = cached.id;
-          role = cached.role;
           status = cached.status;
         } else {
           // Fallback for edge cases where signIn cache was missed
           const rows = await db
-            .select({ id: users.id, role: users.role, status: users.status })
+            .select({ id: users.id, status: users.status })
             .from(users)
             .where(eq(users.authUserId, googleSub))
             .limit(1);
           if (!rows[0]) return token;
           userId = rows[0].id;
-          role = rows[0].role;
           status = rows[0].status;
         }
 
         token.userId = userId;
-        token.role = role;
         token.status = status;
         token.providerStatus = await resolveProviderStatus(userId);
       }
@@ -125,7 +120,6 @@ export const authOptions: NextAuthOptions = {
 
     async session({ session, token }) {
       session.userId = token.userId as string;
-      session.role = token.role as string;
       session.status = token.status as string;
       session.providerStatus = (token.providerStatus ?? 'none') as string;
       return session;

@@ -17,17 +17,26 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+export const adminUsers = pgTable('admin_users', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  username: text('username').notNull(),
+  passwordHash: text('password_hash').notNull(),
+  displayName: text('display_name'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  usernameIdx: uniqueIndex('admin_users_username_idx').on(table.username),
+}));
+
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
   authUserId: text('auth_user_id').notNull(),
   email: text('email').notNull(),
   displayName: text('display_name'),
-  // role: 'user' | 'admin'
-  role: text('role').notNull().default('user'),
   // status: 'awaiting_approval' | 'approved' | 'suspended'
   status: text('status').notNull().default('awaiting_approval'),
   approvedAt: timestamp('approved_at', { withTimezone: true }),
-  approvedBy: uuid('approved_by').references((): AnyPgColumn => users.id, { onDelete: 'set null' }),
+  approvedBy: uuid('approved_by').references((): AnyPgColumn => adminUsers.id, { onDelete: 'set null' }),
   termsAcceptedAt: timestamp('terms_accepted_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

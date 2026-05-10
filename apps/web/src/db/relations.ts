@@ -1,5 +1,6 @@
 import { relations } from 'drizzle-orm';
 import {
+  adminUsers,
   dailyPricedRollups,
   dataHealthEvents,
   deletionRequests,
@@ -15,7 +16,15 @@ import {
   users,
 } from './schema';
 
-export const usersRelations = relations(users, ({ many }) => ({
+export const adminUsersRelations = relations(adminUsers, ({ many }) => ({
+  approvedUsers: many(users),
+}));
+
+export const usersRelations = relations(users, ({ one, many }) => ({
+  approvedByAdmin: one(adminUsers, {
+    fields: [users.approvedBy],
+    references: [adminUsers.id],
+  }),
   installations: many(installations),
   deletionRequests: many(deletionRequests),
 }));

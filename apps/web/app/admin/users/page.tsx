@@ -4,19 +4,18 @@ import { db } from '@/src/db/client';
 import { users } from '@/src/db/schema';
 import { desc } from 'drizzle-orm';
 import { approveUser, startImpersonation } from './actions';
-import { getSession } from '@/src/auth-helpers';
-import { UserRole, UserStatus } from '@/src/user-constants';
+import { logoutAdmin } from '@/app/solaris/actions';
+import { requireAdminSession } from '@/src/admin-auth';
+import { UserStatus } from '@/src/user-constants';
 
 export default async function AdminUsersPage() {
-  const session = await getSession();
-  if (!session || session.role !== UserRole.Admin) redirect('/live');
+  await requireAdminSession();
 
   const allUsers = await db
     .select({
       id: users.id,
       email: users.email,
       displayName: users.displayName,
-      role: users.role,
       status: users.status,
       createdAt: users.createdAt,
       approvedAt: users.approvedAt,
@@ -28,11 +27,21 @@ export default async function AdminUsersPage() {
     <div className="min-h-screen font-sans text-slate-100 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.06),_transparent_30%),linear-gradient(180deg,#050b14_0%,#0b1220_100%)]">
       <header className="sticky top-0 z-40 border-b border-slate-800 bg-[#101826]">
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-3 px-4 sm:px-6">
-          <Link href="/live" className="text-sm font-semibold text-slate-100 hover:text-slate-300 transition-colors">Solar Tracker</Link>
+          <span className="text-sm font-semibold text-slate-100">Solar Tracker</span>
           <span className="text-slate-700">/</span>
           <span className="text-sm text-slate-400">Admin</span>
           <span className="text-slate-700">/</span>
           <span className="text-sm text-slate-400">Users</span>
+          <div className="ml-auto">
+            <form action={logoutAdmin}>
+              <button
+                type="submit"
+                className="rounded-full border border-slate-700 px-3 py-1 text-xs font-medium text-slate-400 hover:border-slate-500 hover:text-slate-200 transition-colors"
+              >
+                Sign out
+              </button>
+            </form>
+          </div>
         </div>
       </header>
 
@@ -48,9 +57,6 @@ export default async function AdminUsersPage() {
               <tr className="border-b border-slate-800 text-left">
                 <th className="px-5 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
                   User
-                </th>
-                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                  Role
                 </th>
                 <th className="px-5 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
                   Status
@@ -69,9 +75,6 @@ export default async function AdminUsersPage() {
                   <td className="px-5 py-4">
                     <p className="font-medium text-slate-100">{user.displayName ?? '—'}</p>
                     <p className="text-xs text-slate-500">{user.email}</p>
-                  </td>
-                  <td className="px-5 py-4">
-                    <RoleBadge role={user.role} />
                   </td>
                   <td className="px-5 py-4">
                     <StatusBadge status={user.status} />
@@ -95,7 +98,7 @@ export default async function AdminUsersPage() {
                           </button>
                         </form>
                       )}
-                      {user.status === UserStatus.Approved && user.role !== UserRole.Admin && (
+                      {user.status === UserStatus.Approved && (
                         <form action={startImpersonation.bind(null, user.id)}>
                           <button
                             type="submit"
@@ -111,7 +114,7 @@ export default async function AdminUsersPage() {
               ))}
               {allUsers.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-5 py-10 text-center text-slate-500">
+                  <td colSpan={4} className="px-5 py-10 text-center text-slate-500">
                     No users yet.
                   </td>
                 </tr>
@@ -139,18 +142,6 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium ${cls}`}>
       {labels[status] ?? status}
-    </span>
-  );
-}
-
-function RoleBadge({ role }: { role: string }) {
-  return (
-    <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium ${
-      role === UserRole.Admin
-        ? 'bg-sky-500/10 border-sky-500/30 text-sky-400'
-        : 'bg-slate-700/20 border-slate-700 text-slate-500'
-    }`}>
-      {role}
     </span>
   );
 }
