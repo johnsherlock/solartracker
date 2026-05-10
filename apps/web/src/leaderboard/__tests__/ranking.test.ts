@@ -250,6 +250,17 @@ describe('computeLeaderboard — zero exclusion', () => {
     expect(gen.totalDaysWithData).toBe(1);
   });
 
+  it('excludes partial days from all metrics', () => {
+    const series = [
+      makeDay('2024-01-01', { generatedKwh: 100, isPartial: true }),
+      makeDay('2024-01-02', { generatedKwh: 10 }),
+    ];
+    const result = computeLeaderboard(series, noSchedules, currency);
+    const gen = result.find((r) => r.metric.id === 'generation_kwh')!;
+    expect(gen.entries).toHaveLength(1);
+    expect(gen.entries[0].date).toBe('2024-01-02');
+  });
+
   it('includes zero import for import_kwh (lower-better, zero is great)', () => {
     const series = [
       makeDay('2024-01-01', { importKwh: 0 }),

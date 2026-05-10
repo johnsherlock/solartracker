@@ -64,9 +64,11 @@ export function computeLeaderboard(
     const metric = descriptor.id;
     const lower = isLowerBetter(metric);
 
-    // Extract all valid values.
+    // Extract all valid values. Partial days are excluded — incomplete
+    // minute coverage skews totals and makes comparisons misleading.
     const valued: { date: string; rawValue: number }[] = [];
     for (const day of series) {
+      if (day.isPartial) continue;
       const raw = extractDayValue(day, metric, schedules);
       if (raw === null) continue;
       // For higher-is-better metrics exclude non-positive values — a day
