@@ -329,4 +329,26 @@ describe('buildSystemAdditionsPayload', () => {
       expect(payload.records[1].totalInvestment).toBe(12000);
     }
   });
+
+  it('returns configured: true when upfront > 0 and monthlyRepayment is 0 (regression: zero monthly should not block completion)', () => {
+    const payload = buildSystemAdditionsPayload(
+      [
+        {
+          id: 'id-1',
+          label: 'Original install',
+          additionDate: '2024-04-01',
+          capacityAddedKw: null,
+          upfrontPayment: 5000,
+          monthlyRepayment: 0,
+          repaymentDurationMonths: null,
+        },
+      ],
+      TODAY,
+    );
+    expect(payload).toMatchObject({ configured: true });
+    if (payload.configured) {
+      expect(payload.records).toHaveLength(1);
+      expect(payload.records[0].totalInvestment).toBe(5000);
+    }
+  });
 });

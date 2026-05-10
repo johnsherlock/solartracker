@@ -55,18 +55,23 @@ function parseAndValidate(input: SystemAdditionInput): {
     repaymentDurationMonths: number | null;
   };
 } | { ok: false; error: string } {
-  const upfrontPayment = input.upfrontPayment !== '' ? parseFloat(input.upfrontPayment) : null;
-  const monthlyRepayment = input.monthlyRepayment !== '' ? parseFloat(input.monthlyRepayment) : null;
+  const upfrontPaymentRaw = input.upfrontPayment !== '' ? parseFloat(input.upfrontPayment) : null;
+  const monthlyRepaymentRaw = input.monthlyRepayment !== '' ? parseFloat(input.monthlyRepayment) : null;
   const repaymentDurationMonths =
     input.repaymentDurationMonths !== '' ? parseInt(input.repaymentDurationMonths, 10) : null;
   const capacityAddedKw = input.capacityAddedKw !== '' ? parseFloat(input.capacityAddedKw) : null;
 
-  if (upfrontPayment !== null && !Number.isFinite(upfrontPayment)) {
+  if (upfrontPaymentRaw !== null && !Number.isFinite(upfrontPaymentRaw)) {
     return { ok: false, error: 'Invalid upfront payment amount.' };
   }
-  if (monthlyRepayment !== null && !Number.isFinite(monthlyRepayment)) {
+  if (monthlyRepaymentRaw !== null && !Number.isFinite(monthlyRepaymentRaw)) {
     return { ok: false, error: 'Invalid monthly repayment amount.' };
   }
+
+  // Treat ≤ 0 as absent — aligns with domain validation and avoids storing 0 in the DB
+  // where the check constraint requires a duration for non-null monthly repayment values.
+  const upfrontPayment = upfrontPaymentRaw != null && upfrontPaymentRaw > 0 ? upfrontPaymentRaw : null;
+  const monthlyRepayment = monthlyRepaymentRaw != null && monthlyRepaymentRaw > 0 ? monthlyRepaymentRaw : null;
   if (
     repaymentDurationMonths !== null &&
     (!Number.isInteger(repaymentDurationMonths) || repaymentDurationMonths < 1)

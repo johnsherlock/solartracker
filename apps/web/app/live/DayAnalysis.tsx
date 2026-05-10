@@ -695,6 +695,7 @@ export function SolarCoveragePanel({
   currentGridDraw,
   historicalHoursAboveThreshold,
   historicalDaylightCoverage,
+  trends,
 }: {
   mode: 'live' | 'historical';
   chartData: LivePoint[];
@@ -704,6 +705,7 @@ export function SolarCoveragePanel({
   currentGridDraw?: number;
   historicalHoursAboveThreshold?: number | null;
   historicalDaylightCoverage?: number | null;
+  trends?: Partial<Record<string, TrendIndicatorData>>;
 }) {
   const coverageData = chartData.map((pt) => ({
     time: pt.time,
@@ -770,23 +772,30 @@ export function SolarCoveragePanel({
         )}
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-3">
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2">
+        <div className="flex flex-col rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2">
           <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">{firstStatLabel}</p>
-          <p className="mt-1 font-mono text-lg font-semibold text-amber-300">
-            {firstStatValue}
-          </p>
+          <div className="mt-auto pt-1 flex items-baseline justify-between gap-1">
+            <p className="font-mono text-lg font-semibold text-amber-300">{firstStatValue}</p>
+            {trends && <TrendPill trend={trends.current_solar_coverage} />}
+          </div>
         </div>
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2">
+        <div className="flex flex-col rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2">
           <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">
             {secondStatLabel}
           </p>
-          <p className="mt-1 font-mono text-lg font-semibold text-emerald-300">
-            {overallSolarCoverage !== null ? `${overallSolarCoverage}%` : '—'}
-          </p>
+          <div className="mt-auto pt-1 flex items-baseline justify-between gap-1">
+            <p className="font-mono text-lg font-semibold text-emerald-300">
+              {overallSolarCoverage !== null ? `${overallSolarCoverage}%` : '—'}
+            </p>
+            {trends && <TrendPill trend={trends.overall_solar_coverage} />}
+          </div>
         </div>
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2">
+        <div className="flex flex-col rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2">
           <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">{thirdStatLabel}</p>
-          <p className="mt-1 font-mono text-lg font-semibold text-slate-300">{thirdStatValue}</p>
+          <div className="mt-auto pt-1 flex items-baseline justify-between gap-1">
+            <p className="font-mono text-lg font-semibold text-slate-300">{thirdStatValue}</p>
+            {trends && <TrendPill trend={trends.current_grid_draw} />}
+          </div>
         </div>
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { and, count, eq, gt, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, count, eq, gt, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -12,10 +12,11 @@ export type SettingsCompletionState = {
   finance: SectionStatus;
   location: SectionStatus;
   notifications: 'complete' | 'actionable';
+  system: 'complete' | 'actionable';
   providerName: string | null;
   providerStatus: string | null;
   providerLastSyncAt: Date | null;
-  /** Sections that count toward the progress denominator (excludes notifications). */
+  /** Sections that count toward the progress denominator (excludes notifications and system). */
   totalActionable: number;
   /** Number of sections currently complete. */
   totalComplete: number;
@@ -70,6 +71,7 @@ export async function loadSettingsCompletionState(
       .select({
         locationLatitude: installations.locationLatitude,
         notificationPreferencesJson: installations.notificationPreferencesJson,
+        arrayCapacityKw: installations.arrayCapacityKw,
       })
       .from(installations)
       .where(eq(installations.id, installationId))
@@ -99,6 +101,8 @@ export async function loadSettingsCompletionState(
     // Finance is complete when at least one record with a positive payment amount exists.
     // Mirrors validateSystemAdditionInputs: at least one of upfront > 0 or monthly > 0,
     // and monthly repayment requires a duration.
+    // monthly_repayment = 0 is treated the same as NULL (no repayment) so upfront-only
+    // records with a stored 0 are not incorrectly excluded.
     db
       .select({ n: count() })
       .from(systemAdditions)
@@ -111,6 +115,7 @@ export async function loadSettingsCompletionState(
           ),
           or(
             isNull(systemAdditions.monthlyRepayment),
+            lte(systemAdditions.monthlyRepayment, sql`0`),
             and(
               gt(systemAdditions.monthlyRepayment, sql`0`),
               isNotNull(systemAdditions.repaymentDurationMonths),
@@ -129,8 +134,11 @@ export async function loadSettingsCompletionState(
   // Notifications are "never incomplete" per U-052 — null means the user hasn't
   // explicitly saved preferences, but the page already has working defaults.
   const notificationsStatus: 'complete' | 'actionable' = 'complete';
+  // System capacity is optional — unlocks solar yield context but not core app function.
+  const systemStatus: 'complete' | 'actionable' =
+    installation?.arrayCapacityKw != null ? 'complete' : 'actionable';
 
-  // Notifications are optional and do not count toward the setup progress denominator.
+  // Notifications and system capacity do not count toward the setup progress denominator.
   const actionable: SectionStatus[] = [
     tariffsStatus,
     providerStatus,
@@ -145,6 +153,7 @@ export async function loadSettingsCompletionState(
     finance: financeStatus,
     location: locationStatus,
     notifications: notificationsStatus,
+    system: systemStatus,
     providerName: providerConnection?.providerType ?? null,
     providerStatus: providerConnection?.status ?? null,
     providerLastSyncAt: providerConnection?.lastSuccessfulSyncAt ?? null,

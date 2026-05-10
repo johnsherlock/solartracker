@@ -41,6 +41,14 @@ const SECTION_META = [
     actionableCta: 'Set up location',
   },
   {
+    key: 'system' as const,
+    label: 'System',
+    href: '/settings/system',
+    valueLine: 'Set your total array capacity to unlock solar yield interpretation.',
+    completeStatusLine: () => 'System capacity configured',
+    actionableCta: 'Set up system',
+  },
+  {
     key: 'notifications' as const,
     label: 'Notifications',
     href: '/settings/notifications',

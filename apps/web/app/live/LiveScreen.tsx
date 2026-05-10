@@ -1351,6 +1351,34 @@ export function LiveScreen({
         ? Math.round((totalSolarValue / yesterdayRepaymentAmount) * 100)
         : null;
 
+    // Overall solar coverage up to the same point in the day yesterday
+    const yesterdayOverallCoverage =
+      consumedKwh > 0
+        ? Math.round(Math.min(100, Math.max(0, ((consumedKwh - importKwh) / consumedKwh) * 100)))
+        : null;
+
+    // Instantaneous solar share from yesterday at the current minute
+    const currentPoint =
+      yesterdayData.minuteChartData.find((p) => p.time === currentMinute) ??
+      [...yesterdayData.minuteChartData].filter((p) => p.time <= currentMinute).slice(-1)[0] ??
+      null;
+    const yesterdayInstantSolarShare =
+      currentPoint != null
+        ? currentPoint.consumption > 0
+          ? Math.min(
+              100,
+              Math.max(
+                0,
+                Math.round(
+                  ((currentPoint.generation - currentPoint.export) / currentPoint.consumption) * 100,
+                ),
+              ),
+            )
+          : currentPoint.generation > 0
+            ? 100
+            : 0
+        : null;
+
     return {
       totals: {
         generatedKwh,
@@ -1370,6 +1398,8 @@ export function LiveScreen({
           : null,
       totalSolarValue,
       repaymentCoveragePercent: comparableRepaymentCoverage,
+      yesterdayOverallCoverage,
+      yesterdayInstantSolarShare,
     };
   }, [currentMinute, yesterdayData, yesterdayRepaymentAmount]);
 
@@ -1447,6 +1477,30 @@ export function LiveScreen({
       formatter: (value) => formatKwh(value),
     }),
   }), [todayTotals, yesterdayComparable]);
+
+  const liveCoverageTrends = useMemo(() => ({
+    current_solar_coverage: buildLiveTrendIndicator({
+      current: currentMetrics?.solarShare ?? null,
+      previous: yesterdayComparable?.yesterdayInstantSolarShare ?? null,
+      polarity: 'higher-better',
+      formatter: (v) => `${Math.round(v)}%`,
+    }),
+    overall_solar_coverage: buildLiveTrendIndicator({
+      current: overallSolarCoverage,
+      previous: yesterdayComparable?.yesterdayOverallCoverage ?? null,
+      polarity: 'higher-better',
+      formatter: (v) => `${Math.round(v)}%`,
+    }),
+    current_grid_draw: buildLiveTrendIndicator({
+      current: currentMetrics?.gridShare ?? null,
+      previous:
+        yesterdayComparable?.yesterdayInstantSolarShare != null
+          ? 100 - yesterdayComparable.yesterdayInstantSolarShare
+          : null,
+      polarity: 'lower-better',
+      formatter: (v) => `${Math.round(v)}%`,
+    }),
+  }), [currentMetrics, overallSolarCoverage, yesterdayComparable]);
 
   const liveDayTotalsHeading = useMemo(
     () => getLiveDayTotalsHeading(liveSunEvents, new Date()),
@@ -1910,6 +1964,7 @@ export function LiveScreen({
                     currentSolarShare={currentMetrics?.solarShare ?? 0}
                     overallSolarCoverage={overallSolarCoverage}
                     currentGridDraw={currentMetrics?.gridShare ?? 100}
+                    trends={liveCoverageTrends}
                   />
                 </div>
               </div>
