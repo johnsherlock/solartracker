@@ -10,7 +10,6 @@ import {
   ArrowUpFromLine,
   Calendar,
   CheckCircle2,
-  Settings,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -32,6 +31,7 @@ import {
   WifiOff,
   Zap,
 } from 'lucide-react';
+import { SignedInHeader } from '@/src/components/SignedInHeader';
 import type { LiveWeatherResult } from '@/src/weather/types';
 import { getWmoInfo } from '@/src/weather/wmoCode';
 import { formatDaylightStatus } from '@/src/weather/sunPosition';
@@ -251,7 +251,7 @@ function getSunMarkerPhase(sunEvents: { sunriseUtc: string; solarNoonUtc: string
 // Sub-components (Live-screen-only, not shared with Historical Day)
 // ---------------------------------------------------------------------------
 
-function NavBar({
+function LiveNavBar({
   screenState,
   health,
   onOpenDetails,
@@ -261,9 +261,9 @@ function NavBar({
   onOpenDetails?: () => void;
 }) {
   return (
-    <header className="sticky top-0 z-40 border-b border-slate-800 bg-[#101826]">
-      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
-        <div className="flex items-center gap-3">
+    <SignedInHeader
+      left={
+        <>
           <Link
             href="/live"
             className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
@@ -281,9 +281,10 @@ function NavBar({
             )}
             <span className="text-sm font-semibold text-slate-100">Live</span>
           </div>
-        </div>
-
-        <div className="flex items-center gap-3">
+        </>
+      }
+      actions={
+        <>
           <TrustBadge screenState={screenState} health={health} onOpenDetails={onOpenDetails} />
           <Link
             href="/calendar"
@@ -292,19 +293,9 @@ function NavBar({
           >
             <Calendar size={14} />
           </Link>
-          <Link
-            href="/settings"
-            title="Settings"
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-400 hover:border-slate-600 hover:text-slate-200 transition-colors"
-          >
-            <Settings size={14} />
-          </Link>
-          <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-xs font-bold text-slate-200">
-            J
-          </div>
-        </div>
-      </div>
-    </header>
+        </>
+      }
+    />
   );
 }
 
@@ -1770,7 +1761,7 @@ export function LiveScreen({
           />
         </div>
       )}
-      <NavBar
+      <LiveNavBar
         screenState={displayScreenState}
         health={displayHealth}
         onOpenDetails={() => {

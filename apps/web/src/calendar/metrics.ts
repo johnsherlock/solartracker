@@ -244,6 +244,32 @@ export function formatDayValue(
 }
 
 // ---------------------------------------------------------------------------
+// Metric descriptions
+// ---------------------------------------------------------------------------
+
+export function describeMetric(metric: CalendarMetric): string {
+  switch (metric) {
+    case 'generation_kwh':     return 'Total solar energy generated on each day.';
+    case 'consumed_kwh':       return 'Total household electricity used on each day, from any source.';
+    case 'self_consumed_kwh':  return 'Solar energy used directly in the home instead of being exported.';
+    case 'self_consumed_value': return 'Value of solar used onsite, priced at the avoided import rate.';
+    case 'total_solar_value':  return 'Combined value from onsite solar use plus export credit.';
+    case 'solar_coverage':     return "Share of the home’s demand that solar covered on each day.";
+    case 'import_kwh':         return 'Electricity imported from the grid on each day.';
+    case 'import_cost':        return 'Tariff-priced cost of imported electricity for each day.';
+    case 'export_kwh':         return 'Electricity exported to the grid, with export credit shown alongside it.';
+    case 'export_credit':      return 'Tariff-priced export credit earned from electricity sent to the grid.';
+    case 'immersion_kwh':      return 'Solar energy diverted to immersion heating on each day.';
+    case 'net_energy_bill':    return 'Import cost plus fixed charges minus export credit for each day.';
+    case 'net_solar_position': return 'Estimated bill reduction from solar for each day.';
+    case 'prorata_coverage':   return "How much of that day’s pro-rata repayment was covered by solar savings.";
+  }
+
+  const _exhaustive: never = metric;
+  return _exhaustive;
+}
+
+// ---------------------------------------------------------------------------
 // Best-day detection
 // ---------------------------------------------------------------------------
 
@@ -270,6 +296,51 @@ export function findBestDates(days: NormalizedDay[], metric: CalendarMetric): Se
   const max = Math.max(...withData.map((d) => d.rawValue!));
   if (max <= 0) return new Set();
   return new Set(withData.filter((d) => d.rawValue === max).map((d) => d.date));
+}
+
+/**
+ * Returns a map of date → rank (1, 2, or 3) for the top-N distinct rank positions.
+ * Tied days share the same rank. All tied dates at each rank boundary are included.
+ */
+export function findTopNDates(days: NormalizedDay[], metric: CalendarMetric, n = 3): Map<string, number> {
+  const withData = days.filter((d) => d.rawValue !== null);
+  if (withData.length === 0) return new Map();
+
+  const lower = isLowerBetter(metric);
+
+  if (lower) {
+    const sorted = [...withData].sort((a, b) => a.rawValue! - b.rawValue!);
+    return assignRanks(sorted, n);
+  }
+
+  const positiveOnly = withData.filter((d) => d.rawValue! > 0);
+  if (positiveOnly.length === 0) return new Map();
+  const sorted = [...positiveOnly].sort((a, b) => b.rawValue! - a.rawValue!);
+  return assignRanks(sorted, n);
+}
+
+function assignRanks(sorted: NormalizedDay[], maxRank: number): Map<string, number> {
+  const result = new Map<string, number>();
+  let rank = 1;
+  let i = 0;
+
+  while (i < sorted.length && rank <= maxRank) {
+    const currentValue = sorted[i].rawValue!;
+    const groupStart = i;
+
+    // Collect all entries at this value (ties).
+    while (i < sorted.length && sorted[i].rawValue === currentValue) {
+      i++;
+    }
+
+    for (let j = groupStart; j < i; j++) {
+      result.set(sorted[j].date, rank);
+    }
+
+    rank++;
+  }
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------

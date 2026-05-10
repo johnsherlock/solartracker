@@ -9,7 +9,6 @@ import {
   ChevronRight,
   Home,
   RefreshCw,
-  Settings,
   X,
 } from 'lucide-react';
 import type { RangeSummaryPayload, RangeSeriesDay } from '@/src/range/types';
@@ -23,12 +22,15 @@ import {
   extractImmersionValue,
   extractImmersionExportEquivalent,
   findBestDates,
+  findTopNDates,
   getMetricHue,
   interpolateBarColor,
+  describeMetric,
   type NormalizedDay,
 } from '@/src/calendar/metrics';
 import type { CalendarMetric } from '@/src/calendar/types';
 import { WarningsCallout } from '@/src/components/WarningsCallout';
+import { SignedInHeader } from '@/src/components/SignedInHeader';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -73,42 +75,6 @@ function buildMonthRangeUrl(year: number, month: number): string {
   const lastDay = daysInMonth(year, month);
   const dd = String(lastDay).padStart(2, '0');
   return `/range?from=${year}-${mm}-01&to=${year}-${mm}-${dd}&mode=months`;
-}
-
-function describeMetric(metric: CalendarMetric): string {
-  switch (metric) {
-    case 'generation_kwh':
-      return 'Total solar energy generated on each day.';
-    case 'consumed_kwh':
-      return 'Total household electricity used on each day, from any source.';
-    case 'self_consumed_kwh':
-      return 'Solar energy used directly in the home instead of being exported.';
-    case 'self_consumed_value':
-      return 'Value of solar used onsite, priced at the avoided import rate.';
-    case 'total_solar_value':
-      return 'Combined value from onsite solar use plus export credit.';
-    case 'solar_coverage':
-      return 'Share of the home’s demand that solar covered on each day.';
-    case 'import_kwh':
-      return 'Electricity imported from the grid on each day.';
-    case 'import_cost':
-      return 'Tariff-priced cost of imported electricity for each day.';
-    case 'export_kwh':
-      return 'Electricity exported to the grid, with export credit shown alongside it.';
-    case 'export_credit':
-      return 'Tariff-priced export credit earned from electricity sent to the grid.';
-    case 'immersion_kwh':
-      return 'Solar energy diverted to immersion heating on each day.';
-    case 'net_energy_bill':
-      return 'Import cost plus fixed charges minus export credit for each day.';
-    case 'net_solar_position':
-      return 'Estimated bill reduction from solar for each day.';
-    case 'prorata_coverage':
-      return 'How much of that day’s pro-rata repayment was covered by solar savings.';
-  }
-
-  const _exhaustive: never = metric;
-  return _exhaustive;
 }
 
 // ---------------------------------------------------------------------------
@@ -248,6 +214,11 @@ export function CalendarScreen({
 
   const bestDates = useMemo(
     () => findBestDates([...normalizedMap.values()], activeMetric),
+    [normalizedMap, activeMetric],
+  );
+
+  const medalDates = useMemo(
+    () => findTopNDates([...normalizedMap.values()], activeMetric, 3),
     [normalizedMap, activeMetric],
   );
 
@@ -408,9 +379,9 @@ export function CalendarScreen({
       {/* ------------------------------------------------------------------ */}
       {/* Nav bar                                                             */}
       {/* ------------------------------------------------------------------ */}
-      <header className="sticky top-0 z-40 border-b border-slate-800 bg-[#101826]">
-        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
-          <div className="flex items-center gap-3">
+      <SignedInHeader
+        left={
+          <>
             <Link
               href="/live"
               className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
@@ -424,25 +395,18 @@ export function CalendarScreen({
               <CalendarDays size={14} className="text-indigo-400" />
               <span className="text-sm font-semibold text-slate-100">Calendar</span>
             </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <Link
-              href="/range"
-              title="Range History"
-              className="flex h-8 items-center gap-1.5 rounded-full border border-slate-700 bg-slate-800 px-3 text-xs text-slate-400 hover:border-slate-600 hover:text-slate-200 transition-colors"
-            >
-              Range History
-            </Link>
-            <Link
-              href="/settings"
-              title="Settings"
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-400 hover:border-slate-600 hover:text-slate-200 transition-colors"
-            >
-              <Settings size={14} />
-            </Link>
-          </div>
-        </div>
-      </header>
+          </>
+        }
+        actions={
+          <Link
+            href="/range"
+            title="Range History"
+            className="flex h-8 items-center gap-1.5 rounded-full border border-slate-700 bg-slate-800 px-3 text-xs text-slate-400 hover:border-slate-600 hover:text-slate-200 transition-colors"
+          >
+            Range History
+          </Link>
+        }
+      />
 
       {/* ------------------------------------------------------------------ */}
       {/* Year bar                                                            */}
@@ -564,7 +528,7 @@ export function CalendarScreen({
                 year={activeYear}
                 today={today}
                 normalizedMap={normalizedMap}
-                bestDates={bestDates}
+                medalDates={medalDates}
                 activeMetric={activeMetric}
                 currency={currency}
                 repaymentSchedules={repaymentSchedules}
@@ -600,11 +564,13 @@ export function CalendarScreen({
 // Calendar grid
 // ---------------------------------------------------------------------------
 
+const RANK_MEDALS: Record<number, string> = { 1: '🥇', 2: '🥈', 3: '🥉' };
+
 type CalendarGridProps = {
   year: number;
   today: string;
   normalizedMap: Map<string, NormalizedDay>;
-  bestDates: Set<string>;
+  medalDates: Map<string, number>;
   activeMetric: CalendarMetric;
   currency: string;
   repaymentSchedules: RepaymentSchedule[];
@@ -617,7 +583,7 @@ function CalendarGrid({
   year,
   today,
   normalizedMap,
-  bestDates,
+  medalDates,
   activeMetric,
   onCellEnter,
   onCellLeave,
@@ -684,13 +650,14 @@ function CalendarGrid({
                     );
                   }
 
-                  const isBestDay = dateStr !== null && bestDates.has(dateStr);
+                  const medalRank = dateStr !== null ? medalDates.get(dateStr) : undefined;
+                  const medal = medalRank !== undefined ? RANK_MEDALS[medalRank] : undefined;
 
                   const cellContent = (
                     <div className="w-full h-16 relative flex items-end">
-                      {isBestDay && (
+                      {medal && (
                         <div className="pointer-events-none absolute inset-x-0 bottom-1 flex justify-center z-10">
-                          <span className="text-2xl leading-none select-none">🏆</span>
+                          <span className="text-xl leading-none select-none">{medal}</span>
                         </div>
                       )}
                       <div

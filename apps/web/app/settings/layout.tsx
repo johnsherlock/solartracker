@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { loadSettingsCompletionState } from '@/src/settings/loader';
 import { redirect } from 'next/navigation';
 import { resolveEffectiveInstallationId } from '@/src/installation-helpers';
+import { SignedInHeader } from '@/src/components/SignedInHeader';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,9 +62,9 @@ export default async function SettingsLayout({ children }: { children: ReactNode
   return (
     <div className="min-h-screen font-sans text-slate-100 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.06),_transparent_30%),linear-gradient(180deg,#050b14_0%,#0b1220_100%)]">
       {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-slate-800 bg-[#101826]">
-        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
-          <div className="flex items-center gap-3">
+      <SignedInHeader
+        left={
+          <>
             <Link
               href="/live"
               className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
@@ -76,12 +77,9 @@ export default async function SettingsLayout({ children }: { children: ReactNode
               <Settings size={14} className="text-slate-400" />
               <span className="text-sm font-semibold text-slate-100">Settings</span>
             </div>
-          </div>
-          <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-xs font-bold text-slate-200">
-            J
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       {/* Body */}
       <div className="mx-auto flex max-w-7xl gap-0">

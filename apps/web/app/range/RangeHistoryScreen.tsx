@@ -13,11 +13,11 @@ import {
   Info,
   RefreshCw,
   RotateCcw,
-  Settings,
   TrendingUp,
   X,
   Zap,
 } from 'lucide-react';
+import { SignedInHeader } from '@/src/components/SignedInHeader';
 import type { RangeSummaryPayload, RangeSeriesDay } from '@/src/range/types';
 import {
   computePayoffOutlook,
@@ -211,9 +211,9 @@ export function RangeHistoryScreen({ payload, today, financeContext, initialMode
       {/* ------------------------------------------------------------------ */}
       {/* Nav bar — sticky layer 1                                            */}
       {/* ------------------------------------------------------------------ */}
-      <header className="sticky top-0 z-40 border-b border-slate-800 bg-[#101826]">
-        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
-          <div className="flex items-center gap-3">
+      <SignedInHeader
+        left={
+          <>
             <Link
               href="/live"
               className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
@@ -227,28 +227,18 @@ export function RangeHistoryScreen({ payload, today, financeContext, initialMode
               <BarChart3 size={14} className="text-indigo-400" />
               <span className="text-sm font-semibold text-slate-100">Range History</span>
             </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <Link
-              href="/calendar"
-              title="Calendar"
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-400 hover:border-slate-600 hover:text-slate-200 transition-colors"
-            >
-              <CalendarDays size={14} />
-            </Link>
-            <Link
-              href="/settings"
-              title="Settings"
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-400 hover:border-slate-600 hover:text-slate-200 transition-colors"
-            >
-              <Settings size={14} />
-            </Link>
-            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-xs font-bold text-slate-200">
-              J
-            </div>
-          </div>
-        </div>
-      </header>
+          </>
+        }
+        actions={
+          <Link
+            href="/calendar"
+            title="Calendar"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-400 hover:border-slate-600 hover:text-slate-200 transition-colors"
+          >
+            <CalendarDays size={14} />
+          </Link>
+        }
+      />
 
       {/* ------------------------------------------------------------------ */}
       {/* §1 — Period selector — sticky layer 2                               */}
