@@ -2,7 +2,8 @@
 
 import type { ReactNode } from 'react';
 import Link from 'next/link';
-import { Settings, Trophy } from 'lucide-react';
+import { LogOut, Settings, Trophy } from 'lucide-react';
+import { signOut } from 'next-auth/react';
 
 type SignedInHeaderProps = {
   /** Breadcrumb / page title area rendered on the left. */
@@ -32,6 +33,14 @@ export function SignedInHeader({ left, actions }: SignedInHeaderProps) {
           >
             <Settings size={14} />
           </Link>
+          <button
+            type="button"
+            title="Sign out"
+            onClick={() => signOut({ callbackUrl: '/sign-in' })}
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-400 hover:border-slate-600 hover:text-slate-200 transition-colors"
+          >
+            <LogOut size={14} />
+          </button>
         </div>
       </div>
     </header>
