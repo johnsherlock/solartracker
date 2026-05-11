@@ -18,6 +18,8 @@ import {
   formatKwh,
   formatEuro,
   formatEuroTick,
+  formatTimeAxisLabel,
+  toClockMinutes,
 } from './chartUtils';
 import type { TariffBreakdownSlice } from './loader';
 
@@ -164,11 +166,22 @@ export function buildEnergyTrendOption(
   resolution: Resolution,
   hoveredSeries: SeriesKey | null,
   sunMarkers: { time: string; label: string }[] = [],
+  zoomWindow: { start: number; end: number } | null = null,
 ): object {
   const cumulativeUsesEnergyUnits = viewMode === 'cumulative' && resolution !== '1min';
   const showFill = resolution === '1min' && viewMode === 'line';
 
   const times = data.map((p) => p.time);
+  const { startIndex, endIndex } = resolveVisibleWindowIndices(times, zoomWindow);
+  const visibleWindowMinutes =
+    times.length > 1
+      ? resolveVisibleWindowMinutes(times, zoomWindow)
+      : resolution === '1hour'
+        ? 60
+        : resolution === '30min'
+          ? 30
+          : 1;
+  const yAxisExtent = resolveEnergyAxisExtent(data, activeSeries, startIndex, endIndex);
 
   const series = SERIES_ORDER.map((key) => {
     const color = SERIES_COLORS[key];
@@ -219,12 +232,20 @@ export function buildEnergyTrendOption(
     xAxis: {
       type: 'category',
       data: times,
-      axisLabel: AXIS_LABEL,
+      axisLabel: {
+        ...AXIS_LABEL,
+        interval: 0,
+        hideOverlap: true,
+        formatter: (value: string) => formatTimeAxisLabel(value, visibleWindowMinutes),
+      },
       axisLine: AXIS_LINE,
       axisTick: AXIS_TICK,
     },
     yAxis: {
       type: 'value',
+      scale: true,
+      min: yAxisExtent?.min,
+      max: yAxisExtent?.max,
       axisLabel: {
         ...AXIS_LABEL,
         formatter: (v: number) => `${v}${cumulativeUsesEnergyUnits ? 'kWh' : 'kW'}`,
@@ -235,14 +256,15 @@ export function buildEnergyTrendOption(
     },
     tooltip: {
       ...TOOLTIP_BASE,
-      formatter: (params: { seriesName: string; value: number; axisValue: string }[]) => {
+      formatter: (params: { seriesName: string; value: number | null | undefined; axisValue: string }[]) => {
         const time = params[0]?.axisValue ?? '';
         const rows = params
+          .filter((p) => p.value != null)
           .map(
             (p) =>
               `<div style="display:flex;justify-content:space-between;gap:16px">` +
               `<span>${p.seriesName}</span>` +
-              `<span style="font-weight:600">${cumulativeUsesEnergyUnits ? formatKwh(p.value) : formatKw(p.value)}</span>` +
+              `<span style="font-weight:600">${cumulativeUsesEnergyUnits ? formatKwh(p.value ?? 0) : formatKw(p.value ?? 0)}</span>` +
               `</div>`,
           )
           .join('');
@@ -261,8 +283,11 @@ export function buildCostOption(
   data: CostPoint[],
   viewMode: ViewMode,
   sunMarkers: { time: string; label: string }[] = [],
+  zoomWindow: { start: number; end: number } | null = null,
 ): object {
   const times = data.map((p) => p.time);
+  const visibleWindowMinutes =
+    times.length > 1 ? resolveVisibleWindowMinutes(times, zoomWindow) : 30;
 
   const series = (COST_SERIES_ORDER as readonly CostSeriesKey[]).map((key) => ({
     name: formatCostSeriesLabel(key),
@@ -306,12 +331,18 @@ export function buildCostOption(
     xAxis: {
       type: 'category',
       data: times,
-      axisLabel: AXIS_LABEL,
+      axisLabel: {
+        ...AXIS_LABEL,
+        interval: 0,
+        hideOverlap: true,
+        formatter: (value: string) => formatTimeAxisLabel(value, visibleWindowMinutes),
+      },
       axisLine: AXIS_LINE,
       axisTick: AXIS_TICK,
     },
     yAxis: {
       type: 'value',
+      scale: true,
       axisLabel: {
         ...AXIS_LABEL,
         formatter: (v: number) => formatEuroTick(v),
@@ -337,6 +368,71 @@ export function buildCostOption(
       },
     },
     series,
+  };
+}
+
+function resolveVisibleWindowMinutes(
+  times: string[],
+  zoomWindow: { start: number; end: number } | null,
+): number {
+  const { startIndex, endIndex } = resolveVisibleWindowIndices(times, zoomWindow);
+  const startMinutes = toClockMinutes(times[startIndex]);
+  const endMinutes = toClockMinutes(times[endIndex]);
+
+  return Math.max(1, endMinutes - startMinutes);
+}
+
+function resolveVisibleWindowIndices(
+  times: string[],
+  zoomWindow: { start: number; end: number } | null,
+): { startIndex: number; endIndex: number } {
+  if (times.length <= 1) {
+    return { startIndex: 0, endIndex: 0 };
+  }
+
+  const maxIndex = times.length - 1;
+  const startIndex = zoomWindow
+    ? Math.max(0, Math.min(maxIndex, Math.floor((zoomWindow.start / 100) * maxIndex)))
+    : 0;
+  const endIndex = zoomWindow
+    ? Math.max(startIndex, Math.min(maxIndex, Math.ceil((zoomWindow.end / 100) * maxIndex)))
+    : maxIndex;
+
+  return { startIndex, endIndex };
+}
+
+function resolveEnergyAxisExtent(
+  data: LivePoint[],
+  activeSeries: SeriesKey[],
+  startIndex: number,
+  endIndex: number,
+): { min: number; max: number } | null {
+  const visibleData = data.slice(startIndex, endIndex + 1);
+  const values = visibleData.flatMap((point) =>
+    activeSeries.map((seriesKey) => point[seriesKey]).filter((value) => Number.isFinite(value)),
+  );
+
+  if (values.length === 0) {
+    return null;
+  }
+
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+
+  if (minValue === maxValue) {
+    const padding = minValue === 0 ? 1 : Math.max(Math.abs(minValue) * 0.15, 0.1);
+    return {
+      min: Math.max(0, minValue - padding),
+      max: maxValue + padding,
+    };
+  }
+
+  const span = maxValue - minValue;
+  const padding = Math.max(span * 0.08, 0.05);
+
+  return {
+    min: Math.max(0, minValue - padding),
+    max: maxValue + padding,
   };
 }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type EChartsReact from 'echarts-for-react';
 import { EChart } from '@/src/live/EChartsWrapper';
 import { buildEnergyTrendOption } from '@/src/range/rangeChartOptions';
@@ -15,7 +15,15 @@ type Props = {
 
 export function EnergyTrendChart({ series }: Props) {
   const chartRef = useRef<EChartsReact>(null);
-  const option = useMemo(() => buildEnergyTrendOption(series), [series]);
+  const [selectedSeries, setSelectedSeries] = useState<Record<string, boolean>>({
+    Import: true,
+    Generation: true,
+    Export: true,
+  });
+  const option = useMemo(
+    () => buildEnergyTrendOption(series, selectedSeries),
+    [series, selectedSeries],
+  );
 
   useEffect(() => {
     const instance = chartRef.current?.getEchartsInstance();
@@ -52,6 +60,11 @@ export function EnergyTrendChart({ series }: Props) {
       option={option}
       notMerge
       style={{ width: '100%', height: 'clamp(220px, 28vw, 280px)' }}
+      onEvents={{
+        legendselectchanged: (event) => {
+          setSelectedSeries(event.selected as Record<string, boolean>);
+        },
+      }}
     />
   );
 }

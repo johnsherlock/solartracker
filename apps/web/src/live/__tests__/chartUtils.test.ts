@@ -8,6 +8,9 @@ import {
   formatEuro,
   formatSeriesLabel,
   formatCostSeriesLabel,
+  formatTimeAxisLabel,
+  resolveTimeAxisStep,
+  toClockMinutes,
   addDays,
   shiftMonth,
   type SeriesKey,
@@ -199,6 +202,32 @@ describe('formatEuro', () => {
 
   it('does not show sign when preserveSign is false', () => {
     expect(formatEuro(-1.5, false)).toBe('€1.50');
+  });
+});
+
+describe('time axis helpers', () => {
+  it('parses HH:MM clock strings to minutes', () => {
+    expect(toClockMinutes('00:00')).toBe(0);
+    expect(toClockMinutes('09:30')).toBe(570);
+    expect(toClockMinutes('23:59')).toBe(1439);
+  });
+
+  it('uses coarser label steps for wider windows', () => {
+    expect(resolveTimeAxisStep(24 * 60)).toBe(60);
+    expect(resolveTimeAxisStep(8 * 60)).toBe(30);
+    expect(resolveTimeAxisStep(90)).toBe(10);
+    expect(resolveTimeAxisStep(20)).toBe(1);
+  });
+
+  it('formats full-day labels as short hours only', () => {
+    expect(formatTimeAxisLabel('07:00', 24 * 60)).toBe('07');
+    expect(formatTimeAxisLabel('07:30', 24 * 60)).toBe('');
+  });
+
+  it('formats zoomed labels at sensible minute intervals', () => {
+    expect(formatTimeAxisLabel('07:30', 4 * 60)).toBe('07:30');
+    expect(formatTimeAxisLabel('07:35', 90)).toBe('');
+    expect(formatTimeAxisLabel('07:10', 90)).toBe('07:10');
   });
 });
 

@@ -221,6 +221,7 @@ export function DayTrendChart({
   footer?: ReactNode;
 }) {
   const [hoveredSeries, setHoveredSeries] = useState<SeriesKey | null>(null);
+  const [zoomWindow, setZoomWindow] = useState<{ start: number; end: number } | null>(null);
   const isStale = screenState === 'stale' || screenState === 'warning';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const energyChartRef = useRef<any>(null);
@@ -240,18 +241,68 @@ export function DayTrendChart({
         resolution,
         hoveredSeries,
         sunMarkers?.energy,
+        zoomWindow,
       ),
-    [activeSeries, data, hoveredSeries, resolution, sunMarkers, viewMode],
+    [activeSeries, data, hoveredSeries, resolution, sunMarkers, viewMode, zoomWindow],
   );
 
   const costOption = useMemo(
-    () => buildCostOption(costData, viewMode, sunMarkers?.cost),
-    [costData, sunMarkers, viewMode],
+    () => buildCostOption(costData, viewMode, sunMarkers?.cost, zoomWindow),
+    [costData, sunMarkers, viewMode, zoomWindow],
   );
   const resolutionOptions =
     mode === 'historical'
       ? (['1min', '30min'] as const)
       : (['1min', '30min', '1hour'] as const);
+
+  useEffect(() => {
+    setZoomWindow(null);
+  }, [resolution, viewMode, mode]);
+
+  useEffect(() => {
+    const instance = energyChartRef.current?.getEchartsInstance();
+    if (!instance) return;
+    let frame: number | null = null;
+
+    const handleDataZoom = (event: {
+      batch?: Array<{ start?: number; end?: number }>;
+      start?: number;
+      end?: number;
+    }) => {
+      const batch = event.batch?.[0];
+      const start = event.start ?? batch?.start;
+      const end = event.end ?? batch?.end;
+      if (typeof start === 'number' && typeof end === 'number') {
+        if (frame != null) {
+          cancelAnimationFrame(frame);
+        }
+        frame = requestAnimationFrame(() => {
+          setZoomWindow({ start, end });
+        });
+      }
+    };
+
+    const handleRestore = () => {
+      if (frame != null) {
+        cancelAnimationFrame(frame);
+        frame = null;
+      }
+      requestAnimationFrame(() => {
+        setZoomWindow(null);
+      });
+    };
+
+    instance.on('dataZoom', handleDataZoom);
+    instance.on('restore', handleRestore);
+
+    return () => {
+      if (frame != null) {
+        cancelAnimationFrame(frame);
+      }
+      instance.off('dataZoom', handleDataZoom);
+      instance.off('restore', handleRestore);
+    };
+  }, [resolution]);
 
   return (
     <div className="rounded-[28px] border border-slate-800 bg-[#111b2b] p-5 shadow-[0_30px_70px_rgba(2,6,23,0.34)]">
@@ -416,11 +467,10 @@ export function DayValuePanel({
             ? 'Add tariff details to unlock day value'
             : 'Add tariff details to unlock live value'}
         </h3>
-        <p className="mt-2 text-sm text-slate-400">
-          Keep the live energy view useful now, then layer in cost, export value, and savings once
-          the tariff setup is complete.
-        </p>
-        <Link href="/settings/tariffs" className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-amber-300">
+        <Link
+          href="/settings/tariffs"
+          className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-amber-300"
+        >
           Add tariff details <ChevronRight size={14} />
         </Link>
       </div>
@@ -672,11 +722,6 @@ export function DayTotalsPanel({
         <div className="mt-4 rounded-2xl border border-orange-500/20 bg-orange-500/10 px-3 py-2 text-xs text-orange-200">
           Current-day totals may still change once the live feed stabilizes again.
         </div>
-      )}
-      {mode === 'live' && selectedDate && (
-        <Link href={`/history/${selectedDate}`} className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-amber-300">
-          View full day <ChevronRight size={14} />
-        </Link>
       )}
     </div>
   );

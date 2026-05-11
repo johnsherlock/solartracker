@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type EChartsReact from 'echarts-for-react';
 import { EChart } from '@/src/live/EChartsWrapper';
 import { buildPerDayBarOption } from '@/src/range/rangeChartOptions';
@@ -17,9 +17,36 @@ export function PerDayBarChart({ series }: Props) {
   const chartRef = useRef<EChartsReact>(null);
   const summaryDays = series.filter((d) => d.hasSummary);
   const hasBandData = summaryDays.length > 0 && summaryDays.every((d) => d.dayImportKwh != null);
+  const [selectedSeries, setSelectedSeries] = useState<Record<string, boolean>>({
+    Import: true,
+    'Gen consumed': true,
+    Exported: true,
+    Immersion: true,
+  });
+
+  useEffect(() => {
+    setSelectedSeries(
+      hasBandData
+        ? {
+            'Import (day)': true,
+            'Import (night)': true,
+            'Import (peak)': true,
+            'Gen consumed': true,
+            Exported: true,
+            Immersion: true,
+          }
+        : {
+            Import: true,
+            'Gen consumed': true,
+            Exported: true,
+            Immersion: true,
+          },
+    );
+  }, [hasBandData]);
+
   const option = useMemo(
-    () => buildPerDayBarOption(series, hasBandData),
-    [series, hasBandData],
+    () => buildPerDayBarOption(series, hasBandData, selectedSeries),
+    [series, hasBandData, selectedSeries],
   );
 
   useEffect(() => {
@@ -63,6 +90,11 @@ export function PerDayBarChart({ series }: Props) {
         option={option}
         notMerge
         style={{ width: '100%', height: 'clamp(220px, 28vw, 280px)' }}
+        onEvents={{
+          legendselectchanged: (event) => {
+            setSelectedSeries(event.selected as Record<string, boolean>);
+          },
+        }}
       />
     </div>
   );

@@ -124,7 +124,10 @@ function lineDensityHints(seriesLength: number) {
  * Data gaps (hasSummary === false) are emitted as `null` so ECharts renders
  * a visible break rather than interpolating across missing days.
  */
-export function buildEnergyTrendOption(series: RangeSeriesDay[]) {
+export function buildEnergyTrendOption(
+  series: RangeSeriesDay[],
+  selected: Record<string, boolean> = { Import: true, Generation: true, Export: true },
+) {
   const dates = series.map((d) => shortDate(d.date));
   const { showSymbol, symbolSize, lineWidth } = lineDensityHints(series.length);
 
@@ -160,7 +163,7 @@ export function buildEnergyTrendOption(series: RangeSeriesDay[]) {
       itemHeight: 8,
       itemGap: 14,
       textStyle: { color: '#94a3b8', fontSize: 11 },
-      selected: { Import: true, Generation: true, Export: true },
+      selected,
     },
     xAxis: {
       type: 'category' as const,
@@ -171,6 +174,7 @@ export function buildEnergyTrendOption(series: RangeSeriesDay[]) {
     },
     yAxis: {
       type: 'value' as const,
+      scale: true,
       axisLabel: { ...AXIS_LABEL, formatter: (v: number) => `${v}` },
       axisLine: AXIS_LINE,
       axisTick: AXIS_TICK,
@@ -186,7 +190,7 @@ export function buildEnergyTrendOption(series: RangeSeriesDay[]) {
         type: 'line',
         smooth: true,
         connectNulls: false,
-        data: series.map((d) => val(d, 'importKwh')),
+        data: selected.Import === false ? series.map(() => null) : series.map((d) => val(d, 'importKwh')),
         lineStyle: { color: IMPORT_COLOR, width: lineWidth },
         itemStyle: { color: IMPORT_COLOR },
         showSymbol,
@@ -197,7 +201,7 @@ export function buildEnergyTrendOption(series: RangeSeriesDay[]) {
         type: 'line',
         smooth: true,
         connectNulls: false,
-        data: series.map((d) => val(d, 'generatedKwh')),
+        data: selected.Generation === false ? series.map(() => null) : series.map((d) => val(d, 'generatedKwh')),
         lineStyle: { color: GEN_COLOR, width: lineWidth },
         itemStyle: { color: GEN_COLOR },
         showSymbol,
@@ -208,7 +212,7 @@ export function buildEnergyTrendOption(series: RangeSeriesDay[]) {
         type: 'line',
         smooth: true,
         connectNulls: false,
-        data: series.map((d) => val(d, 'exportKwh')),
+        data: selected.Export === false ? series.map(() => null) : series.map((d) => val(d, 'exportKwh')),
         lineStyle: { color: EXPORT_COLOR, width: lineWidth },
         itemStyle: { color: EXPORT_COLOR },
         showSymbol,
@@ -232,7 +236,11 @@ export function buildEnergyTrendOption(series: RangeSeriesDay[]) {
  *
  * The redundant overall-gen bar from v1 is intentionally absent.
  */
-export function buildPerDayBarOption(series: RangeSeriesDay[], hasBandData: boolean) {
+export function buildPerDayBarOption(
+  series: RangeSeriesDay[],
+  hasBandData: boolean,
+  selected: Record<string, boolean> = {},
+) {
   const dates = series.map((d) => shortDate(d.date));
 
   // Only include days that have a summary; gaps get zero values and are visually
@@ -342,15 +350,6 @@ export function buildPerDayBarOption(series: RangeSeriesDay[], hasBandData: bool
         return `<div style="font-size:11px;color:#94a3b8;margin-bottom:4px">${name}</div>${lines.join('<br>')}`;
       },
     },
-    legend: {
-      top: 0,
-      right: 0,
-      orient: 'horizontal' as const,
-      itemWidth: 12,
-      itemHeight: 8,
-      itemGap: 10,
-      textStyle: { color: '#94a3b8', fontSize: 10 },
-    },
     xAxis: {
       type: 'category' as const,
       data: dates,
@@ -360,6 +359,7 @@ export function buildPerDayBarOption(series: RangeSeriesDay[], hasBandData: bool
     },
     yAxis: {
       type: 'value' as const,
+      scale: true,
       axisLabel: { ...AXIS_LABEL, formatter: (v: number) => `${v}` },
       axisLine: AXIS_LINE,
       axisTick: AXIS_TICK,
@@ -367,7 +367,23 @@ export function buildPerDayBarOption(series: RangeSeriesDay[], hasBandData: bool
       name: 'kWh',
       nameTextStyle: { color: '#475569', fontSize: 10 },
     },
-    series: [...importSeries, ...genSeries],
+    legend: {
+      top: 0,
+      right: 0,
+      orient: 'horizontal' as const,
+      itemWidth: 12,
+      itemHeight: 8,
+      itemGap: 10,
+      textStyle: { color: '#94a3b8', fontSize: 10 },
+      selected,
+    },
+    series: [...importSeries, ...genSeries].map((entry) => ({
+      ...entry,
+      data:
+        selected[entry.name] === false
+          ? entry.data.map(() => null)
+          : entry.data,
+    })),
   };
 }
 
@@ -385,7 +401,11 @@ const EXPORT_CREDIT_COLOR = '#34d399'; // emerald-400
  * Shows actual net cost vs without-solar net cost per day, with export credit
  * as a third series. Days with no tariff (billing === null) render a zero bar.
  */
-export function buildCostHistogramOption(series: RangeSeriesDay[], currency = 'EUR') {
+export function buildCostHistogramOption(
+  series: RangeSeriesDay[],
+  currency = 'EUR',
+  selected: Record<string, boolean> = {},
+) {
   const dates = series.map((d) => shortDate(d.date));
 
   function fmt(n: number): string {
@@ -453,6 +473,7 @@ export function buildCostHistogramOption(series: RangeSeriesDay[], currency = 'E
       itemHeight: 8,
       itemGap: 12,
       textStyle: { color: '#94a3b8', fontSize: 10 },
+      selected,
     },
     xAxis: {
       type: 'category' as const,
@@ -463,6 +484,7 @@ export function buildCostHistogramOption(series: RangeSeriesDay[], currency = 'E
     },
     yAxis: {
       type: 'value' as const,
+      scale: true,
       axisLabel: { ...AXIS_LABEL, formatter: (v: number) => `${currencySymbol}${v}` },
       axisLine: AXIS_LINE,
       axisTick: AXIS_TICK,
@@ -474,21 +496,21 @@ export function buildCostHistogramOption(series: RangeSeriesDay[], currency = 'E
       {
         name: 'Without solar',
         type: 'bar',
-        data: withoutSolarData,
+        data: selected['Without solar'] === false ? withoutSolarData.map(() => null) : withoutSolarData,
         itemStyle: { color: WITHOUT_SOLAR_COLOR, borderRadius: [3, 3, 0, 0] },
         barMaxWidth: 18,
       },
       {
         name: 'Actual cost',
         type: 'bar',
-        data: actualData,
+        data: selected['Actual cost'] === false ? actualData.map(() => null) : actualData,
         itemStyle: { color: ACTUAL_COST_COLOR, borderRadius: [3, 3, 0, 0] },
         barMaxWidth: 18,
       },
       {
         name: 'Export credit',
         type: 'bar',
-        data: exportData,
+        data: selected['Export credit'] === false ? exportData.map(() => null) : exportData,
         itemStyle: { color: EXPORT_CREDIT_COLOR, borderRadius: [3, 3, 0, 0] },
         barMaxWidth: 18,
       },

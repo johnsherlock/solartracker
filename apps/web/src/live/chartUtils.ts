@@ -133,6 +133,42 @@ export function formatEuroTick(value: number): string {
   return `€${value.toFixed(2)}`;
 }
 
+export function toClockMinutes(time: string): number {
+  const [hoursRaw, minutesRaw] = time.split(':');
+  const hours = Number(hoursRaw);
+  const minutes = Number(minutesRaw);
+
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+    return 0;
+  }
+
+  return (hours * 60) + minutes;
+}
+
+export function resolveTimeAxisStep(visibleMinutes: number): number {
+  if (visibleMinutes > 12 * 60) return 60;
+  if (visibleMinutes > 6 * 60) return 30;
+  if (visibleMinutes > 2 * 60) return 15;
+  if (visibleMinutes > 60) return 10;
+  if (visibleMinutes > 30) return 5;
+  return 1;
+}
+
+export function formatTimeAxisLabel(time: string, visibleMinutes: number): string {
+  const totalMinutes = toClockMinutes(time);
+  const step = resolveTimeAxisStep(visibleMinutes);
+
+  if (totalMinutes % step !== 0) {
+    return '';
+  }
+
+  if (step >= 60) {
+    return time.slice(0, 2);
+  }
+
+  return time;
+}
+
 export function formatClockTime(date: Date, timezone: string): string {
   return new Intl.DateTimeFormat('en-IE', {
     timeZone: timezone,

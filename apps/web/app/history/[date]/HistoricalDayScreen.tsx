@@ -1375,6 +1375,12 @@ function TariffBreakdownPanel({
         <p className="mt-2 text-sm text-slate-400">
           This view splits import cost and onsite solar value by the tariff periods that applied on the selected day.
         </p>
+        <Link
+          href="/settings/tariffs"
+          className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-amber-300"
+        >
+          Add tariff details <ChevronRight size={14} />
+        </Link>
       </div>
     );
   }

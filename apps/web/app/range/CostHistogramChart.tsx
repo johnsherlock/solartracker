@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type EChartsReact from 'echarts-for-react';
 import { EChart } from '@/src/live/EChartsWrapper';
 import { buildCostHistogramOption } from '@/src/range/rangeChartOptions';
@@ -16,7 +16,15 @@ type Props = {
 
 export function CostHistogramChart({ series, currency }: Props) {
   const chartRef = useRef<EChartsReact>(null);
-  const option = useMemo(() => buildCostHistogramOption(series, currency), [series, currency]);
+  const [selectedSeries, setSelectedSeries] = useState<Record<string, boolean>>({
+    'Without solar': true,
+    'Actual cost': true,
+    'Export credit': true,
+  });
+  const option = useMemo(
+    () => buildCostHistogramOption(series, currency, selectedSeries),
+    [series, currency, selectedSeries],
+  );
 
   useEffect(() => {
     const instance = chartRef.current?.getEchartsInstance();
@@ -53,6 +61,11 @@ export function CostHistogramChart({ series, currency }: Props) {
       option={option}
       notMerge
       style={{ width: '100%', height: 'clamp(220px, 28vw, 280px)' }}
+      onEvents={{
+        legendselectchanged: (event) => {
+          setSelectedSeries(event.selected as Record<string, boolean>);
+        },
+      }}
     />
   );
 }

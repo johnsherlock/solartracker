@@ -55,6 +55,16 @@ import { StaleTariffBanner } from '@/src/components/StaleTariffBanner';
 import type { StaleTariffWarning } from '@/src/tariffs/stale-check';
 import { setCachedYear } from '@/src/calendar/yearCache';
 import { YearHeatMap } from './YearHeatMap';
+import {
+  aggregateRangeSeries,
+  describeRangeGrouping,
+  formatRangeGroupingLabel,
+  formatRangeGroupingNoun,
+  getAvailableRangeGroupings,
+  getDefaultRangeGrouping,
+  type RangeGroupBy,
+} from '@/src/range/aggregation';
+import { ToggleGroup } from '@/app/live/DayAnalysis';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -145,6 +155,27 @@ export function RangeHistoryScreen({ payload, today, financeContext, initialMode
       (d) => d.date >= effectiveRange.from && d.date <= effectiveRange.to,
     );
   }, [payload, effectiveRange]);
+  const availableGroupings = useMemo(
+    () => getAvailableRangeGroupings(filteredSeries.length),
+    [filteredSeries.length],
+  );
+  const [groupBy, setGroupBy] = useState<RangeGroupBy>(() =>
+    getDefaultRangeGrouping(activeRange.mode === 'years' ? 366 : 30),
+  );
+
+  useEffect(() => {
+    const defaultGrouping = getDefaultRangeGrouping(filteredSeries.length);
+    setGroupBy((current) =>
+      availableGroupings.includes(current)
+        ? current
+        : defaultGrouping,
+    );
+  }, [availableGroupings, filteredSeries.length]);
+
+  const chartSeries = useMemo(
+    () => aggregateRangeSeries(filteredSeries, groupBy),
+    [filteredSeries, groupBy],
+  );
 
   const kpis = useMemo(() => {
     if (!payload) return null;
@@ -340,8 +371,11 @@ export function RangeHistoryScreen({ payload, today, financeContext, initialMode
                 {/* §4–§9 Charts */}
                 <ChartPlaceholders
                   hasTariff={kpis.hasTariff}
-                  series={filteredSeries}
+                  series={chartSeries}
                   currency={payload?.meta.currency ?? 'EUR'}
+                  groupBy={groupBy}
+                  availableGroupings={availableGroupings}
+                  onGroupByChange={setGroupBy}
                 />
 
                 {/* §9a — Yearly heat map (full calendar year only) */}
@@ -593,10 +627,16 @@ function ChartPlaceholders({
   hasTariff,
   series,
   currency,
+  groupBy,
+  availableGroupings,
+  onGroupByChange,
 }: {
   hasTariff: boolean;
   series: RangeSeriesDay[];
   currency: string;
+  groupBy: RangeGroupBy;
+  availableGroupings: RangeGroupBy[];
+  onGroupByChange: (value: RangeGroupBy) => void;
 }) {
   // Incrementing this key forces charts to remount, which reliably clears zoom state.
   const [resetKey, setResetKey] = useState(0);
@@ -642,15 +682,39 @@ function ChartPlaceholders({
 
   return (
     <>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-slate-800/70 bg-slate-950/30 px-4 py-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Chart grouping
+          </p>
+          <p className="mt-1 text-sm text-slate-300">
+            Showing {describeRangeGrouping(groupBy)} buckets for this window.
+          </p>
+        </div>
+        <ToggleGroup
+          value={groupBy}
+          options={availableGroupings}
+          onChange={onGroupByChange}
+          renderLabel={formatRangeGroupingLabel}
+        />
+      </div>
       <ChartCard title="Energy trend" icon={<TrendingUp size={14} />} onReset={resetCharts}>
         <EnergyTrendChart key={resetKey} series={series} />
       </ChartCard>
-      <ChartCard title="Per-day breakdown" icon={<BarChart3 size={14} />} onReset={resetCharts}>
+      <ChartCard
+        title={`Per-${formatRangeGroupingNoun(groupBy)} breakdown`}
+        icon={<BarChart3 size={14} />}
+        onReset={resetCharts}
+      >
         <PerDayBarChart key={resetKey} series={series} />
       </ChartCard>
       {hasTariff ? (
         <>
-          <ChartCard title="Net daily cost vs without solar" icon={<BarChart3 size={14} />} onReset={resetCharts}>
+          <ChartCard
+            title={`Net ${describeRangeGrouping(groupBy)} cost vs without solar`}
+            icon={<BarChart3 size={14} />}
+            onReset={resetCharts}
+          >
             <CostHistogramChart key={resetKey} series={series} currency={currency} />
           </ChartCard>
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
