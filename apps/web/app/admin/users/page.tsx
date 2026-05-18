@@ -31,7 +31,12 @@ export default async function AdminUsersPage() {
           <span className="text-slate-700">/</span>
           <span className="text-sm text-slate-400">Admin</span>
           <span className="text-slate-700">/</span>
-          <span className="text-sm text-slate-400">Users</span>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-slate-300">Users</span>
+            <Link href="/admin/waitlist" className="text-sm text-slate-500 hover:text-slate-300 transition-colors">
+              Waitlist
+            </Link>
+          </div>
           <div className="ml-auto">
             <form action={logoutAdmin}>
               <button

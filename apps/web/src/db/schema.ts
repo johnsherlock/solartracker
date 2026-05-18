@@ -274,6 +274,14 @@ export const dailyPricedRollups = pgTable('daily_priced_rollups', {
   uniqueInstallationDateIdx: uniqueIndex('daily_priced_rollups_installation_date_idx').on(table.installationId, table.localDate),
 }));
 
+export const waitlistEntries = pgTable('waitlist_entries', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  email: text('email').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  emailIdx: uniqueIndex('waitlist_entries_email_idx').on(table.email),
+}));
+
 export const deletionRequests = pgTable('deletion_requests', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),

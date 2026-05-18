@@ -44,6 +44,30 @@ If an item becomes concrete enough to schedule:
 
 ## Inbox
 
+### 2026-05-11 - Live "Trust and interpretation" section feels like fluff
+
+- Area: Live
+- Type: UX
+- Status: New
+- Notes: The current `Trust and interpretation` / `Notes` card in the Live screen's `Next` section does not feel valuable enough to justify the space. It reads as filler rather than helping the user make a decision, so this area likely needs a more useful module or a stronger replacement concept.
+- Next step: Leave as note
+
+### 2026-05-11 - Live screen header layout is weak on mobile
+
+- Area: Live
+- Type: UX
+- Status: New
+- Notes: The Live screen header does not lay out especially well on mobile. In the screenshot, the title, freshness chip, rate chip, and date/navigation controls compete for space and create a cramped top section before the main content begins.
+- Next step: Leave as note
+
+### 2026-05-11 - Calendar screen has mobile layout issues
+
+- Area: Calendar
+- Type: UX
+- Status: New
+- Notes: The Calendar screen has some layout problems on mobile. From the screenshot, the header/actions, metric pills, and overall vertical spacing feel too cramped, and the screen starts to look crowded before the main chart content gets room to breathe.
+- Next step: Leave as note
+
 ### 2026-05-11 - Missing setup prompts on Live and Historical Day cost surfaces
 
 - Area: Live | History
