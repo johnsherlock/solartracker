@@ -187,11 +187,11 @@ function formatMissingMinutesSummary(expectedMinutes: number, coveredMinutes: nu
 }
 
 function getDismissalStorageKey(date: string, timezone: string): string {
-  return `pv-manager:live-warning-dismissals:${timezone}:${date}`;
+  return `solartracker:live-warning-dismissals:${timezone}:${date}`;
 }
 
 function getChartPrefsStorageKey(timezone: string): string {
-  return `pv-manager:live-chart-prefs:${timezone}`;
+  return `solartracker:live-chart-prefs:${timezone}`;
 }
 
 function formatSunTime(utcIso: string, timezone: string): string {
