@@ -1,4 +1,4 @@
-# Claude Code Instructions for solartracker
+# Codex Instructions for solartracker
 
 ## Project Overview
 
@@ -13,7 +13,7 @@ This repository contains a rewrite of a solar energy analysis application.
 
 Before planning or implementing a story, read:
 
-1. `CLAUDE.md`
+1. `AGENTS.md`
 2. `docs/implementation-context.md`
 3. the requested story file
 4. the relevant feature file

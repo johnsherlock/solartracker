@@ -2,7 +2,7 @@ name: pull-request-lint
 on:
   pull_request_target:
     branches:
-      - v2
+      - main
     types:
       - labeled
       - opened

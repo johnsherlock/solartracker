@@ -1,4 +1,6 @@
-# PV Manager
+# Solartracker
+
+Solartracker is the canonical repository home of the PV Manager rewrite.
 
 PV Manager is a solar-energy and tariff-analysis web app focused on one core
 question:

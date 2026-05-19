@@ -102,6 +102,6 @@ For v1, the rewrite will target a unified Next.js deployment on Vercel.
 ## Relationship To Earlier Decisions
 
 - This decision narrows the infrastructure deferral left open in
-  [`0001-runtime-boundaries-and-infra-deferral.md`](/Users/john/Documents/Projects/pv-manager/docs/decisions/0001-runtime-boundaries-and-infra-deferral.md).
+  [`0001-runtime-boundaries-and-infra-deferral.md`](/Users/john/Documents/Projects/solartracker/docs/decisions/0001-runtime-boundaries-and-infra-deferral.md).
 - It does not change the summary-first v1 data-flow decision from `0001`; it
   only finalizes the first deployment surface used to implement that model.

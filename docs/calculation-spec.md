@@ -233,16 +233,16 @@ This document should be updated from:
 
 ## Evidence Inventory In Repo
 
-Current evidence files under [`sample data/`](/Users/john/Documents/Projects/pv-manager/sample%20data):
+Current evidence files under [`sample data/`](/Users/john/Documents/Projects/solartracker/docs/sample-data):
 
-- [Mar-Apr 25 billing period.png](/Users/john/Documents/Projects/pv-manager/sample%20data/Mar-Apr%2025%20billing%20period.png)
-- [May-July 25 billing period.png](/Users/john/Documents/Projects/pv-manager/sample%20data/May-July%2025%20billing%20period.png)
-- [July-Aug 25 billing period.png](/Users/john/Documents/Projects/pv-manager/sample%20data/July-Aug%2025%20billing%20period.png)
-- [Sept-Oct 25 billing period.png](/Users/john/Documents/Projects/pv-manager/sample%20data/Sept-Oct%2025%20billing%20period.png)
-- [Nov-Dec 25 billing period.png](/Users/john/Documents/Projects/pv-manager/sample%20data/Nov-Dec%2025%20billing%20period.png)
-- [Jan-Feb 26 billing period.png](/Users/john/Documents/Projects/pv-manager/sample%20data/Jan-Feb%2026%20billing%20period.png)
-- [02-05-25 to 03-07-25.csv](/Users/john/Documents/Projects/pv-manager/sample%20data/02-05-25%20to%2003-07-25.csv)
-- [09-07-25.csv](/Users/john/Documents/Projects/pv-manager/sample%20data/09-07-25.csv)
+- [Mar-Apr 25 billing period.png](/Users/john/Documents/Projects/solartracker/docs/sample-data/Mar-Apr%2025%20billing%20period.png)
+- [May-July 25 billing period.png](/Users/john/Documents/Projects/solartracker/docs/sample-data/May-July%2025%20billing%20period.png)
+- [July-Aug 25 billing period.png](/Users/john/Documents/Projects/solartracker/docs/sample-data/July-Aug%2025%20billing%20period.png)
+- [Sept-Oct 25 billing period.png](/Users/john/Documents/Projects/solartracker/docs/sample-data/Sept-Oct%2025%20billing%20period.png)
+- [Nov-Dec 25 billing period.png](/Users/john/Documents/Projects/solartracker/docs/sample-data/Nov-Dec%2025%20billing%20period.png)
+- [Jan-Feb 26 billing period.png](/Users/john/Documents/Projects/solartracker/docs/sample-data/Jan-Feb%2026%20billing%20period.png)
+- [02-05-25 to 03-07-25.csv](/Users/john/Documents/Projects/solartracker/docs/sample-data/02-05-25%20to%2003-07-25.csv)
+- [09-07-25.csv](/Users/john/Documents/Projects/solartracker/docs/sample-data/09-07-25.csv)
 
 ## Observed Billing Evidence
 
@@ -278,7 +278,7 @@ From the supplied bill:
 - PSO levy: `3.23` per month
 - export credit: `0.20` per unit
 
-The supplier export [02-05-25 to 03-07-25.csv](/Users/john/Documents/Projects/pv-manager/sample%20data/02-05-25%20to%2003-07-25.csv) appears to represent half-hourly Energia-side usage across this same bill window:
+The supplier export [02-05-25 to 03-07-25.csv](/Users/john/Documents/Projects/solartracker/docs/sample-data/02-05-25%20to%2003-07-25.csv) appears to represent half-hourly Energia-side usage across this same bill window:
 
 - `63` daily rows
 - `48` half-hour intervals per day

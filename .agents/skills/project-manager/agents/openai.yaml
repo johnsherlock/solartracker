@@ -1,0 +1,7 @@
+interface:
+  display_name: "Project Manager"
+  short_description: "Plan PV Manager to production"
+  default_prompt: "Use $project-manager to assess the current rewrite and produce a phased plan from today to production."
+
+policy:
+  allow_implicit_invocation: true

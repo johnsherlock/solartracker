@@ -186,9 +186,9 @@ before normal product access.
 ## Relationship To Other Decisions
 
 - This decision builds on
-  [`0001-runtime-boundaries-and-infra-deferral.md`](/Users/john/Documents/Projects/pv-manager/docs/decisions/0001-runtime-boundaries-and-infra-deferral.md)
+  [`0001-runtime-boundaries-and-infra-deferral.md`](/Users/john/Documents/Projects/solartracker/docs/decisions/0001-runtime-boundaries-and-infra-deferral.md)
   and
-  [`0005-v1-hosting-on-vercel.md`](/Users/john/Documents/Projects/pv-manager/docs/decisions/0005-v1-hosting-on-vercel.md)
+  [`0005-v1-hosting-on-vercel.md`](/Users/john/Documents/Projects/solartracker/docs/decisions/0005-v1-hosting-on-vercel.md)
   by defining how real beta users gain access to the app-owned backend.
 - It narrows the intended scope of `FE-007` by replacing the earlier idea of a
   fuller onboarding flow with a stricter provider-credentials gate plus later
