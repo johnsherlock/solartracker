@@ -5,8 +5,8 @@
 This repository contains a rewrite of a solar energy analysis application.
 
 - The rewrite app lives in `apps/web`
-- The legacy app exists at the repo root and must not be modified for rewrite
-  work
+- The legacy `V1/` app is retained only in history and should not be
+  reintroduced into active work
 - The rewrite uses Next.js, Postgres, Drizzle, and app-owned server-side logic
 
 ## Default Reading Order
@@ -27,7 +27,7 @@ Use deeper docs only when the story actually needs them.
 - Work only on the requested story unless the user expands scope
 - Do not refactor unrelated code
 - Prefer the rewrite app under `apps/web`
-- Do not modify the legacy root app unless explicitly instructed
+- Do not reintroduce or modify legacy `V1/` code unless explicitly instructed
 
 ## Architecture Guardrails
 
@@ -88,10 +88,10 @@ When asked to plan a story:
 
 ## Git Workflow
 
-- The active rewrite branch line is `v2`, not `main`
+- The active shipping branch is `main`
 - Work on a feature/story branch when implementing
 - Keep commits small and logical
-- PRs should target `v2`, not `main`
+- PRs should target `main`
 - Follow the repo’s current PR/title conventions rather than assuming older
   workflow notes are still correct
 

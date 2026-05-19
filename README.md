@@ -7,11 +7,8 @@ question:
 > enough to justify the install or financing cost over time?
 
 The active product is the rewrite in [`apps/web`](apps/web).
-It is the codebase validated by GitHub Actions for the `v2` branch and the one
-all new product work should target.
-
-The original application is preserved under [`V1/`](V1)
-for reference while the rewrite continues.
+It is the codebase validated for the `main` branch and the one all new product
+work should target.
 
 ## What The Product Does
 
@@ -102,7 +99,6 @@ tightly coupled to raw provider payloads.
 ├── apps/
 │   └── web/         # Active rewrite app
 ├── docs/            # Product brief, architecture, features, stories, decisions
-├── V1/              # Legacy application kept for reference
 └── output/          # Generated artifacts and local outputs
 ```
 
