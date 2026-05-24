@@ -723,20 +723,6 @@ export function LandingPage() {
       {/* ── Mobile ── */}
       <section id="mobile" style={{ borderTop: '1px solid var(--border)' }}>
         <div className="wrap mobile-row">
-          <div>
-            <div className="section-eyebrow">Anywhere · Mobile</div>
-            <h2 style={{ fontSize: 'clamp(30px, 3.4vw, 44px)' }}>Designed for <span className="word-glow">desktop</span> and <span className="word-glow">mobile</span>.</h2>
-            <p className="lede">
-              Every screen is built mobile-first. Check live generation from the garden, your
-              tariff window at the supermarket, or where you are on your payback on the train
-              home — without losing a chart, stat or feature along the way.
-            </p>
-            <ul className="feature-bullets" style={{ marginTop: '28px' }}>
-              <li>Same data, same insights<span className="lbl">— no cut-down &lsquo;mobile version&rsquo;.</span></li>
-              <li>Live, history, range, calendar and leaderboard all designed to work in one hand.</li>
-              <li>Charts re-laid-out for thumb-scrolling, not pinch-to-zoom.</li>
-            </ul>
-          </div>
           <div className="phones">
             <div className="phone tilt-l phone-secondary">
               <div className="phone-window" data-scroll-speed="1.6">
@@ -751,24 +737,42 @@ export function LandingPage() {
               </div>
             </div>
           </div>
+          <div>
+            <div className="section-eyebrow">Anywhere · Mobile</div>
+            <h2 style={{ fontSize: 'clamp(30px, 3.4vw, 44px)' }}>Designed for <span className="word-glow">desktop</span> and <span className="word-glow">mobile</span>.</h2>
+            <p className="lede">
+              Every screen is built mobile-first. Check live generation from the garden, your
+              tariff window at the supermarket, or where you are on your payback on the train
+              home — without losing a chart, stat or feature along the way.
+            </p>
+            <ul className="feature-bullets" style={{ marginTop: '28px' }}>
+              <li>Same data, same insights<span className="lbl">— no cut-down &lsquo;mobile version&rsquo;.</span></li>
+              <li>Live, history, range, calendar and leaderboard all designed to work in one hand.</li>
+              <li>Charts re-laid-out for thumb-scrolling, not pinch-to-zoom.</li>
+            </ul>
+          </div>
         </div>
       </section>
 
       {/* ── Privacy ── */}
       <section id="privacy" className="privacy">
         <div className="wrap">
-          <div className="section-eyebrow">Trust · Privacy</div>
-          <h2>Your data, your control, <span className="word-glow">read-only</span> by design.</h2>
-          <p className="lede">
-            Solar Advisor is a window into your data. We correlate and combine it to show you real
-            insights into your system&rsquo;s performance and ROI. Your data is securely stored and gives
-            you full access to edit or delete it whenever you want.
-          </p>
-          <div className="setup-shot">
-            <BrowserFrame url="solartracker.app/settings" src="/landing/setup-full.png" alt="Setup overview — Tariffs, Provider, Finance, Location, System and Notifications all in your control." />
-            <p className="setup-caption">
-              Every aspect of your setup, in one place — yours to edit, delete or disconnect at any moment.
-            </p>
+          <div className="feature" style={{ marginBottom: '56px' }}>
+            <div className="feature-text">
+              <div className="section-eyebrow">Trust · Privacy</div>
+              <h2>Your data, your control, <span className="word-glow">read-only</span> by design.</h2>
+              <p className="lede">
+                Solar Advisor is a window into your data. We correlate and combine it to show you real
+                insights into your system&rsquo;s performance and ROI. Your data is securely stored and gives
+                you full access to edit or delete it whenever you want.
+              </p>
+            </div>
+            <div className="feature-shot">
+              <BrowserFrame url="solartracker.app/settings" src="/landing/setup-full.png" alt="Setup overview — Tariffs, Provider, Finance, Location, System and Notifications all in your control." />
+              <p className="setup-caption" style={{ textAlign: 'left', marginLeft: 0 }}>
+                Every aspect of your setup, in one place — yours to edit, delete or disconnect at any moment.
+              </p>
+            </div>
           </div>
           <div className="privacy-grid">
             <div className="priv-card">
