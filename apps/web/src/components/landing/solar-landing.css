@@ -585,10 +585,11 @@
   width: 240px;
   border-radius: 32px;
   background: #050810;
-  border: 8px solid #0d1320;
+  border: 8px solid #1a2333;
   box-shadow:
-    0 30px 60px -15px rgba(0,0,0,0.7),
-    0 0 0 1px rgba(255,255,255,0.04);
+    0 30px 60px -15px rgba(0,0,0,0.8),
+    0 0 0 1px rgba(255,255,255,0.18),
+    0 1px 0 rgba(255,255,255,0.15) inset;
   overflow: hidden;
   position: relative;
   padding-top: 26px;
@@ -598,10 +599,10 @@
   position: absolute;
   top: 6px; left: 50%; transform: translateX(-50%);
   width: 80px; height: 18px;
-  background: #0d1320;
+  background: #1a2333;
   border-radius: 999px;
   z-index: 2;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
 }
 .solar-landing .phone img { width: 100%; display: block; }
 .solar-landing .phone.tilt-l { transform: rotate(-3deg) translateY(20px); }
