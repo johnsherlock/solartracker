@@ -396,10 +396,12 @@
   border-radius: 14px;
   overflow: hidden;
   background: var(--surface);
-  border: 1px solid var(--border-hi);
+  border: 1px solid rgba(255,255,255,0.22);
   box-shadow:
-    0 30px 80px -20px rgba(0,0,0,0.6),
-    0 0 0 1px rgba(255,255,255,0.02) inset;
+    0 30px 80px -20px rgba(0,0,0,0.7),
+    0 0 0 1px rgba(255,255,255,0.04) inset,
+    0 1px 0 rgba(255,255,255,0.10) inset,
+    0 0 0 1px rgba(0,0,0,0.6);
   --tx: 0px;
   --rx: 0deg;
   --ry: 0deg;
@@ -443,6 +445,68 @@
 .solar-landing .browser-url .lock { color: var(--text-mute); margin-right: 8px; }
 .solar-landing .browser-body { background: #0a0f17; }
 .solar-landing .browser-body img { display: block; width: 100%; height: auto; }
+
+/* Scroll-shot: image taller than the visible window, scrolls via JS */
+.solar-landing .browser-body.scroll-shot {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 16 / 10;
+}
+.solar-landing .showstopper .browser-body.scroll-shot { aspect-ratio: 16 / 9; }
+.solar-landing .browser-body.scroll-shot img {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  height: auto;
+  transform: translateY(var(--scroll-y, 0px));
+  will-change: transform;
+}
+
+/* Calendar tabs */
+.solar-landing .cal-tabs {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+  padding: 2px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 8px;
+}
+.solar-landing .cal-tab {
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--display);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 140ms ease, background 140ms ease;
+}
+.solar-landing .cal-tab:hover { color: var(--text); }
+.solar-landing .cal-tab.is-active {
+  color: #1a1206;
+  background: var(--yellow);
+}
+
+/* Calendar slide stack */
+.solar-landing .cal-stack {
+  position: relative;
+  aspect-ratio: 16 / 11;
+  overflow: hidden;
+}
+.solar-landing .cal-slide {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+  opacity: 0;
+  transition: opacity 360ms ease;
+}
+.solar-landing .cal-slide.is-active { opacity: 1; }
 
 /* Pull-quote stats */
 .solar-landing .stat-row {
@@ -543,10 +607,39 @@
 .solar-landing .phone.tilt-l { transform: rotate(-3deg) translateY(20px); }
 .solar-landing .phone.tilt-r { transform: rotate(2deg); }
 
+/* Phone scroll-shot window */
+.solar-landing .phone .phone-window {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 9 / 16;
+}
+.solar-landing .phone .phone-window img {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  height: auto;
+  transform: translateY(var(--scroll-y, 0px));
+  will-change: transform;
+}
+
 /* ---- Privacy ---- */
 .solar-landing .privacy {
   background: linear-gradient(180deg, transparent, rgba(255,255,255,0.015));
   border-top: 1px solid var(--border);
+}
+.solar-landing .setup-shot {
+  margin: 56px auto 32px;
+  max-width: 980px;
+}
+.solar-landing .setup-shot .browser { max-width: 980px; margin: 0 auto; }
+.solar-landing .setup-shot .browser-body img { width: 100%; display: block; }
+.solar-landing .setup-caption {
+  text-align: center;
+  margin-top: 22px;
+  color: var(--text-dim);
+  font-size: 14.5px;
+  max-width: 540px;
+  margin-left: auto; margin-right: auto;
 }
 .solar-landing .privacy-grid {
   display: grid;
@@ -679,18 +772,29 @@
   .solar-landing .feature.reverse { grid-template-columns: 1fr; gap: 36px; }
   .solar-landing .feature.reverse .feature-text,
   .solar-landing .feature.reverse .feature-shot { order: initial; }
+  .solar-landing .feature > *,
+  .solar-landing .feature.reverse > * { min-width: 0; }
   .solar-landing .pillars-inner { grid-template-columns: 1fr 1fr; gap: 24px 32px; }
   .solar-landing .privacy-grid { grid-template-columns: 1fr; }
   .solar-landing .mobile-row { grid-template-columns: 1fr; gap: 48px; }
   .solar-landing section { padding: 64px 0; }
   .solar-landing .hero { padding: 48px 0 64px; }
 }
-@media (max-width: 600px) {
-  .solar-landing .wrap { padding: 0 22px; }
+@media (max-width: 720px) {
+  .solar-landing .phone-secondary { display: none; }
+  #stats .solar-landing .feature + .feature { margin-top: 48px !important; }
+}
+@media (max-width: 540px) {
+  .solar-landing .wrap { padding: 0 18px; }
   .solar-landing .pillars-inner { grid-template-columns: 1fr; }
   .solar-landing .nav-meta { gap: 12px; font-size: 12px; }
   .solar-landing .chip { display: none; }
   .solar-landing .signup-form { flex-direction: column; padding: 12px; }
   .solar-landing .signup-form input { padding: 10px 4px; }
   .solar-landing .signup-form button { width: 100%; }
+  /* Calendar tabs wrap onto a second row when the bar is too narrow */
+  .solar-landing .browser-bar { flex-wrap: wrap; height: auto; min-height: 36px; padding: 6px 12px; row-gap: 6px; }
+  .solar-landing .browser-url { flex: 1 1 auto; min-width: 0; max-width: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .solar-landing .cal-tabs { width: 100%; order: 99; }
+  .solar-landing .cal-tab { flex: 1; padding: 4px 6px; font-size: 11px; text-align: center; }
 }
