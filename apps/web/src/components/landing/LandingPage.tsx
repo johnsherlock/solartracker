@@ -51,8 +51,10 @@ function useScrollTilt() {
       isPhone?: boolean;
       isLeft?: boolean;
     };
+    type ScrollShot = { container: HTMLElement; img: HTMLImageElement; speed: number; startAt: number };
 
     const targets: Target[] = [];
+    const shots: ScrollShot[] = [];
 
     document.querySelectorAll<HTMLElement>('.browser').forEach((el) => {
       const reverse = !!el.closest('.feature.reverse');
@@ -71,6 +73,14 @@ function useScrollTilt() {
     document.querySelectorAll<HTMLElement>('.phone').forEach((el) => {
       const isLeft = el.classList.contains('tilt-l');
       targets.push({ el, baseY: isLeft ? -9 : 7, rxAmp: 10, ryAmp: 6, tyAmp: 26, isPhone: true, isLeft });
+    });
+
+    document.querySelectorAll<HTMLElement>('.scroll-shot, .phone-window').forEach((container) => {
+      const img = container.querySelector('img') as HTMLImageElement | null;
+      if (!img) return;
+      const speed = parseFloat(container.dataset.scrollSpeed ?? '') || 1.0;
+      const startAtRaw = parseFloat(container.dataset.scrollStart ?? '');
+      shots.push({ container, img, speed, startAt: isNaN(startAtRaw) ? 0 : startAtRaw });
     });
 
     let ticking = false;
@@ -99,65 +109,16 @@ function useScrollTilt() {
           t.el.style.setProperty('--ry', ry + 'deg');
         }
       }
-      ticking = false;
-    }
-
-    function onScroll() {
-      if (!ticking) {
-        requestAnimationFrame(update);
-        ticking = true;
-      }
-    }
-
-    window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onScroll);
-    update();
-
-    return () => {
-      window.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', onScroll);
-    };
-  }, []);
-}
-
-function useScrollShots() {
-  useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-
-    type ScrollShot = {
-      container: HTMLElement;
-      img: HTMLImageElement;
-      speed: number;
-      startAt: number;
-    };
-
-    const shots: ScrollShot[] = [];
-
-    document.querySelectorAll<HTMLElement>('.scroll-shot, .phone-window').forEach((container) => {
-      const img = container.querySelector('img') as HTMLImageElement | null;
-      if (!img) return;
-      const speed = parseFloat(container.dataset.scrollSpeed ?? '') || 1.0;
-      const startAtRaw = parseFloat(container.dataset.scrollStart ?? '');
-      shots.push({ container, img, speed, startAt: isNaN(startAtRaw) ? 0 : startAtRaw });
-    });
-
-    if (!shots.length) return;
-
-    let ticking = false;
-
-    function update() {
-      const vh = window.innerHeight;
+      // scroll-shots run in the same RAF pass (matching static HTML architecture)
       for (const s of shots) {
         const r = s.container.getBoundingClientRect();
         if (r.bottom < -200 || r.top > vh + 200) continue;
         const total = vh + r.height;
         const traveled = vh - r.top;
         let raw = traveled / total;
-        if (raw < 0) raw = 0;
-        else if (raw > 1) raw = 1;
+        if (raw < 0) raw = 0; else if (raw > 1) raw = 1;
         let p = (raw - s.startAt) / ((1 - s.startAt) / s.speed);
-        if (p < 0) p = 0;
-        else if (p > 1) p = 1;
+        if (p < 0) p = 0; else if (p > 1) p = 1;
         const imgH = s.img.offsetHeight;
         const winH = r.height;
         const scrollable = imgH - winH;
@@ -403,7 +364,6 @@ function CalendarBrowser() {
 export function LandingPage() {
   useHeroAnimation();
   useScrollTilt();
-  useScrollShots();
   useCalendarTabs();
   useWordGlow();
 
