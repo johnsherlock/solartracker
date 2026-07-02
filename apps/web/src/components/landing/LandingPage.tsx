@@ -389,7 +389,7 @@ export function LandingPage() {
                 </g>
               </svg>
             </span>
-            <span className="brand-name">Solar Advisor</span>
+            <span className="brand-name">Solar Tracker</span>
           </a>
           <div className="nav-meta">
             <a href="#features">Features</a>
@@ -409,7 +409,7 @@ export function LandingPage() {
           <div className="hero-text">
             <h1 className="headline">Understand what your solar is <em>actually</em> worth.</h1>
             <p className="sub">
-              Solar Advisor <strong>imports your live and historical data</strong>, applies your real day, night and peak
+              Solar Tracker <strong>imports your live and historical data</strong>, applies your real day, night and peak
               tariff, and tells you the <strong>euro value</strong> of every kilowatt-hour your panels produce —
               onsite, exported, and against your payback.
             </p>
@@ -555,7 +555,7 @@ export function LandingPage() {
               </div>
             </div>
             <div className="feature-shot">
-              <BrowserFrame url="solartracker.app/live" src="/landing/live-full.png" alt="Solar Advisor Live screen" scrollSpeed={1.7} />
+              <BrowserFrame url="solartracker.app/live" src="/landing/live-full.png" alt="Solar Tracker Live screen" scrollSpeed={1.7} />
             </div>
           </div>
         </div>
@@ -569,8 +569,8 @@ export function LandingPage() {
               <div className="section-eyebrow">Day · Tariff-aware</div>
               <h3>Every half-hour, priced at the <span className="word-glow">rate</span> you were actually on.</h3>
               <p>
-                Most solar apps tell you watts. Solar Advisor tells you what those
-                watts <em>did to your bill</em>. Tariff changes mid-period? Solar Advisor
+                Most solar apps tell you watts. Solar Tracker tells you what those
+                watts <em>did to your bill</em>. Tariff changes mid-period? Solar Tracker
                 applies the correct rate to each day automatically.
               </p>
               <ul className="feature-bullets">
@@ -598,7 +598,7 @@ export function LandingPage() {
             <div className="section-eyebrow">Range · Payback</div>
             <h2>Where are you on your <span className="word-glow">ROI</span> journey?</h2>
             <p className="lede">
-              Pick any window — a week, a season, all of it. Solar Advisor reconstructs your bill{' '}
+              Pick any window — a week, a season, all of it. Solar Tracker reconstructs your bill{' '}
               <em>with</em> solar against a no-solar counterfactual, month by month, and ticks the
               recovered portion of your install forward.
             </p>
@@ -722,7 +722,7 @@ export function LandingPage() {
               <div className="section-eyebrow">Trust · Privacy</div>
               <h2>Your data, your control, <span className="word-glow">read-only</span> by design.</h2>
               <p className="lede">
-                Solar Advisor is a window into your data. We correlate and combine it to show you real
+                Solar Tracker is a window into your data. We correlate and combine it to show you real
                 insights into your system&rsquo;s performance and ROI. Your data is securely stored and gives
                 you full access to edit or delete it whenever you want.
               </p>
@@ -748,7 +748,7 @@ export function LandingPage() {
             <div className="priv-card">
               <div className="badge">⌂</div>
               <h4>Secure infrastructure</h4>
-              <p>Encrypted in transit and at rest. Solar Advisor is a window into your data — we look through it to give you better insights, we don&rsquo;t open it for anyone else.</p>
+              <p>Encrypted in transit and at rest. Solar Tracker is a window into your data — we look through it to give you better insights, we don&rsquo;t open it for anyone else.</p>
             </div>
           </div>
         </div>
@@ -773,9 +773,9 @@ export function LandingPage() {
       {/* ── Footer ── */}
       <footer>
         <div className="wrap footer-inner">
-          <div>© 2026 Solar Advisor.</div>
+          <div>© 2026 Solar Tracker.</div>
           <div className="footer-links">
-            <a href="mailto:hello@solaradvisor.app">Contact</a>
+            <a href="mailto:support@solartracker.app">Contact</a>
           </div>
         </div>
       </footer>
