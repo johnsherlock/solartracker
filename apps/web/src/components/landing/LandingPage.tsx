@@ -51,8 +51,10 @@ function useScrollTilt() {
       isPhone?: boolean;
       isLeft?: boolean;
     };
+    type ScrollShot = { container: HTMLElement; img: HTMLImageElement; speed: number; startAt: number };
 
     const targets: Target[] = [];
+    const shots: ScrollShot[] = [];
 
     document.querySelectorAll<HTMLElement>('.browser').forEach((el) => {
       const reverse = !!el.closest('.feature.reverse');
@@ -73,8 +75,18 @@ function useScrollTilt() {
       targets.push({ el, baseY: isLeft ? -9 : 7, rxAmp: 10, ryAmp: 6, tyAmp: 26, isPhone: true, isLeft });
     });
 
+    document.querySelectorAll<HTMLElement>('.scroll-shot, .phone-window').forEach((container) => {
+      const img = container.querySelector('img') as HTMLImageElement | null;
+      if (!img) return;
+      const speed = parseFloat(container.dataset.scrollSpeed ?? '') || 1.0;
+      const startAtRaw = parseFloat(container.dataset.scrollStart ?? '');
+      shots.push({ container, img, speed, startAt: isNaN(startAtRaw) ? 0 : startAtRaw });
+    });
+
     let ticking = false;
     const clamp = (v: number, mn: number, mx: number) => (v < mn ? mn : v > mx ? mx : v);
+    const narrow = window.innerWidth < 720;
+    const tiltScale = narrow ? 0.3 : 1;
 
     function update() {
       const vh = window.innerHeight;
@@ -84,9 +96,9 @@ function useScrollTilt() {
         if (r.bottom < -300 || r.top > vh + 300) continue;
         const ec = r.top + r.height / 2;
         const p = clamp((vc - ec) / vh, -0.8, 0.8);
-        const rx = (p * t.rxAmp).toFixed(2);
-        const ry = (t.baseY + p * t.ryAmp).toFixed(2);
-        const ty = (-p * t.tyAmp).toFixed(2);
+        const rx = (p * t.rxAmp * tiltScale).toFixed(2);
+        const ry = (t.baseY * tiltScale + p * t.ryAmp * tiltScale).toFixed(2);
+        const ty = (-p * t.tyAmp * tiltScale).toFixed(2);
 
         if (t.isPhone) {
           const baseYOffset = t.isLeft ? 20 : 0;
@@ -95,6 +107,23 @@ function useScrollTilt() {
           t.el.style.setProperty('--tx', ty + 'px');
           t.el.style.setProperty('--rx', rx + 'deg');
           t.el.style.setProperty('--ry', ry + 'deg');
+        }
+      }
+      // scroll-shots run in the same RAF pass (matching static HTML architecture)
+      for (const s of shots) {
+        const r = s.container.getBoundingClientRect();
+        if (r.bottom < -200 || r.top > vh + 200) continue;
+        const total = vh + r.height;
+        const traveled = vh - r.top;
+        let raw = traveled / total;
+        if (raw < 0) raw = 0; else if (raw > 1) raw = 1;
+        let p = (raw - s.startAt) / ((1 - s.startAt) / s.speed);
+        if (p < 0) p = 0; else if (p > 1) p = 1;
+        const imgH = s.img.offsetHeight;
+        const winH = r.height;
+        const scrollable = imgH - winH;
+        if (scrollable > 0) {
+          s.img.style.setProperty('--scroll-y', (-(p * scrollable)).toFixed(1) + 'px');
         }
       }
       ticking = false;
@@ -109,11 +138,80 @@ function useScrollTilt() {
 
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onScroll);
+    shots.forEach((s) => {
+      if (s.img.complete) return;
+      s.img.addEventListener('load', () => requestAnimationFrame(update), { once: true });
+    });
     update();
 
     return () => {
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onScroll);
+    };
+  }, []);
+}
+
+function useCalendarTabs() {
+  useEffect(() => {
+    const stack = document.querySelector('.cal-stack') as HTMLElement | null;
+    const tabs = document.querySelectorAll<HTMLElement>('.cal-tab');
+    if (!stack || !tabs.length) return;
+
+    const slides = stack.querySelectorAll<HTMLElement>('.cal-slide');
+
+    function show(i: number) {
+      slides.forEach((s) => s.classList.toggle('is-active', +(s.dataset.i ?? '') === i));
+      tabs.forEach((t) => t.classList.toggle('is-active', +(t.dataset.i ?? '') === i));
+    }
+
+    let autoTimer: ReturnType<typeof setInterval> | null = null;
+    let userInteracted = false;
+
+    function stopAuto() {
+      userInteracted = true;
+      if (autoTimer) clearInterval(autoTimer);
+      autoTimer = null;
+    }
+
+    function startAuto() {
+      if (userInteracted || autoTimer) return;
+      let i = 0;
+      autoTimer = setInterval(() => {
+        i = (i + 1) % slides.length;
+        show(i);
+      }, 2400);
+    }
+
+    const clickHandlers: Array<() => void> = [];
+    tabs.forEach((t) => {
+      const handler = () => {
+        show(+(t.dataset.i ?? ''));
+        stopAuto();
+      };
+      clickHandlers.push(handler);
+      t.addEventListener('click', handler);
+    });
+
+    let io: IntersectionObserver | null = null;
+    if ('IntersectionObserver' in window) {
+      io = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            if (e.isIntersecting) startAuto();
+            else {
+              if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+            }
+          }
+        },
+        { threshold: 0.4 },
+      );
+      io.observe(stack);
+    }
+
+    return () => {
+      tabs.forEach((t, i) => t.removeEventListener('click', clickHandlers[i]));
+      if (autoTimer) clearInterval(autoTimer);
+      io?.disconnect();
     };
   }, []);
 }
@@ -194,17 +292,68 @@ function WaitlistForm() {
   );
 }
 
-// ─── Browser frame helper ─────────────────────────────────────────────────────
+// ─── Browser frame helpers ────────────────────────────────────────────────────
 
-function BrowserFrame({ url, src, alt, mild }: { url: string; src: string; alt: string; mild?: boolean }) {
+function BrowserFrame({
+  url,
+  src,
+  alt,
+  mild,
+  scrollSpeed,
+  scrollStart,
+}: {
+  url: string;
+  src: string;
+  alt: string;
+  mild?: boolean;
+  scrollSpeed?: number;
+  scrollStart?: number;
+}) {
+  const isScrollShot = scrollSpeed !== undefined;
   return (
     <div className={`browser${mild ? ' browser-mild' : ''}`}>
       <div className="browser-bar">
         <div className="browser-dots"><span /><span /><span /></div>
         <div className="browser-url"><span className="lock">⏿</span>{url}</div>
       </div>
-      <div className="browser-body">
-        <Image src={src} alt={alt} width={1200} height={800} style={{ width: '100%', height: 'auto' }} />
+      {isScrollShot ? (
+        <div
+          className="browser-body scroll-shot"
+          data-scroll-speed={scrollSpeed}
+          {...(scrollStart !== undefined ? { 'data-scroll-start': scrollStart } : {})}
+        >
+          {/* plain <img> required so CSS position:absolute takes effect */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={src} alt={alt} />
+        </div>
+      ) : (
+        <div className="browser-body">
+          <Image src={src} alt={alt} width={1200} height={800} style={{ width: '100%', height: 'auto' }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CalendarBrowser() {
+  return (
+    <div className="browser">
+      <div className="browser-bar">
+        <div className="browser-dots"><span /><span /><span /></div>
+        <div className="browser-url"><span className="lock">⏿</span>solartracker.app/calendar</div>
+        <div className="cal-tabs" role="tablist" aria-label="Calendar metric">
+          <button className="cal-tab is-active" data-i="0" type="button" role="tab">Generation</button>
+          <button className="cal-tab" data-i="1" type="button" role="tab">Self-consumed</button>
+          <button className="cal-tab" data-i="2" type="button" role="tab">Immersion</button>
+        </div>
+      </div>
+      <div className="browser-body cal-stack">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img className="cal-slide is-active" data-i="0" src="/landing/calendar-generation.png" alt="Yearly calendar — Generation" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img className="cal-slide" data-i="1" src="/landing/calendar-self-consumed.png" alt="Yearly calendar — Self-consumed" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img className="cal-slide" data-i="2" src="/landing/calendar-immersion.png" alt="Yearly calendar — Immersion" />
       </div>
     </div>
   );
@@ -215,6 +364,7 @@ function BrowserFrame({ url, src, alt, mild }: { url: string; src: string; alt: 
 export function LandingPage() {
   useHeroAnimation();
   useScrollTilt();
+  useCalendarTabs();
   useWordGlow();
 
   return (
@@ -239,12 +389,13 @@ export function LandingPage() {
                 </g>
               </svg>
             </span>
-            <span className="brand-name">Solar Advisor</span>
+            <span className="brand-name">Solar Tracker</span>
           </a>
           <div className="nav-meta">
             <a href="#features">Features</a>
             <a href="#payback">Payback</a>
             <a href="#stats">Stats</a>
+            <a href="#tariffs">Tariffs</a>
             <a href="#mobile">Mobile</a>
             <a href="#privacy">Privacy</a>
             <Link className="chip" href="#cta"><span className="chip-dot" />Invite-only beta</Link>
@@ -258,7 +409,7 @@ export function LandingPage() {
           <div className="hero-text">
             <h1 className="headline">Understand what your solar is <em>actually</em> worth.</h1>
             <p className="sub">
-              Solar Advisor <strong>imports your live and historical data</strong>, applies your real day, night and peak
+              Solar Tracker <strong>imports your live and historical data</strong>, applies your real day, night and peak
               tariff, and tells you the <strong>euro value</strong> of every kilowatt-hour your panels produce —
               onsite, exported, and against your payback.
             </p>
@@ -404,7 +555,7 @@ export function LandingPage() {
               </div>
             </div>
             <div className="feature-shot">
-              <BrowserFrame url="solaradvisor.app/live" src="/landing/live-crop.png" alt="Solar Advisor Live screen" />
+              <BrowserFrame url="solartracker.app/live" src="/landing/live-full.png" alt="Solar Tracker Live screen" scrollSpeed={1.7} />
             </div>
           </div>
         </div>
@@ -418,8 +569,8 @@ export function LandingPage() {
               <div className="section-eyebrow">Day · Tariff-aware</div>
               <h3>Every half-hour, priced at the <span className="word-glow">rate</span> you were actually on.</h3>
               <p>
-                Most solar apps tell you watts. Solar Advisor tells you what those
-                watts <em>did to your bill</em>. Tariff changes mid-period? Solar Advisor
+                Most solar apps tell you watts. Solar Tracker tells you what those
+                watts <em>did to your bill</em>. Tariff changes mid-period? Solar Tracker
                 applies the correct rate to each day automatically.
               </p>
               <ul className="feature-bullets">
@@ -434,7 +585,7 @@ export function LandingPage() {
               </div>
             </div>
             <div className="feature-shot">
-              <BrowserFrame url="solaradvisor.app/history" src="/landing/historical-day-crop.png" alt="Historical day analysis" mild />
+              <BrowserFrame url="solartracker.app/history" src="/landing/historical-day-full.png" alt="Historical day analysis" mild scrollSpeed={1.7} />
             </div>
           </div>
         </div>
@@ -447,12 +598,12 @@ export function LandingPage() {
             <div className="section-eyebrow">Range · Payback</div>
             <h2>Where are you on your <span className="word-glow">ROI</span> journey?</h2>
             <p className="lede">
-              Pick any window — a week, a season, all of it. Solar Advisor reconstructs your bill{' '}
+              Pick any window — a week, a season, all of it. Solar Tracker reconstructs your bill{' '}
               <em>with</em> solar against a no-solar counterfactual, month by month, and ticks the
               recovered portion of your install forward.
             </p>
           </div>
-          <BrowserFrame url="solaradvisor.app/range" src="/landing/range-crop.png" alt="Range history and payback tracking" />
+          <BrowserFrame url="solartracker.app/range" src="/landing/range-full.png" alt="Range history and payback tracking" scrollSpeed={1.25} />
           <div className="heatmap-caption">
             <div><strong>Bill reduction (2024):</strong> <span style={{ fontFamily: 'var(--mono)', color: 'var(--green)' }}>€702.87</span></div>
             <div><strong>Recovered so far:</strong> <span style={{ fontFamily: 'var(--mono)', color: 'var(--yellow)' }}>30%</span></div>
@@ -478,7 +629,7 @@ export function LandingPage() {
               </ul>
             </div>
             <div className="feature-shot">
-              <BrowserFrame url="solaradvisor.app/calendar" src="/landing/calendar-crop.png" alt="Yearly solar generation calendar" />
+              <CalendarBrowser />
             </div>
           </div>
 
@@ -487,16 +638,43 @@ export function LandingPage() {
               <div className="section-eyebrow">All-time · Leaderboard</div>
               <h3>Your roof has <span className="word-glow">personal bests</span>. We keep score.</h3>
               <p>
-                Thirteen metrics, top-five days each, for as long as your data goes back.
-                Tap any row to open that day&rsquo;s full breakdown.
+                We track all your key metrics and maintain a leaderboard so you can see your
+                best performing days at a glance.
               </p>
               <ul className="feature-bullets">
                 <li>Generation, consumption, self-consumption, coverage, import cost, export credit, net bill — and more.</li>
-                <li>Built quietly in the background; no goal-setting noise, just a record.</li>
+                <li>Quickly understand what &lsquo;good&rsquo; looks like, then tap any row to open that day&rsquo;s full breakdown.</li>
               </ul>
             </div>
             <div className="feature-shot">
-              <BrowserFrame url="solaradvisor.app/leaderboard" src="/landing/leaderboard-crop.png" alt="All-time leaderboard" />
+              <BrowserFrame url="solartracker.app/leaderboard" src="/landing/leaderboard-full.png" alt="All-time leaderboard" scrollSpeed={1.5} scrollStart={0.45} />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Tariffs ── */}
+      <section id="tariffs" style={{ background: 'linear-gradient(to bottom, transparent, rgba(96,165,250,0.03), transparent)', borderTop: '1px solid var(--border)' }}>
+        <div className="wrap">
+          <div className="feature">
+            <div className="feature-text">
+              <div className="section-eyebrow">Setup · Tariffs</div>
+              <h3>Real tariffs give <span className="word-glow">real ROI</span> estimates.</h3>
+              <p>
+                Every euro figure on the dashboard runs through your real tariff schedule.
+                Solar savings are calculated taking your day, night, peak and weekend rates
+                into consideration. Set it once and every kWh, past and future, is priced correctly.
+              </p>
+              <ul className="feature-bullets">
+                <li>A flexible tariff editor captures every nuance of your contract.</li>
+                <li>Switched providers? Rates changed mid-contract? Add a new version of your tariffs with start and end dates.</li>
+                <li>Made a correction? Your historical data is automatically re-priced.</li>
+                <li>Export rates and standing charges included — so net bill comparisons are real, not approximate.</li>
+                <li>The further back you can go, the more accurately your ROI is calculated.</li>
+              </ul>
+            </div>
+            <div className="feature-shot">
+              <BrowserFrame url="solartracker.app/settings/tariffs" src="/landing/tariff-full.png" alt="Tariff management — day, night and peak rates with weekly schedule" scrollSpeed={1.5} scrollStart={0.45} />
             </div>
           </div>
         </div>
@@ -505,6 +683,20 @@ export function LandingPage() {
       {/* ── Mobile ── */}
       <section id="mobile" style={{ borderTop: '1px solid var(--border)' }}>
         <div className="wrap mobile-row">
+          <div className="phones">
+            <div className="phone tilt-l phone-secondary">
+              <div className="phone-window" data-scroll-speed="1.6">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/landing/mobile-live-full.png" alt="Live screen on mobile" />
+              </div>
+            </div>
+            <div className="phone tilt-r">
+              <div className="phone-window" data-scroll-speed="1.6">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/landing/mobile-range-full.png" alt="Range / Solar Impact Estimate on mobile" />
+              </div>
+            </div>
+          </div>
           <div>
             <div className="section-eyebrow">Anywhere · Mobile</div>
             <h2 style={{ fontSize: 'clamp(30px, 3.4vw, 44px)' }}>Designed for <span className="word-glow">desktop</span> and <span className="word-glow">mobile</span>.</h2>
@@ -519,27 +711,29 @@ export function LandingPage() {
               <li>Charts re-laid-out for thumb-scrolling, not pinch-to-zoom.</li>
             </ul>
           </div>
-          <div className="phones">
-            <div className="phone tilt-l">
-              <Image src="/landing/mobile-live-crop.png" alt="Live screen on mobile" width={480} height={900} style={{ width: '100%' }} />
-            </div>
-            <div className="phone tilt-r">
-              <Image src="/landing/mobile-range-crop.png" alt="Range on mobile" width={480} height={900} style={{ width: '100%' }} />
-            </div>
-          </div>
         </div>
       </section>
 
       {/* ── Privacy ── */}
       <section id="privacy" className="privacy">
         <div className="wrap">
-          <div className="section-eyebrow">Trust · Privacy</div>
-          <h2>Your data, your control, <span className="word-glow">read-only</span> by design.</h2>
-          <p className="lede">
-            Solar Advisor is a window into your data. We correlate and combine it to show you real
-            insights into your system&rsquo;s performance and ROI. Your data is securely stored and gives
-            you full access to edit or delete it whenever you want.
-          </p>
+          <div className="feature" style={{ marginBottom: '56px' }}>
+            <div className="feature-text">
+              <div className="section-eyebrow">Trust · Privacy</div>
+              <h2>Your data, your control, <span className="word-glow">read-only</span> by design.</h2>
+              <p className="lede">
+                Solar Tracker is a window into your data. We correlate and combine it to show you real
+                insights into your system&rsquo;s performance and ROI. Your data is securely stored and gives
+                you full access to edit or delete it whenever you want.
+              </p>
+            </div>
+            <div className="feature-shot">
+              <BrowserFrame url="solartracker.app/settings" src="/landing/setup-full.png" alt="Setup overview — Tariffs, Provider, Finance, Location, System and Notifications all in your control." />
+              <p className="setup-caption" style={{ textAlign: 'left', marginLeft: 0 }}>
+                Every aspect of your setup, in one place — yours to edit, delete or disconnect at any moment.
+              </p>
+            </div>
+          </div>
           <div className="privacy-grid">
             <div className="priv-card">
               <div className="badge">✓</div>
@@ -554,7 +748,7 @@ export function LandingPage() {
             <div className="priv-card">
               <div className="badge">⌂</div>
               <h4>Secure infrastructure</h4>
-              <p>Encrypted in transit and at rest. Solar Advisor is a window into your data — we look through it to give you better insights, we don&rsquo;t open it for anyone else.</p>
+              <p>Encrypted in transit and at rest. Solar Tracker is a window into your data — we look through it to give you better insights, we don&rsquo;t open it for anyone else.</p>
             </div>
           </div>
         </div>
@@ -579,9 +773,9 @@ export function LandingPage() {
       {/* ── Footer ── */}
       <footer>
         <div className="wrap footer-inner">
-          <div>© 2026 Solar Advisor.</div>
+          <div>© 2026 Solar Tracker.</div>
           <div className="footer-links">
-            <a href="mailto:hello@solaradvisor.app">Contact</a>
+            <a href="mailto:support@solartracker.app">Contact</a>
           </div>
         </div>
       </footer>
