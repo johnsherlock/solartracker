@@ -110,8 +110,15 @@ export const authOptions: NextAuthOptions = {
         token.providerStatus = await resolveProviderStatus(userId);
       }
 
-      // Session update triggered by client (e.g. after connecting provider credentials).
+      // Session update triggered by client (e.g. after connecting provider credentials,
+      // or the waiting page checking whether an admin has approved the user since sign-in).
       if (trigger === 'update' && token.userId) {
+        const rows = await db
+          .select({ status: users.status })
+          .from(users)
+          .where(eq(users.id, token.userId))
+          .limit(1);
+        if (rows[0]) token.status = rows[0].status;
         token.providerStatus = await resolveProviderStatus(token.userId);
       }
 
