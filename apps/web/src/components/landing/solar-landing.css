@@ -376,17 +376,18 @@
   margin-top: 8px;
 }
 .solar-landing .feature-bullets li {
-  display: flex; align-items: flex-start; gap: 12px;
+  position: relative;
+  padding-left: 18px;
   font-size: 15px;
   color: var(--text);
 }
 .solar-landing .feature-bullets li::before {
   content: '';
-  flex-shrink: 0;
+  position: absolute;
+  left: 0; top: 9px;
   width: 6px; height: 6px;
   border-radius: 50%;
   background: var(--yellow);
-  margin-top: 9px;
 }
 .solar-landing .feature-bullets li .lbl { color: var(--text-dim); margin-left: 6px; font-size: 14px; }
 
@@ -561,7 +562,7 @@
 .solar-landing .showstopper .browser { max-width: 1100px; margin: 0 auto; }
 .solar-landing .heatmap-caption {
   margin-top: 28px;
-  display: flex; gap: 40px; justify-content: center; flex-wrap: wrap;
+  display: flex; gap: 10px 40px; justify-content: center; flex-wrap: wrap;
   font-size: 13.5px;
   color: var(--text-dim);
 }
@@ -768,7 +769,8 @@
 /* ---- Responsive ---- */
 @media (max-width: 960px) {
   .solar-landing .hero-grid { grid-template-columns: 1fr; gap: 48px; }
-  .solar-landing .hero-viz { max-width: 460px; margin: 0 auto; }
+  /* Stacked layout: trim the faded disc below the horizon so it doesn't leave a gap */
+  .solar-landing .hero-viz { max-width: 460px; margin: 0 auto calc(min(100%, 460px) * -0.16); }
   .solar-landing .feature,
   .solar-landing .feature.reverse { grid-template-columns: 1fr; gap: 36px; }
   .solar-landing .feature.reverse .feature-text,
@@ -783,13 +785,12 @@
 }
 @media (max-width: 720px) {
   .solar-landing .phone-secondary { display: none; }
+  .solar-landing .nav-meta a:not(.chip) { display: none; }
   #stats .solar-landing .feature + .feature { margin-top: 48px !important; }
 }
 @media (max-width: 540px) {
   .solar-landing .wrap { padding: 0 18px; }
   .solar-landing .pillars-inner { grid-template-columns: 1fr; }
-  .solar-landing .nav-meta { gap: 12px; font-size: 12px; }
-  .solar-landing .chip { display: none; }
   .solar-landing .signup-form { flex-direction: column; padding: 12px; }
   .solar-landing .signup-form input { padding: 10px 4px; }
   .solar-landing .signup-form button { width: 100%; }
