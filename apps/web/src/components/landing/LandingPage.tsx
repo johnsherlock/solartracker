@@ -174,6 +174,8 @@ function useCalendarTabs() {
     }
 
     function startAuto() {
+      // Manual tab clicks still work; only the automatic cycling is motion.
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
       if (userInteracted || autoTimer) return;
       let i = 0;
       autoTimer = setInterval(() => {
@@ -324,7 +326,7 @@ function BrowserFrame({
         >
           {/* plain <img> required so CSS position:absolute takes effect */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={src} alt={alt} />
+          <img src={src} alt={alt} loading="lazy" decoding="async" />
         </div>
       ) : (
         <div className="browser-body">
@@ -349,11 +351,11 @@ function CalendarBrowser() {
       </div>
       <div className="browser-body cal-stack">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img className="cal-slide is-active" data-i="0" src="/landing/calendar-generation.png" alt="Yearly calendar — Generation" />
+        <img className="cal-slide is-active" data-i="0" loading="lazy" decoding="async" src="/landing/calendar-generation.png" alt="Yearly calendar — Generation" />
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img className="cal-slide" data-i="1" src="/landing/calendar-self-consumed.png" alt="Yearly calendar — Self-consumed" />
+        <img className="cal-slide" data-i="1" loading="lazy" decoding="async" src="/landing/calendar-self-consumed.png" alt="Yearly calendar — Self-consumed" />
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img className="cal-slide" data-i="2" src="/landing/calendar-immersion.png" alt="Yearly calendar — Immersion" />
+        <img className="cal-slide" data-i="2" loading="lazy" decoding="async" src="/landing/calendar-immersion.png" alt="Yearly calendar — Immersion" />
       </div>
     </div>
   );
@@ -687,13 +689,13 @@ export function LandingPage() {
             <div className="phone tilt-l phone-secondary">
               <div className="phone-window" data-scroll-speed="1.6">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/landing/mobile-live-full.png" alt="Live screen on mobile" />
+                <img src="/landing/mobile-live-full.png" alt="Live screen on mobile" loading="lazy" decoding="async" />
               </div>
             </div>
             <div className="phone tilt-r">
               <div className="phone-window" data-scroll-speed="1.6">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/landing/mobile-range-full.png" alt="Range / Solar Impact Estimate on mobile" />
+                <img src="/landing/mobile-range-full.png" alt="Range / Solar Impact Estimate on mobile" loading="lazy" decoding="async" />
               </div>
             </div>
           </div>
