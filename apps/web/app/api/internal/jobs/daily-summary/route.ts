@@ -1,7 +1,8 @@
 /**
- * POST /api/internal/jobs/daily-summary
+ * GET|POST /api/internal/jobs/daily-summary
  *
- * Secure internal entrypoint for the daily-summary cron job.
+ * Secure internal entrypoint for the daily-summary cron job. Vercel Cron
+ * invokes the path with GET; POST remains available for manual runs.
  *
  * Authentication:
  *   Vercel sets CRON_SECRET in the deployment environment and automatically
@@ -9,10 +10,11 @@
  *   Manual or local callers must send the same header.
  *
  * Cron schedule (vercel.json):
- *   "15 0 * * *"  — 00:15 UTC
- *   In winter (Europe/Dublin = UTC):     00:15 local — 15 min after midnight
- *   In summer (Europe/Dublin = UTC+1):  01:15 local — 75 min after midnight
- *   Both are safely past midnight for Ireland-only beta installations.
+ *   "0 1 * * *"  — 01:00 UTC
+ *   On the Vercel Hobby plan the invocation can land anywhere from 01:00 to
+ *   01:59 UTC, i.e. 01:00–01:59 local in winter (Europe/Dublin = UTC) and
+ *   02:00–02:59 local in summer (UTC+1). Both are safely past midnight for
+ *   Ireland-only beta installations.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -51,3 +53,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   return NextResponse.json(result, { status: statusCode });
 }
+
+// Vercel Cron sends GET requests to the configured path.
+export const GET = POST;
