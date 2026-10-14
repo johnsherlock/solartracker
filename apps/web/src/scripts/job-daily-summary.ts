@@ -28,8 +28,9 @@
 
 import { config } from 'dotenv';
 // Load .env then .env.local (later file wins), matching Next.js local-dev behaviour.
+// .env.local wins over .env; explicitly passed variables win over both.
+config({ path: '.env.local' });
 config();
-config({ path: '.env.local', override: true });
 import { runDailySummaryJob, runCatchUp } from '../jobs/daily-summary';
 
 // ---------------------------------------------------------------------------
