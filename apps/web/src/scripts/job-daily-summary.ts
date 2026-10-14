@@ -27,7 +27,6 @@
  */
 
 import { config } from 'dotenv';
-// Load .env then .env.local (later file wins), matching Next.js local-dev behaviour.
 // .env.local wins over .env; explicitly passed variables win over both.
 config({ path: '.env.local' });
 config();
