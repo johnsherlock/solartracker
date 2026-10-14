@@ -1,0 +1,1598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Solar Advisor — Understand what your solar is actually worth</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="Solar Advisor imports your live and historical solar data, applies your real tariff, and tells you the euro value of every kilowatt-hour your panels produce." />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg: #0a0f17;
+    --bg-2: #0d131c;
+    --bg-3: #111824;
+    --surface: #131c28;
+    --surface-2: #19222f;
+    --border: rgba(255,255,255,0.07);
+    --border-hi: rgba(255,255,255,0.13);
+    --text: #e6ecf5;
+    --text-dim: #8a98ad;
+    --text-mute: #5b6878;
+    --yellow: #facc15;
+    --yellow-warm: #f59e0b;
+    --yellow-deep: #b45309;
+    --green: #22c55e;
+    --violet: #a78bfa;
+    --blue: #60a5fa;
+    --pink: #f472b6;
+    --display: 'Inter', 'Helvetica Neue', system-ui, sans-serif;
+    --mono: 'JetBrains Mono', 'Menlo', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--display);
+    font-weight: 400;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    overflow-x: hidden;
+    /* Subtle warm sun glow from top-right */
+    background:
+      radial-gradient(1200px 700px at 88% -10%, rgba(245,158,11,0.10), transparent 65%),
+      radial-gradient(900px 600px at 0% 40%, rgba(96,165,250,0.04), transparent 60%),
+      var(--bg);
+  }
+
+  a { color: inherit; text-decoration: none; }
+  img { display: block; max-width: 100%; }
+
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 0 32px; }
+
+  /* ============= NAV ============= */
+  .nav {
+    position: sticky; top: 0; z-index: 50;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    background: rgba(10,15,23,0.7);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-inner {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 64px;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 600; letter-spacing: -0.01em;
+  }
+  .brand-mark {
+    width: 24px; height: 24px; position: relative;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .brand-mark svg { width: 100%; height: 100%; }
+  .brand-name { font-size: 15px; }
+  .nav-meta {
+    display: flex; align-items: center; gap: 18px;
+    font-size: 13px; color: var(--text-dim);
+  }
+  .nav-meta a:hover { color: var(--text); }
+  .chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border: 1px solid var(--border-hi);
+    color: var(--text-dim);
+    transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+  }
+  a.chip:hover {
+    color: var(--text);
+    border-color: rgba(250,204,21,0.55);
+    background: rgba(250,204,21,0.06);
+  }
+  .chip-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+
+  /* ============= HERO ============= */
+  .hero {
+    padding: 88px 0 100px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1.05fr 1fr;
+    gap: 56px;
+    align-items: center;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--yellow);
+    margin-bottom: 28px;
+  }
+  .eyebrow .sep { color: var(--text-mute); margin: 0 10px; }
+  h1.headline {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: clamp(48px, 6.4vw, 92px);
+    line-height: 0.98;
+    letter-spacing: -0.035em;
+    color: var(--text);
+    margin-bottom: 28px;
+    text-wrap: balance;
+  }
+  .headline em {
+    font-style: normal;
+    color: var(--yellow);
+    position: relative;
+  }
+  .sub {
+    font-size: 19px;
+    line-height: 1.55;
+    color: var(--text-dim);
+    max-width: 560px;
+    margin-bottom: 36px;
+  }
+  .sub strong { color: var(--text); font-weight: 500; }
+
+  .ctas { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    height: 52px; padding: 0 24px;
+    border-radius: 12px;
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 15px;
+    letter-spacing: -0.005em;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+  }
+  .btn-primary {
+    background: var(--yellow);
+    color: #1a1206;
+    font-weight: 600;
+    box-shadow: 0 8px 28px -8px rgba(250,204,21,0.55), 0 0 0 1px rgba(250,204,21,0.4) inset;
+  }
+  .btn-primary:hover { transform: translateY(-1px); background: #fbd636; }
+  .btn-ghost {
+    background: transparent;
+    color: var(--text);
+    border-color: var(--border-hi);
+  }
+  .btn-ghost:hover { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.22); }
+  .btn .arrow { display: inline-block; transition: transform 160ms ease; }
+  .btn:hover .arrow { transform: translateX(3px); }
+
+  .hero-fineprint {
+    margin-top: 22px;
+    font-size: 13px;
+    color: var(--text-mute);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .hero-fineprint .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--text-mute); }
+
+  /* ============= HERO VISUAL — sun arc ============= */
+  .hero-viz {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    width: 100%;
+    max-width: 580px;
+    margin-left: auto;
+  }
+  .hero-viz svg { width: 100%; height: 100%; display: block; overflow: visible; }
+
+  .sun {
+    transform-origin: center;
+    animation: sun-pulse 4s ease-in-out infinite;
+    filter: drop-shadow(0 0 24px rgba(250,204,21,0.55));
+  }
+  @keyframes sun-pulse {
+    0%, 100% { filter: drop-shadow(0 0 18px rgba(250,204,21,0.45)); }
+    50% { filter: drop-shadow(0 0 32px rgba(250,204,21,0.75)); }
+  }
+  .arc-progress {
+    stroke-dasharray: 720;
+    stroke-dashoffset: 720;
+  }
+  .hero-viz.play .arc-progress {
+    animation: arc-draw 2.4s 0.2s cubic-bezier(.5,0,.2,1) forwards;
+  }
+  @keyframes arc-draw {
+    to { stroke-dashoffset: 290; } /* sun roughly at 2pm */
+  }
+  .gen-curve-fill {
+    opacity: 0;
+  }
+  .hero-viz.play .gen-curve-fill {
+    animation: fade-in 1.2s 1.4s ease-out forwards;
+  }
+  .gen-curve-line {
+    stroke-dasharray: 900;
+    stroke-dashoffset: 900;
+  }
+  .hero-viz.play .gen-curve-line {
+    animation: line-draw 2s 1.0s cubic-bezier(.5,0,.2,1) forwards;
+  }
+  @keyframes line-draw {
+    to { stroke-dashoffset: 0; }
+  }
+  @keyframes fade-in { to { opacity: 1; } }
+
+  /* Floating data chips overlaying the viz */
+  .viz-chip {
+    position: absolute;
+    background: rgba(19,28,40,0.85);
+    border: 1px solid var(--border-hi);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 12px;
+    padding: 12px 14px;
+    display: flex; flex-direction: column;
+    min-width: 130px;
+    opacity: 0;
+  }
+  .viz-chip { animation: none; }
+  .hero-viz.play .viz-chip.v-now { top: 8%; left: -2%; animation: chip-in 0.6s 1.8s ease-out forwards; }
+  .hero-viz.play .viz-chip.v-saved { top: 18%; right: -2%; animation: chip-in 0.6s 2.1s ease-out forwards; }
+  .hero-viz.play .viz-chip.v-cov { bottom: 18%; left: 6%; animation: chip-in 0.6s 2.4s ease-out forwards; }
+  /* Non-play position so chips don't reflow */
+  .viz-chip.v-now { top: 8%; left: -2%; }
+  .viz-chip.v-saved { top: 18%; right: -2%; }
+  .viz-chip.v-cov { bottom: 18%; left: 6%; }
+  @keyframes chip-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* End hero-viz section */
+  .viz-chip .lbl {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-mute);
+    margin-bottom: 5px;
+  }
+  .viz-chip .val {
+    font-family: var(--mono);
+    font-size: 19px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1;
+  }
+  .viz-chip .val .u {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-weight: 400;
+    margin-left: 3px;
+  }
+  .viz-chip.v-now { top: 8%; left: -2%; }
+  .viz-chip.v-saved { top: 18%; right: -2%; }
+  .viz-chip.v-cov { bottom: 18%; left: 6%; }
+  .viz-chip .val.green { color: var(--green); }
+  .viz-chip .val.yellow { color: var(--yellow); }
+
+  /* ============= SECTION COMMON ============= */
+  section { padding: 96px 0; position: relative; }
+  .section-eyebrow {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--yellow);
+    margin-bottom: 18px;
+  }
+  h2 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: clamp(36px, 4.4vw, 60px);
+    line-height: 1.02;
+    letter-spacing: -0.03em;
+    color: var(--text);
+    margin-bottom: 22px;
+    max-width: 880px;
+    text-wrap: balance;
+  }
+  h2 em { font-style: normal; color: var(--yellow); }
+  .lede {
+    font-size: 19px;
+    line-height: 1.55;
+    color: var(--text-dim);
+    max-width: 640px;
+  }
+
+  /* ============= PILLARS (under hero) ============= */
+  .pillars {
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 36px 0;
+    background: linear-gradient(to bottom, rgba(255,255,255,0.015), transparent);
+  }
+  .pillars-inner {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 48px;
+  }
+  .pillar .num {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--yellow);
+    letter-spacing: 0.18em;
+    margin-bottom: 10px;
+  }
+  .pillar .title {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  .pillar .desc {
+    font-size: 13.5px;
+    color: var(--text-dim);
+    line-height: 1.45;
+  }
+
+  /* ============= FEATURE SECTIONS ============= */
+  .feature {
+    display: grid;
+    grid-template-columns: 1fr 1.45fr;
+    gap: 64px;
+    align-items: center;
+  }
+  .feature.reverse { grid-template-columns: 1.45fr 1fr; }
+  .feature.reverse .feature-text { order: 2; }
+  .feature.reverse .feature-shot { order: 1; }
+  .feature-text h3 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: clamp(28px, 3vw, 40px);
+    line-height: 1.05;
+    letter-spacing: -0.025em;
+    margin-bottom: 18px;
+    text-wrap: balance;
+  }
+  .feature-text p {
+    font-size: 17px;
+    color: var(--text-dim);
+    line-height: 1.55;
+    margin-bottom: 24px;
+    max-width: 480px;
+  }
+  .feature-bullets {
+    list-style: none;
+    display: flex; flex-direction: column;
+    gap: 14px;
+    margin-top: 8px;
+  }
+  .feature-bullets li {
+    display: flex; align-items: flex-start; gap: 12px;
+    font-size: 15px;
+    color: var(--text);
+  }
+  .feature-bullets li::before {
+    content: '';
+    flex-shrink: 0;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--yellow);
+    margin-top: 9px;
+  }
+  .feature-bullets li .lbl { color: var(--text-dim); margin-left: 6px; font-size: 14px; }
+
+  /* Browser-window chrome around screenshots */
+  .browser {
+    position: relative;
+    border-radius: 14px;
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid rgba(255,255,255,0.22);
+    box-shadow:
+      0 30px 80px -20px rgba(0,0,0,0.7),
+      0 0 0 1px rgba(255,255,255,0.04) inset,
+      0 1px 0 rgba(255,255,255,0.10) inset,
+      0 0 0 1px rgba(0,0,0,0.6);
+    /* Scroll-tilt: JS sets --tx/--rx/--ry on scroll; baseline values keep
+       the windows naturally canted when JS is off or reduced-motion is on. */
+    --tx: 0px;
+    --rx: 0deg;
+    --ry: 0deg;
+    transform: perspective(900px) translateY(var(--tx)) rotateX(var(--rx)) rotateY(var(--ry));
+    transform-origin: 50% 50%;
+    transition: transform 180ms cubic-bezier(.22,.61,.36,1);
+    will-change: transform;
+  }
+  /* Default static cant for browsers when JS hasn't kicked in (or reduced-motion) */
+  .feature .browser { --ry: -4deg; }
+  .feature.reverse .browser { --ry: 4deg; }
+  .showstopper .browser { --ry: 0deg; }
+  @media (prefers-reduced-motion: reduce) {
+    .browser { transition: none; }
+  }
+  .browser-bar {
+    height: 36px;
+    display: flex; align-items: center;
+    padding: 0 14px;
+    background: var(--bg-3);
+    border-bottom: 1px solid var(--border);
+    gap: 8px;
+  }
+  .browser-dots { display: flex; gap: 6px; }
+  .browser-dots span {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: rgba(255,255,255,0.12);
+  }
+  .browser-url {
+    margin-left: 16px;
+    flex: 1;
+    height: 22px;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.04);
+    display: inline-flex; align-items: center;
+    padding: 0 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-mute);
+    max-width: 360px;
+  }
+  .browser-url .lock { color: var(--text-mute); margin-right: 8px; }
+  .browser-body { background: #0a0f17; }
+  .browser-body img { display: block; width: 100%; height: auto; }
+
+  /* Calendar tabs — sit inline in the browser bar */
+  .cal-tabs {
+    margin-left: auto;
+    display: flex;
+    gap: 4px;
+    padding: 2px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px;
+  }
+  .cal-tab {
+    border: 0;
+    background: transparent;
+    color: var(--text-dim);
+    font-family: var(--display);
+    font-size: 11.5px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: color 140ms ease, background 140ms ease;
+  }
+  .cal-tab:hover { color: var(--text); }
+  .cal-tab.is-active {
+    color: #1a1206;
+    background: var(--yellow);
+  }
+
+  /* Calendar slide stack — crossfade between the three metrics */
+  .cal-stack {
+    position: relative;
+    aspect-ratio: 16 / 11;
+    overflow: hidden;
+  }
+  .cal-slide {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top center;
+    opacity: 0;
+    transition: opacity 360ms ease;
+  }
+  .cal-slide.is-active { opacity: 1; }
+
+  /* Fixed-viewport variant: image taller than the window, scrolls inside it
+     as the page scrolls. Aspect ratio gives a consistent "screenshot window"
+     feel regardless of the image's full height. */
+  .browser-body.scroll-shot {
+    position: relative;
+    overflow: hidden;
+    aspect-ratio: 16 / 10;
+  }
+  .browser-body.scroll-shot img {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: auto;
+    transform: translateY(var(--scroll-y, 0px));
+    will-change: transform;
+  }
+  /* Showstopper window is a bit taller so the headline shot dominates */
+  .showstopper .browser-body.scroll-shot { aspect-ratio: 16 / 9; }
+
+  /* Pull-quote callouts inside features */
+  .stat-row {
+    display: flex; gap: 32px;
+    margin-top: 32px;
+    flex-wrap: wrap;
+  }
+  .stat {
+    display: flex; flex-direction: column;
+  }
+  .stat .v {
+    font-family: var(--mono);
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--yellow);
+    line-height: 1;
+  }
+  .stat .v.green { color: var(--green); }
+  .stat .v.violet { color: var(--violet); }
+  .stat .l {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-mute);
+    margin-top: 8px;
+  }
+
+  .word-sunshine,
+  .word-glow {
+    /* Lit from cool grey -> warm yellow as the heading enters view.
+       --p is set by JS from 0 (offscreen below) to 1 (above the top). */
+    --p: 0;
+    color: color-mix(in oklab, #6b7382, #facc15 calc(var(--p) * 100%));
+    text-shadow: 0 0 calc(var(--p) * 28px) rgba(250, 204, 21, calc(var(--p) * 0.55));
+    transition: color 80ms linear, text-shadow 80ms linear;
+    will-change: color, text-shadow;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .word-sunshine, .word-glow { --p: 1; transition: none; }
+  }
+
+  /* ============= SHOWSTOPPER (Calendar) ============= */
+  .showstopper {
+    padding: 120px 0 100px;
+    background:
+      radial-gradient(900px 500px at 50% 0%, rgba(245,158,11,0.10), transparent 65%),
+      linear-gradient(to bottom, transparent, rgba(245,158,11,0.025) 50%, transparent);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .showstopper-head { text-align: center; max-width: 760px; margin: 0 auto 56px; }
+  .showstopper-head .lede { margin: 0 auto; }
+  .showstopper .browser { max-width: 1100px; margin: 0 auto; }
+
+  .heatmap-caption {
+    margin-top: 28px;
+    display: flex; gap: 40px; justify-content: center; flex-wrap: wrap;
+    font-size: 13.5px;
+    color: var(--text-dim);
+  }
+  .heatmap-caption strong { color: var(--text); font-weight: 500; }
+
+  /* ============= MOBILE SHOWCASE ============= */
+  .mobile-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 80px;
+    align-items: center;
+  }
+  .phones {
+    position: relative;
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    align-items: flex-end;
+  }
+  .phone {
+    width: 240px;
+    border-radius: 32px;
+    background: #050810;
+    border: 8px solid #1a2333;
+    box-shadow:
+      0 30px 60px -15px rgba(0,0,0,0.8),
+      0 0 0 1px rgba(255,255,255,0.18),
+      0 1px 0 rgba(255,255,255,0.15) inset;
+    overflow: hidden;
+    position: relative;
+    padding-top: 26px;
+  }
+  .phone::before {
+    content: '';
+    position: absolute;
+    top: 6px; left: 50%; transform: translateX(-50%);
+    width: 80px; height: 18px;
+    background: #1a2333;
+    border-radius: 999px;
+    z-index: 2;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+  }
+  .phone img {
+    width: 100%;
+    display: block;
+  }
+  /* Phone scroll-shot window — image taller than the visible area, translates
+     on page scroll. */
+  .phone .phone-window {
+    position: relative;
+    overflow: hidden;
+    /* Tall enough to feel like a real screen but short enough to keep two
+       phones balanced in the row */
+    aspect-ratio: 9 / 16;
+  }
+  .phone .phone-window img {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: auto;
+    transform: translateY(var(--scroll-y, 0px));
+    will-change: transform;
+  }
+  .phone.tilt-l { transform: rotate(-3deg) translateY(20px); }
+  .phone.tilt-r { transform: rotate(2deg); }
+
+  /* ============= PRIVACY ============= */
+  .privacy {
+    background: linear-gradient(180deg, transparent, rgba(255,255,255,0.015));
+    border-top: 1px solid var(--border);
+  }
+  .setup-shot {
+    margin: 56px auto 32px;
+    max-width: 980px;
+  }
+  .setup-shot .browser { max-width: 980px; margin: 0 auto; }
+  .setup-shot .browser-body img { width: 100%; display: block; }
+  .setup-caption {
+    text-align: center;
+    margin-top: 22px;
+    color: var(--text-dim);
+    font-size: 14.5px;
+    max-width: 540px;
+    margin-left: auto; margin-right: auto;
+  }
+  .privacy-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 24px;
+    margin-top: 48px;
+  }
+  .priv-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+  }
+  .priv-card .badge {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    background: rgba(34,197,94,0.10);
+    color: var(--green);
+    display: inline-flex; align-items: center; justify-content: center;
+    margin-bottom: 18px;
+    font-family: var(--mono);
+    font-size: 16px;
+    border: 1px solid rgba(34,197,94,0.25);
+  }
+  .priv-card h4 {
+    font-weight: 600;
+    font-size: 17px;
+    margin-bottom: 8px;
+    letter-spacing: -0.01em;
+  }
+  .priv-card p {
+    color: var(--text-dim);
+    font-size: 14px;
+    line-height: 1.55;
+  }
+
+  /* ============= FINAL CTA ============= */
+  .final-cta {
+    text-align: center;
+    padding: 120px 0;
+    background:
+      radial-gradient(700px 400px at 50% 60%, rgba(250,204,21,0.10), transparent 60%);
+    border-top: 1px solid var(--border);
+  }
+  .final-cta h2 { margin: 0 auto 18px; }
+  .final-cta .lede { margin: 0 auto 36px; }
+  .final-cta .ctas { justify-content: center; }
+  .signup-form {
+    margin: 36px auto 0;
+    display: flex; gap: 8px;
+    max-width: 480px;
+    background: var(--surface);
+    border: 1px solid var(--border-hi);
+    border-radius: 14px;
+    padding: 8px;
+  }
+  .signup-form input {
+    flex: 1;
+    background: transparent;
+    border: 0;
+    padding: 0 14px;
+    color: var(--text);
+    font-family: var(--display);
+    font-size: 15px;
+    outline: none;
+  }
+  .signup-form input::placeholder { color: var(--text-mute); }
+  .signup-form button {
+    background: var(--yellow);
+    color: #1a1206;
+    border: 0;
+    border-radius: 9px;
+    height: 44px;
+    padding: 0 22px;
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: transform 120ms ease;
+  }
+  .signup-form button:hover { transform: translateY(-1px); }
+
+  /* ============= FOOTER ============= */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 36px 0;
+    font-size: 13px;
+    color: var(--text-mute);
+  }
+  .footer-inner {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 24px; flex-wrap: wrap;
+  }
+  .footer-links { display: flex; gap: 22px; }
+  .footer-links a:hover { color: var(--text); }
+
+  /* ============= RESPONSIVE ============= */
+  @media (max-width: 960px) {
+    .hero-grid { grid-template-columns: 1fr; gap: 48px; }
+    .hero-viz { max-width: 460px; margin: 0 auto; }
+    .feature, .feature.reverse { grid-template-columns: 1fr; gap: 36px; }
+    .feature.reverse .feature-text, .feature.reverse .feature-shot { order: initial; }
+    /* Stop grid items from blowing out their column when intrinsic content
+       (e.g. the calendar's dots + URL + tabs row) is wider than the viewport. */
+    .feature > *, .feature.reverse > * { min-width: 0; }
+    .pillars-inner { grid-template-columns: 1fr 1fr; gap: 24px 32px; }
+    .privacy-grid { grid-template-columns: 1fr; }
+    .mobile-row { grid-template-columns: 1fr; gap: 36px; }
+    section { padding: 56px 0; }
+    .hero { padding: 40px 0 56px; }
+    .showstopper { padding: 72px 0 64px; }
+    .showstopper-head { margin-bottom: 36px; }
+    .final-cta { padding: 72px 0; }
+    .privacy-grid { margin-top: 32px; }
+    /* Trim nav noise as we tighten */
+    .nav-meta a[href="#stats"],
+    .nav-meta a[href="#tariffs"],
+    .nav-meta a[href="#privacy"] { display: none; }
+  }
+  @media (max-width: 720px) {
+    .nav-inner { height: 56px; }
+    .brand-name { font-size: 14px; }
+    .nav-meta { gap: 14px; font-size: 12.5px; }
+    .nav-meta a:not(.chip) { display: none; }
+    .nav-meta .chip { display: inline-flex; }
+    section { padding: 48px 0; }
+    .hero { padding: 32px 0 48px; }
+    .showstopper { padding: 56px 0 56px; }
+    .final-cta { padding: 56px 0; }
+    .pillars { padding: 28px 0 !important; }
+    h1.headline { font-size: clamp(36px, 9vw, 56px); margin-bottom: 20px; }
+    h2 { font-size: clamp(30px, 7vw, 44px); margin-bottom: 16px; }
+    .sub { font-size: 16.5px; margin-bottom: 28px; }
+    .lede { font-size: 16.5px; }
+    .feature-text h3 { font-size: clamp(24px, 6.5vw, 32px); margin-bottom: 14px; }
+    .feature-text p { font-size: 16px; margin-bottom: 18px; }
+    .feature, .feature.reverse { gap: 28px; }
+    .stat-row { gap: 18px 22px; margin-top: 22px; }
+    .heatmap-caption { gap: 12px 24px; font-size: 13px; flex-direction: column; align-items: flex-start; margin-top: 22px; }
+    .heatmap-caption > div { display: flex; gap: 8px; }
+    /* Stats section: two abutting features had 128px between them on tablet,
+       way too much at mobile sizes. */
+    #stats .feature + .feature { margin-top: 48px !important; }
+    .phone { width: 220px; border-width: 6px; padding-top: 22px; }
+    .phone::before { width: 64px; height: 14px; }
+    /* Below the desktop/tablet split, the row only needs one phone — the
+       secondary is hidden so the remaining one is centered and prominent. */
+    .phone-secondary { display: none; }
+  }
+  @media (max-width: 540px) {
+    .wrap { padding: 0 18px; }
+    .pillars-inner { grid-template-columns: 1fr; gap: 16px; }
+    /* Calendar tabs no longer fit on a single row alongside dots + URL — wrap
+       the browser bar so tabs flow onto a second row, full-width. Other
+       sections without tabs are unaffected (browser-bar still single-line). */
+    .browser-bar { flex-wrap: wrap; height: auto; min-height: 36px; padding: 6px 12px; row-gap: 6px; }
+    .browser-url { flex: 1 1 auto; min-width: 0; max-width: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cal-tabs { width: 100%; order: 99; }
+    .cal-tab { flex: 1; padding: 4px 6px; font-size: 11px; text-align: center; }
+    .signup-form { flex-direction: column; padding: 12px; gap: 10px; }
+    .signup-form input { padding: 12px 6px; }
+    .signup-form button { width: 100%; height: 48px; }
+    .ctas { width: 100%; }
+    .ctas .btn { flex: 1; justify-content: center; }
+    .phone { width: 240px; }
+    .phone.tilt-r { transform: none; }
+    .hero-fineprint { flex-direction: column; align-items: flex-start; gap: 6px; }
+    .hero-fineprint .dot { display: none; }
+    footer { padding: 24px 0; }
+    .footer-inner { gap: 12px; }
+    section { padding: 40px 0; }
+    .hero { padding: 24px 0 40px; }
+    .showstopper { padding: 48px 0 48px; }
+    .final-cta { padding: 48px 0; }
+  }
+</style>
+</head>
+<body>
+
+<!-- =============== NAV =============== -->
+<nav class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top">
+      <span class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="4.5" fill="#facc15"/>
+          <g stroke="#facc15" stroke-width="1.6" stroke-linecap="round">
+            <line x1="12" y1="2" x2="12" y2="4.2"/>
+            <line x1="12" y1="19.8" x2="12" y2="22"/>
+            <line x1="2" y1="12" x2="4.2" y2="12"/>
+            <line x1="19.8" y1="12" x2="22" y2="12"/>
+            <line x1="4.6" y1="4.6" x2="6.2" y2="6.2"/>
+            <line x1="17.8" y1="17.8" x2="19.4" y2="19.4"/>
+            <line x1="4.6" y1="19.4" x2="6.2" y2="17.8"/>
+            <line x1="17.8" y1="6.2" x2="19.4" y2="4.6"/>
+          </g>
+        </svg>
+      </span>
+      <span class="brand-name">Solar Advisor</span>
+    </a>
+    <div class="nav-meta">
+      <a href="#features">Features</a>
+      <a href="#payback">Payback</a>
+      <a href="#stats">Stats</a>
+      <a href="#tariffs">Tariffs</a>
+      <a href="#mobile">Mobile</a>
+      <a href="#privacy">Privacy</a>
+      <a class="chip" href="#cta"><span class="chip-dot"></span>Invite-only beta</a>
+    </div>
+  </div>
+</nav>
+
+<!-- =============== HERO =============== -->
+<header id="top" class="hero">
+  <div class="wrap hero-grid">
+    <div class="hero-text">
+      <h1 class="headline">Understand what your solar is <em>actually</em> worth.</h1>
+      <p class="sub">
+        Solar Advisor <strong>imports your live and historical data</strong>, applies your real day, night and peak
+        tariff, and tells you the <strong>euro value</strong> of every kilowatt-hour your panels produce —
+        onsite, exported, and against your payback.
+      </p>
+      <div class="ctas">
+        <a class="btn btn-primary" href="#cta">
+          Request beta access
+          <span class="arrow">→</span>
+        </a>
+        <a class="btn btn-ghost" href="#features">See how it works</a>
+      </div>
+      <div class="hero-fineprint">
+        <span>Secure, encrypted data</span>
+        <span class="dot"></span>
+        <span>Edit or delete any time</span>
+        <span class="dot"></span>
+        <span>Never shared, never sold</span>
+      </div>
+    </div>
+
+    <!-- ============ HERO VISUAL — sun arc chronograph ============ -->
+    <div class="hero-viz" aria-hidden="true">
+      <svg viewBox="0 0 580 580" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <radialGradient id="sun-glow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#facc15" stop-opacity="0.6"/>
+            <stop offset="60%" stop-color="#f59e0b" stop-opacity="0.2"/>
+            <stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/>
+          </radialGradient>
+          <linearGradient id="gen-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#facc15" stop-opacity="0.55"/>
+            <stop offset="60%" stop-color="#facc15" stop-opacity="0.18"/>
+            <stop offset="100%" stop-color="#facc15" stop-opacity="0"/>
+          </linearGradient>
+          <linearGradient id="bg-disc" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#19222f" stop-opacity="0.5"/>
+            <stop offset="100%" stop-color="#0a0f17" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+
+        <!-- Horizon disc -->
+        <circle cx="290" cy="420" r="280" fill="url(#bg-disc)" opacity="0.7"/>
+
+        <!-- Faint dotted arc — full sun path, horizon-to-horizon -->
+        <path d="M 50 420 A 240 240 0 0 1 530 420"
+              fill="none" stroke="rgba(138,152,173,0.35)"
+              stroke-width="1.2" stroke-dasharray="2 6"/>
+
+        <!-- Drawn arc up to "now" — solid yellow -->
+        <path class="arc-progress"
+              d="M 50 420 A 240 240 0 0 1 530 420"
+              fill="none" stroke="#facc15"
+              stroke-width="2.2" stroke-linecap="round"/>
+
+        <!-- Hour ticks along arc -->
+        <g font-family="JetBrains Mono, monospace" font-size="11" fill="#5b6878">
+          <line x1="50"  y1="416" x2="50"  y2="430" stroke="#2a3a4f"/>
+          <text x="50"  y="448" text-anchor="middle">06</text>
+
+          <line x1="170" y1="270" x2="174" y2="282" stroke="#2a3a4f"/>
+          <text x="166" y="262" text-anchor="middle">09</text>
+
+          <line x1="290" y1="180" x2="290" y2="194" stroke="#2a3a4f"/>
+          <text x="290" y="170" text-anchor="middle">12</text>
+
+          <line x1="410" y1="270" x2="406" y2="282" stroke="#2a3a4f"/>
+          <text x="414" y="262" text-anchor="middle">15</text>
+
+          <line x1="530" y1="416" x2="530" y2="430" stroke="#2a3a4f"/>
+          <text x="530" y="448" text-anchor="middle">21</text>
+        </g>
+
+        <!-- Horizon line -->
+        <line x1="20" y1="420" x2="560" y2="420" stroke="rgba(138,152,173,0.18)" stroke-width="1"/>
+        <text x="20" y="438" font-family="JetBrains Mono, monospace" font-size="9.5"
+              fill="#5b6878" letter-spacing="2">HORIZON</text>
+
+        <!-- Generation bell curve under arc -->
+        <path class="gen-curve-fill"
+              d="M 50 420
+                 C 130 420, 160 400, 200 360
+                 C 240 320, 270 260, 290 240
+                 C 310 220, 340 220, 380 260
+                 C 420 300, 470 380, 530 420
+                 L 530 420 L 50 420 Z"
+              fill="url(#gen-fill)"/>
+        <path class="gen-curve-line"
+              d="M 50 420
+                 C 130 420, 160 400, 200 360
+                 C 240 320, 270 260, 290 240
+                 C 310 220, 340 220, 380 260
+                 C 420 300, 470 380, 530 420"
+              fill="none" stroke="#facc15" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round"/>
+
+        <!-- Sun position (afternoon, ~14:30) -->
+        <g class="sun">
+          <circle cx="378" cy="248" r="58" fill="url(#sun-glow)"/>
+          <circle cx="378" cy="248" r="18" fill="#facc15"/>
+          <circle cx="378" cy="248" r="11" fill="#fef3c7" opacity="0.85"/>
+        </g>
+
+        <!-- "Now" label -->
+        <text x="378" y="335" font-family="JetBrains Mono, monospace" font-size="10"
+              fill="#facc15" text-anchor="middle" letter-spacing="2">NOW · 14:32</text>
+
+        <!-- Subtle data callouts marking morning peak + afternoon dip -->
+        <g font-family="JetBrains Mono, monospace" font-size="9.5" fill="#5b6878">
+          <text x="200" y="350" text-anchor="middle">1.8 kW</text>
+          <text x="290" y="232" text-anchor="middle">5.4 kW</text>
+        </g>
+      </svg>
+
+      <!-- Overlay chips -->
+      <div class="viz-chip v-now">
+        <div class="lbl">Generating</div>
+        <div class="val yellow">3.84<span class="u">kW</span></div>
+      </div>
+      <div class="viz-chip v-saved">
+        <div class="lbl">Today's value</div>
+        <div class="val green">€2.47</div>
+      </div>
+      <div class="viz-chip v-cov">
+        <div class="lbl">Solar coverage</div>
+        <div class="val">87<span class="u">%</span></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- =============== PILLARS =============== -->
+<section class="pillars" style="padding: 36px 0;">
+  <div class="wrap pillars-inner">
+    <div class="pillar">
+      <div class="num">01</div>
+      <div class="title">Live from your hub</div>
+      <div class="desc">Generation, consumption, import &amp; export — refreshed every minute.</div>
+    </div>
+    <div class="pillar">
+      <div class="num">02</div>
+      <div class="title">Tariff-aware</div>
+      <div class="desc">Day / night / peak rates applied to every half-hour. Bill, not watts.</div>
+    </div>
+    <div class="pillar">
+      <div class="num">03</div>
+      <div class="title">Your whole history</div>
+      <div class="desc">Pick any range, from a day to all of it — heatmap, payback, no-solar counterfactual.</div>
+    </div>
+    <div class="pillar">
+      <div class="num">04</div>
+      <div class="title">Your data, secured</div>
+      <div class="desc">Encrypted in transit and at rest. Edit or delete anything, any time.</div>
+    </div>
+  </div>
+</section>
+
+<!-- =============== FEATURE 1 · LIVE =============== -->
+<section id="features">
+  <div class="wrap">
+    <div class="feature">
+      <div class="feature-text">
+        <div class="section-eyebrow">Now · Live</div>
+        <h3>Every watt, in <span class="word-glow">context</span> &mdash; not just a number on a dial.</h3>
+        <p>
+          The Live screen shows generation, consumption, import and export
+          — refreshed every minute. Underneath each tile, the
+          <em>interpretation</em>: is solar carrying the home right now, or is the grid?
+        </p>
+        <ul class="feature-bullets">
+          <li>Net position, grid draw pressure and current capacity, plain-language<span class="lbl">— so you don't need to interpret the graph yourself.</span></li>
+          <li>1-minute, 30-minute or hourly resolution; line or cumulative view.</li>
+          <li>Tariff rate shown in the header, so the savings line is always priced correctly.</li>
+        </ul>
+        <div class="stat-row">
+          <div class="stat"><div class="v">€0.21<span style="font-size:14px;color:var(--text-dim);font-weight:400;">/kWh</span></div><div class="l">Night rate now</div></div>
+          <div class="stat"><div class="v green">96<span style="font-size:14px;color:var(--text-dim);font-weight:400;">%</span></div><div class="l">Data quality</div></div>
+        </div>
+      </div>
+      <div class="feature-shot">
+        <div class="browser">
+          <div class="browser-bar">
+            <div class="browser-dots"><span></span><span></span><span></span></div>
+            <div class="browser-url"><span class="lock">⏿</span>solartracker.app/live</div>
+          </div>
+          <div class="browser-body scroll-shot" data-scroll-speed="1.7">
+            <img src="img/live-full.png" alt="Solar Advisor Live screen" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =============== FEATURE 2 · TARIFF-AWARE / DAY =============== -->
+<section style="background: linear-gradient(to bottom, transparent, rgba(245,158,11,0.025), transparent);">
+  <div class="wrap">
+    <div class="feature reverse">
+      <div class="feature-text">
+        <div class="section-eyebrow">Day · Tariff-aware</div>
+        <h3>Every half-hour, priced at the <span class="word-glow">rate</span> you were actually on.</h3>
+        <p>
+          Most solar apps tell you watts. Solar Advisor tells you what those
+          watts <em>did to your bill</em>. Tariff changes mid-period? Solar Advisor
+          applies the correct rate to each day automatically.
+        </p>
+        <ul class="feature-bullets">
+          <li>Half-hourly cost, self-consumption value and export credit<span class="lbl">— graphed in euros, not kilowatts.</span></li>
+          <li>Day story written in plain English: generation strength, grid reliance, export and self-consumption balance.</li>
+          <li>Tariff-period value mix shows where your euros came from: day, night, or peak.</li>
+        </ul>
+        <div class="stat-row">
+          <div class="stat"><div class="v">€2.03</div><div class="l">Onsite solar value</div></div>
+          <div class="stat"><div class="v green">€1.53</div><div class="l">Export credit</div></div>
+          <div class="stat"><div class="v violet">182<span style="font-size:14px;color:var(--text-dim);font-weight:400;">%</span></div><div class="l">Repayment coverage</div></div>
+        </div>
+      </div>
+      <div class="feature-shot">
+        <div class="browser browser-mild">
+          <div class="browser-bar">
+            <div class="browser-dots"><span></span><span></span><span></span></div>
+            <div class="browser-url"><span class="lock">⏿</span>solartracker.app/history</div>
+          </div>
+          <div class="browser-body scroll-shot" data-scroll-speed="1.7">
+            <img src="img/historical-day-full.png" alt="Historical day analysis" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =============== SHOWSTOPPER · RANGE / PAYBACK =============== -->
+<section id="payback" class="showstopper">
+  <div class="wrap">
+    <div class="showstopper-head">
+      <div class="section-eyebrow">Range · Payback</div>
+      <h2>Where are you on your <span class="word-glow">ROI</span> journey?</h2>
+      <p class="lede">
+        Pick any window — a week, a season, all of it. Solar Advisor reconstructs your bill
+        <em>with</em> solar against a no-solar counterfactual, month by month, and ticks the
+        recovered portion of your install forward.
+      </p>
+    </div>
+    <div class="browser">
+      <div class="browser-bar">
+        <div class="browser-dots"><span></span><span></span><span></span></div>
+        <div class="browser-url"><span class="lock">⏿</span>solartracker.app/range</div>
+      </div>
+      <div class="browser-body scroll-shot" data-scroll-speed="1.25">
+        <img src="img/range-full.png" alt="Range history and payback tracking" />
+      </div>
+    </div>
+    <div class="heatmap-caption">
+      <div><strong>Bill reduction (2024):</strong> <span style="font-family:var(--mono);color:var(--green);">€702.87</span></div>
+      <div><strong>Recovered so far:</strong> <span style="font-family:var(--mono);color:var(--yellow);">30%</span></div>
+      <div><strong>Approx. payoff:</strong> <span style="font-family:var(--mono);">~Mar 2033</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- =============== STATS · CALENDAR + LEADERBOARD =============== -->
+<section id="stats">
+  <div class="wrap">
+    <div class="feature">
+      <div class="feature-text">
+        <div class="section-eyebrow">Year-at-a-glance · Calendar</div>
+        <h3>A year of <span class="word-sunshine">sunshine</span>, on one wall.</h3>
+        <p>
+          365 bars. One row per month. The best day of the year wears a gold medal —
+          it's the kind of view that makes you feel something about your roof.
+        </p>
+        <ul class="feature-bullets">
+          <li>Switch any of 13 metrics: import cost, export credit, coverage, repayment…</li>
+          <li>Best day in 2024: 8 July · 20.99 kWh. Annual total: 2,695 kWh.</li>
+        </ul>
+      </div>
+      <div class="feature-shot">
+        <div class="browser">
+          <div class="browser-bar">
+            <div class="browser-dots"><span></span><span></span><span></span></div>
+            <div class="browser-url"><span class="lock">⏿</span>solartracker.app/calendar</div>
+            <div class="cal-tabs" role="tablist" aria-label="Calendar metric">
+              <button class="cal-tab is-active" data-i="0" type="button" role="tab">Generation</button>
+              <button class="cal-tab" data-i="1" type="button" role="tab">Self-consumed</button>
+              <button class="cal-tab" data-i="2" type="button" role="tab">Immersion</button>
+            </div>
+          </div>
+          <div class="browser-body cal-stack">
+            <img class="cal-slide is-active" data-i="0" src="img/calendar-generation.png" alt="Yearly calendar — Generation" />
+            <img class="cal-slide" data-i="1" src="img/calendar-self-consumed.png" alt="Yearly calendar — Self-consumed" />
+            <img class="cal-slide" data-i="2" src="img/calendar-immersion.png" alt="Yearly calendar — Immersion" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature reverse" style="margin-top: 88px;">
+      <div class="feature-text">
+        <div class="section-eyebrow">All-time · Leaderboard</div>
+        <h3>Your roof has <span class="word-glow">personal bests</span>. We keep score.</h3>
+        <p>
+          We track all your key metrics and maintain a leaderboard so you can see your
+          best performing days at a glance.
+        </p>
+        <ul class="feature-bullets">
+          <li>Generation, consumption, self-consumption, coverage, import cost, export credit, net bill — and more.</li>
+          <li>Quickly understand what 'good' looks like, then tap any row to open that day's full breakdown.</li>
+        </ul>
+      </div>
+      <div class="feature-shot">
+        <div class="browser">
+          <div class="browser-bar">
+            <div class="browser-dots"><span></span><span></span><span></span></div>
+            <div class="browser-url"><span class="lock">⏿</span>solartracker.app/leaderboard</div>
+          </div>
+          <div class="browser-body scroll-shot" data-scroll-speed="1.5" data-scroll-start="0.45">
+            <img src="img/leaderboard-full.png" alt="All-time leaderboard" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =============== TARIFFS =============== -->
+<section id="tariffs" style="background: linear-gradient(to bottom, transparent, rgba(96,165,250,0.03), transparent); border-top: 1px solid var(--border);">
+  <div class="wrap">
+    <div class="feature">
+      <div class="feature-text">
+        <div class="section-eyebrow">Setup · Tariffs</div>
+        <h3>Real tariffs give <span class="word-glow">real ROI</span> estimates.</h3>
+        <p>
+          Every euro figure on the dashboard runs through your real tariff schedule.
+          Solar savings are calculated taking your day, night, peak and weekend rates
+          into consideration. Set it once and every kWh, past and future, is priced correctly.
+        </p>
+        <ul class="feature-bullets">
+          <li>A flexible tariff editor captures every nuance of your contract.</li>
+          <li>Switched providers? Rates changed mid-contract? Add a new version of your tariffs with start and end dates.</li>
+          <li>Made a correction? Your historical data is automatically re-priced.</li>
+          <li>Export rates and standing charges included — so net bill comparisons are real, not approximate.</li>
+          <li>The further back you can go, the more accurately your ROI is calculated.</li>
+        </ul>
+      </div>
+      <div class="feature-shot">
+        <div class="browser">
+          <div class="browser-bar">
+            <div class="browser-dots"><span></span><span></span><span></span></div>
+            <div class="browser-url"><span class="lock">⏿</span>solartracker.app/settings/tariffs</div>
+          </div>
+          <div class="browser-body scroll-shot" data-scroll-speed="1.5" data-scroll-start="0.45">
+            <img src="img/tariff-full.png" alt="Tariff management — day, night and peak rates with weekly schedule" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =============== MOBILE =============== -->
+<section id="mobile" style="border-top: 1px solid var(--border);">
+  <div class="wrap mobile-row">
+    <div>
+      <div class="section-eyebrow">Anywhere · Mobile</div>
+      <h2 style="font-size: clamp(30px, 3.4vw, 44px);">Designed for <span class="word-glow">desktop</span> and <span class="word-glow">mobile</span>.</h2>
+      <p class="lede">
+        Every screen is built mobile-first. Check live generation from the garden, your
+        tariff window at the supermarket, or where you are on your payback on the train
+        home — without losing a chart, stat or feature along the way.
+      </p>
+      <ul class="feature-bullets" style="margin-top: 28px;">
+        <li>Same data, same insights<span class="lbl">— no cut-down 'mobile version'.</span></li>
+        <li>Live, history, range, calendar and leaderboard all designed to work in one hand.</li>
+        <li>Charts re-laid-out for thumb-scrolling, not pinch-to-zoom.</li>
+      </ul>
+    </div>
+    <div class="phones">
+      <div class="phone tilt-l phone-secondary">
+        <div class="phone-window" data-scroll-speed="1.6">
+          <img src="img/mobile-live-full.png" alt="Live screen on mobile" />
+        </div>
+      </div>
+      <div class="phone tilt-r">
+        <div class="phone-window" data-scroll-speed="1.6">
+          <img src="img/mobile-range-full.png" alt="Range / Solar Impact Estimate on mobile" />
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =============== PRIVACY =============== -->
+<section id="privacy" class="privacy">
+  <div class="wrap">
+    <div class="section-eyebrow">Trust · Privacy</div>
+    <h2>Your data, your control, <span class="word-glow">read-only</span> by design.</h2>
+    <p class="lede">
+      Solar Advisor is a window into your data. We correlate and combine it to show you real
+      insights into your system's performance and ROI. Your data is securely stored and gives
+      you full access to edit or delete it whenever you want.
+    </p>
+    <div class="setup-shot">
+      <div class="browser">
+        <div class="browser-bar">
+          <div class="browser-dots"><span></span><span></span><span></span></div>
+          <div class="browser-url"><span class="lock">⏿</span>solartracker.app/settings</div>
+        </div>
+        <div class="browser-body">
+          <img src="img/setup-full.png" alt="Setup overview — Tariffs, Provider, Finance, Location, System and Notifications all in your control." />
+        </div>
+      </div>
+      <p class="setup-caption">
+        Every aspect of your setup, in one place — yours to edit, delete or disconnect at any moment.
+      </p>
+    </div>
+    <div class="privacy-grid">
+      <div class="priv-card">
+        <div class="badge">✓</div>
+        <h4>Edit or delete, anytime</h4>
+        <p>You stay in charge of every byte. One button in your account settings removes your data and every derived insight from our systems — no support ticket needed.</p>
+      </div>
+      <div class="priv-card">
+        <div class="badge">⌫</div>
+        <h4>Never shared, never sold</h4>
+        <p>No ads, no aggregated insight sales, no third-party analytics on your generation data. It's used to power <em>your</em> dashboard — and nothing else.</p>
+      </div>
+      <div class="priv-card">
+        <div class="badge">⌂</div>
+        <h4>Secure infrastructure</h4>
+        <p>Encrypted in transit and at rest. Solar Advisor is a window into your data — we look through it to give you better insights, we don't open it for anyone else.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =============== CTA =============== -->
+<section id="cta" class="final-cta">
+  <div class="wrap">
+    <div class="section-eyebrow">Beta · Invite-only</div>
+    <h2 style="margin-bottom: 22px;">Get real <span class="word-glow">insights</span> into your historical data and <span class="word-glow">return on investment</span>.</h2>
+    <p class="lede">
+      Sign up below to request access to the beta rollout, gain early access,
+      and help shape our vision for your data.
+    </p>
+    <form class="signup-form" onsubmit="event.preventDefault(); this.querySelector('button').textContent='You\\'re on the list ✓'; this.querySelector('button').disabled=true;">
+      <input type="email" placeholder="you@example.com" required />
+      <button type="submit">Request invite</button>
+    </form>
+    <div class="hero-fineprint" style="justify-content: center; margin-top: 18px;">
+      <span>Currently MyEnergi-compatible systems only — more platforms coming soon.</span>
+    </div>
+  </div>
+</section>
+
+<!-- =============== FOOTER =============== -->
+<footer>
+  <div class="wrap footer-inner">
+    <div>© 2026 Solar Advisor.</div>
+    <div class="footer-links">
+      <a href="mailto:hello@solartracker.app">Contact</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // Subtle scroll-linked tilt for screenshot windows + phones.
+  // Each element gets a baseline rotateY (alternating); as it crosses the
+  // viewport center it rotateX'es gently and drifts a few pixels vertically.
+  (function () {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    const targets = [];
+    document.querySelectorAll('.browser').forEach((el, i) => {
+      const reverse = !!el.closest('.feature.reverse');
+      const center  = !!el.closest('.showstopper');
+      const mild    = el.classList.contains('browser-mild');
+      // Magnitude config per kind of window
+      const baseY = center ? 0 : (reverse ? 4 : -4) * (mild ? 0.4 : 1);
+      targets.push({
+        el,
+        baseY,
+        rxAmp: (center ? 7  : 9 ) * (mild ? 0.45 : 1),
+        ryAmp: (center ? 4  : 5 ) * (mild ? 0.45 : 1),
+        tyAmp: (center ? 18 : 28) * (mild ? 0.45 : 1),
+      });
+    });
+    document.querySelectorAll('.phone').forEach((el, i) => {
+      // Phones already have a static rotate from CSS; we override via inline transform.
+      const isLeft = el.classList.contains('tilt-l');
+      targets.push({
+        el,
+        baseY: isLeft ? -9 : 7,
+        rxAmp: 10,
+        ryAmp: 6,
+        tyAmp: 26,
+        isPhone: true,
+        isLeft,
+      });
+    });
+
+    let ticking = false;
+    const clamp = (v, mn, mx) => v < mn ? mn : v > mx ? mx : v;
+
+    // ---- Scroll-shots: image taller than its container, translateY by progress
+    const scrollShots = [];
+    document.querySelectorAll('.scroll-shot, .phone-window').forEach((container) => {
+      const img = container.querySelector('img');
+      if (!img) return;
+      const speed = parseFloat(container.dataset.scrollSpeed) || 1.0;
+      // Where in the section's scroll life to START translating the image.
+      // 0 = container bottom touches viewport bottom; 0.5 = container is
+      // centered vertically; 1 = container top touches viewport top.
+      const startAt = parseFloat(container.dataset.scrollStart);
+      scrollShots.push({
+        container, img, speed,
+        startAt: isNaN(startAt) ? 0 : startAt,
+      });
+    });
+
+    function updateScrollShots() {
+      const vh = window.innerHeight;
+      for (const s of scrollShots) {
+        const r = s.container.getBoundingClientRect();
+        if (r.bottom < -200 || r.top > vh + 200) continue;
+        // Raw progress through (viewport + container) of scroll
+        const total = vh + r.height;
+        const traveled = vh - r.top;
+        let raw = traveled / total;
+        if (raw < 0) raw = 0; else if (raw > 1) raw = 1;
+        // Apply start offset + speed, re-normalised
+        let p = (raw - s.startAt) / ((1 - s.startAt) / s.speed);
+        if (p < 0) p = 0; else if (p > 1) p = 1;
+        const imgH = s.img.offsetHeight;
+        const winH = r.height;
+        const scrollable = imgH - winH;
+        if (scrollable > 0) {
+          const y = -(p * scrollable);
+          s.img.style.setProperty('--scroll-y', y.toFixed(1) + 'px');
+        }
+      }
+    }
+
+    // Reduce tilt amplitude on small screens — perspective-rotated panels can
+    // push outside the viewport on narrow widths, and the effect reads as wobble
+    // rather than depth at phone sizes.
+    const narrow = window.innerWidth < 720;
+    const tiltScale = narrow ? 0.3 : 1;
+
+    function update() {
+      const vh = window.innerHeight;
+      const vc = vh / 2;
+      for (const t of targets) {
+        const r = t.el.getBoundingClientRect();
+        // Skip if far offscreen — saves work
+        if (r.bottom < -300 || r.top > vh + 300) continue;
+        const ec = r.top + r.height / 2;
+        // Normalized distance from viewport center, clamped
+        const p = clamp((vc - ec) / vh, -0.8, 0.8);
+        // Element below center -> p > 0 -> rotateX positive (top edge tips back, bottom toward us)
+        const rx = (p * t.rxAmp * tiltScale).toFixed(2);
+        const ry = (t.baseY * tiltScale + p * t.ryAmp * tiltScale).toFixed(2);
+        const ty = (-p * t.tyAmp * tiltScale).toFixed(2);
+
+        if (t.isPhone) {
+          // Keep the existing slight Y-offset that .tilt-l had (translateY(20px))
+          const baseY = t.isLeft ? 20 : 0;
+          t.el.style.transform =
+            `perspective(900px) translateY(${baseY + parseFloat(ty)}px) rotateX(${rx}deg) rotateY(${ry}deg)`;
+        } else {
+          t.el.style.setProperty('--tx', ty + 'px');
+          t.el.style.setProperty('--rx', rx + 'deg');
+          t.el.style.setProperty('--ry', ry + 'deg');
+        }
+      }
+      updateScrollShots();
+      ticking = false;
+    }
+
+    function onScroll() {
+      if (!ticking) {
+        requestAnimationFrame(update);
+        ticking = true;
+      }
+    }
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    // Re-run when each scroll-shot image loads (offsetHeight is 0 before then).
+    scrollShots.forEach(s => {
+      if (s.img.complete) return;
+      s.img.addEventListener('load', () => requestAnimationFrame(update), { once: true });
+    });
+    // Snappier transition while scrolling, slower spring at rest
+    update();
+  })();
+
+  // Hero sun-arc — auto-play on load and replay each time it scrolls back
+  // into view. (Previously scroll-driven, but detail was lost when users
+  // scrolled past the hero quickly.)
+  (function () {
+    const viz = document.querySelector('.hero-viz');
+    if (!viz) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      viz.classList.add('play');
+      return;
+    }
+    viz.classList.add('play');
+    if (!('IntersectionObserver' in window)) return;
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (e.isIntersecting) {
+          viz.classList.remove('play');
+          // Force reflow so the animation restarts.
+          // eslint-disable-next-line no-unused-expressions
+          viz.offsetWidth;
+          viz.classList.add('play');
+        }
+      }
+    }, { threshold: 0.35 });
+    io.observe(viz);
+  })();
+
+  // "Sunshine" word and any .word-glow span — color fades from cool grey to
+  // warm yellow as each word rises through the viewport.
+  (function () {
+    const words = document.querySelectorAll('.word-sunshine, .word-glow');
+    if (!words.length) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      words.forEach(w => w.style.setProperty('--p', '1'));
+      return;
+    }
+    let ticking = false;
+    function update() {
+      const vh = window.innerHeight;
+      // Anchor: fully grey when the word's TOP is at 85% of viewport,
+      // fully yellow when its TOP is at 55%. (Tighter range so words near
+      // the bottom of the page can still scroll high enough to fully light.)
+      const start = vh * 0.85;
+      const end = vh * 0.55;
+      const range = start - end;
+      // Force-finish words that are visible when the page is fully scrolled —
+      // they can't scroll any higher, so they wouldn't otherwise reach p=1.
+      const maxScroll = Math.max(0,
+        (document.documentElement.scrollHeight || document.body.scrollHeight) - vh);
+      const atBottom = window.scrollY >= maxScroll - 2;
+      words.forEach(w => {
+        const r = w.getBoundingClientRect();
+        let p = (start - r.top) / range;
+        if (p < 0) p = 0; else if (p > 1) p = 1;
+        if (atBottom && r.top < vh && r.bottom > 0 && p < 1) p = 1;
+        w.style.setProperty('--p', p.toFixed(3));
+      });
+      ticking = false;
+    }
+    function onScroll() {
+      if (!ticking) { requestAnimationFrame(update); ticking = true; }
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    update();
+  })();
+
+  // Calendar tabs — manual click + auto-rotate when the section enters view.
+  (function () {
+    const stack = document.querySelector('.cal-stack');
+    const tabs = document.querySelectorAll('.cal-tab');
+    if (!stack || !tabs.length) return;
+    const slides = stack.querySelectorAll('.cal-slide');
+
+    function show(i) {
+      slides.forEach(s => s.classList.toggle('is-active', +s.dataset.i === i));
+      tabs.forEach(t => t.classList.toggle('is-active', +t.dataset.i === i));
+    }
+    tabs.forEach(t => {
+      t.addEventListener('click', () => {
+        show(+t.dataset.i);
+        // Pause auto-rotate once the user takes over.
+        stopAuto();
+      });
+    });
+
+    let autoTimer = null;
+    let userInteracted = false;
+    function stopAuto() {
+      userInteracted = true;
+      if (autoTimer) clearInterval(autoTimer);
+      autoTimer = null;
+    }
+    function startAuto() {
+      if (userInteracted || autoTimer) return;
+      let i = 0;
+      autoTimer = setInterval(() => {
+        i = (i + 1) % slides.length;
+        show(i);
+      }, 2400);
+    }
+
+    if ('IntersectionObserver' in window) {
+      const io = new IntersectionObserver((entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) startAuto();
+          else { if (autoTimer) { clearInterval(autoTimer); autoTimer = null; } }
+        }
+      }, { threshold: 0.4 });
+      io.observe(stack);
+    }
+  })();
+</script>
+
+</body>
+</html>

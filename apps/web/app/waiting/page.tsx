@@ -1,5 +1,6 @@
 import { getSession } from '@/src/auth-helpers';
 import { SignOutButton } from '@/src/components/SignOutButton';
+import { ApprovalStatusCheck } from '@/src/components/ApprovalStatusCheck';
 
 export default async function WaitingPage() {
   const session = await getSession();
@@ -7,6 +8,7 @@ export default async function WaitingPage() {
 
   return (
     <div className="min-h-screen font-sans text-slate-100 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.06),_transparent_30%),linear-gradient(180deg,#050b14_0%,#0b1220_100%)]">
+      <ApprovalStatusCheck />
       <header className="sticky top-0 z-40 border-b border-slate-800 bg-[#101826]">
         <div className="mx-auto flex h-14 max-w-7xl items-center px-4 sm:px-6">
           <span className="text-sm font-semibold text-slate-100">Solar Tracker</span>
