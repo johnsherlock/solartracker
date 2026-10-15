@@ -20,8 +20,9 @@
  */
 
 import { config } from 'dotenv';
+// .env.local wins over .env; explicitly passed variables win over both.
+config({ path: '.env.local' });
 config();
-config({ path: '.env.local', override: true });
 
 import { runRollupCatchUp } from '../jobs/daily-summary';
 

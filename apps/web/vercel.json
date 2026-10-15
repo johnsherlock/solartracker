@@ -1,8 +1,11 @@
 {
+  "regions": [
+    "dub1"
+  ],
   "crons": [
     {
       "path": "/api/internal/jobs/daily-summary",
-      "schedule": "15 0 * * *"
+      "schedule": "0 1 * * *"
     }
   ]
 }

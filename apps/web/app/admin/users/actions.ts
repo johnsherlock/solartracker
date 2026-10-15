@@ -26,10 +26,13 @@ export async function approveUser(userId: string) {
 
   if (!approved) throw new Error('User not found or not awaiting approval');
 
-  // Fire and forget — a delivery failure should not surface as a broken UI action.
-  sendApprovalEmail(approved.email).catch((err) => {
+  // Awaited so the send completes before the serverless function is frozen, but
+  // a delivery failure should not surface as a broken UI action.
+  try {
+    await sendApprovalEmail(approved.email);
+  } catch (err) {
     console.error('[approveUser] approval email failed:', err);
-  });
+  }
 
   revalidatePath('/admin/users');
 }

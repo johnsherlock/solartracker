@@ -48,6 +48,11 @@ Key rule:
 - v1 targets a unified Next.js deployment on Vercel
 - scheduled work should use internal authenticated app-owned job entrypoints
 - the implementation should stay Vercel-friendly, not deeply Vercel-coupled
+- hosted Postgres is Neon, with separate Production and Preview projects
+  (`0011`); hosted databases change only via committed migrations
+  (`npm run db:migrate`)
+- environment variables, setup steps, and the operator runbook live in
+  `docs/deployment.md`
 - local development must still support the same core logic without a cloud-only
   dependency
 

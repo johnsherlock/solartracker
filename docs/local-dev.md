@@ -44,13 +44,21 @@ From `apps/web`, copy the example env file:
 cp .env.example .env
 ```
 
-The default value matches the Docker Compose setup and requires no edits:
+The default `DATABASE_URL` matches the Docker Compose setup:
 
 ```
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/pv_manager
 ```
 
+That is enough to run the app and load the landing page. Sign-in, the admin
+login, provider setup, and email need the other variables. `.env.example`
+explains each one, and [deployment.md](deployment.md) lists per-environment
+values. Put personal values (Google client, MyEnergi credentials) in
+`.env.local`, which wins over `.env`.
+
 > `.env` is loaded by both the Next.js dev server and the Drizzle CLI commands.
+> The `job:*` and `db:create-admin` scripts also read `.env.local`. Variables
+> passed explicitly on the command line win over both files.
 
 ## 3. Install dependencies
 
@@ -76,18 +84,26 @@ Confirm the prompt to apply the schema. This is safe to re-run — it is idempot
 npm run db:seed
 ```
 
-This inserts a single deterministic fixture user with installation, tariff history, and 14 days of daily summaries spanning a tariff-rate change. The seed is idempotent and safe to re-run.
+This inserts a single deterministic, approved fixture user (`dev-fixture@example.com`) with an installation, tariff history, and 14 days of interval readings spanning a tariff-rate change. The seed is idempotent and safe to re-run.
+
+The fixture user's provider connection reads MyEnergi credentials from `MYENERGI_USERNAME` / `MYENERGI_PASSWORD`. Set them in `.env.local` to see live data from a real hub.
+
+If `ADMIN_USERNAME` and `ADMIN_PASSWORD` are set when seeding, an admin login is created too. Otherwise add one with `npm run db:create-admin`; the admin login page is `/solaris`.
 
 Expected output:
 
 ```
-  users: ok
+  fixture user: ok
+  admin user: skipped (ADMIN_USERNAME/ADMIN_PASSWORD not set)
   installations: ok
+  system additions: ok
   provider_connections: ok
   tariff_plans: ok
   tariff_plan_versions: ok
   tariff_fixed_charge_versions: ok
-  daily_summaries: ok (14 rows)
+  tariff_price_periods: ok
+  installation_contracts: ok
+  interval_readings: ok (672 rows across 14 days)
 Seed complete.
 ```
 
@@ -104,7 +120,7 @@ Then run:
 ```sql
 SELECT COUNT(*) FROM users;           -- expect 1
 SELECT COUNT(*) FROM installations;   -- expect 1
-SELECT COUNT(*) FROM daily_summaries; -- expect 14
+SELECT COUNT(*) FROM interval_readings; -- expect 672
 ```
 
 ## 7. Start the app
