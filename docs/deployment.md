@@ -283,6 +283,16 @@ needs to re-enter their MyEnergi details under Settings → Provider.
 3. `RESEND_API_KEY` is set in Production and has sending access
 4. Domain still verified in Resend, and the Cloudflare DNS records are intact
 
+### Domain or certificate
+
+Vercel issues and auto-renews the Let's Encrypt certificate for both hosts. If
+Vercel shows a domain as misconfigured or a certificate error:
+
+- Both Cloudflare records (`A` for the apex, `CNAME` for `www`) still match
+  Vercel → Settings → Domains, and are **DNS only** (grey cloud). Proxied
+  records can break issuance and renewal.
+- There is no `CAA` record, or it allows `letsencrypt.org`.
+
 ### Database
 
 - Neon console → the project → **Monitoring** for connection errors and storage
