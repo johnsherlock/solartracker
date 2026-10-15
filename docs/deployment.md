@@ -86,13 +86,44 @@ without copying it by hand:
 
 ### 2. Vercel project
 
-1. Sign up at vercel.com with **Continue with GitHub** (account `johnsherlock`),
-   Hobby plan.
-2. **Add New → Project →** import `johnsherlock/solartracker`.
-3. **Root Directory:** `apps/web`. Framework preset: Next.js (auto-detected).
-   Production branch: `main`.
-4. Add the environment variables from the table above before the first
+Current setup: team `solar-tracker` (Hobby), project `solartracker`, root
+directory `apps/web`, Next.js preset, Node 22.x, production branch `main`,
+functions in `dub1` (set by `regions` in `apps/web/vercel.json`). GitHub is
+connected through the Vercel GitHub app, with access to
+`johnsherlock/solartracker` only.
+
+First-time creation (already done; for reference):
+
+1. Sign up at vercel.com (Hobby). Install the Vercel GitHub app at
+   https://github.com/apps/vercel with access to `johnsherlock/solartracker`
+   only.
+2. From the repo root:
+   ```bash
+   npx vercel@64.2.0 login
+   npx vercel@64.2.0 project create solartracker --scope solar-tracker
+   npx vercel@64.2.0 project update solartracker --scope solar-tracker \
+     --root-directory apps/web --framework nextjs --node-version 22.x --yes
+   npx vercel@64.2.0 link --yes --project solartracker --scope solar-tracker
+   npx vercel@64.2.0 git connect --yes
+   ```
+3. Add the environment variables from the table above before the first
    deploy, or redeploy after adding them.
+
+**Linking a checkout** — needed once per machine/clone before any
+`vercel env` or `vercel redeploy` command:
+
+```bash
+cd <repo root>            # not apps/web — the link lives at the repo root
+npx vercel@64.2.0 login
+npx vercel@64.2.0 link --yes --project solartracker --scope solar-tracker
+npx vercel@64.2.0 env ls production   # verify: lists the project's variables
+```
+
+`link` creates `.vercel/` and a root `.env.local` holding a short-lived
+`VERCEL_OIDC_TOKEN`; both are git-ignored, and the app never reads the root
+`.env.local`. Run Vercel commands from the repo root. From `apps/web` they fail
+with "Your codebase isn't linked". Don't run `vercel link` there, because it
+would create a second link.
 
 ### 3. Database schema and admin login
 
