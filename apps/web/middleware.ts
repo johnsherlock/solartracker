@@ -74,6 +74,6 @@ export default withAuth(
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|sign-in|privacy|terms|solaris|admin|api/auth|api/internal).*)',
+    '/((?!_next/static|_next/image|favicon.ico|icon.svg|sign-in|privacy|terms|solaris|admin|api/auth|api/internal).*)',
   ],
 };
