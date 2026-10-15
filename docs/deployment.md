@@ -50,6 +50,11 @@ by the `db:seed` and `db:create-admin` scripts run from a laptop.
 
 Store every generated secret in your password manager as you create it.
 
+**Vercel CLI version:** commands here pin `vercel@64.2.0`, because `64.3.1`
+(the `latest` tag as of 2026-10-15) fails to install: its dependency
+`@vercel/build-utils@14.21.2` was never published. Check with
+`npm view vercel dist-tags`, and drop the pin once a newer release installs.
+
 ## First-Time Setup
 
 Do these in order. Steps 1–4 need no code changes.
@@ -141,10 +146,12 @@ consent screen.
      `https://www.solartracker.app/api/auth/callback/google`
    - Save the client secret in your password manager — Google only shows it
      in full once.
-4. Add the client to Vercel's Production environment, then redeploy:
+4. Add the client to Vercel's Production environment, then redeploy. Run
+   these in your own terminal from the repo root (where `.vercel/` links the
+   project), so the secret prompt is interactive and stays out of logs:
    ```bash
-   npx vercel env add GOOGLE_CLIENT_ID production
-   npx vercel env add GOOGLE_CLIENT_SECRET production --sensitive
+   npx vercel@64.2.0 env add GOOGLE_CLIENT_ID production
+   npx vercel@64.2.0 env add GOOGLE_CLIENT_SECRET production --sensitive
    ```
 
 **Two different Google reviews — don't confuse them:**
@@ -185,7 +192,11 @@ guides.
 ### 6. Resend
 
 The domain is already verified (`P-085`). Create an API key with **sending
-access** only and set it as `RESEND_API_KEY` in Production.
+access** only and set it as `RESEND_API_KEY` in Production:
+
+```bash
+npx vercel@64.2.0 env add RESEND_API_KEY production --sensitive
+```
 
 ### 7. First production deploy
 
