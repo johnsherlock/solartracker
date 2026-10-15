@@ -777,6 +777,8 @@ export function LandingPage() {
         <div className="wrap footer-inner">
           <div>© 2026 Solar Tracker.</div>
           <div className="footer-links">
+            <Link href="/privacy">Privacy</Link>
+            <Link href="/terms">Terms</Link>
             <a href="mailto:support@solartracker.app">Contact</a>
           </div>
         </div>

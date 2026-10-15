@@ -77,11 +77,11 @@ export default function SignInPage() {
 
             <p className="mt-6 text-center text-xs leading-relaxed text-slate-600">
               By continuing, you agree to our{' '}
-              <a href="#" className="text-slate-400 underline underline-offset-2 hover:text-slate-200">
+              <a href="/terms" className="text-slate-400 underline underline-offset-2 hover:text-slate-200">
                 Terms of Service
               </a>{' '}
               and{' '}
-              <a href="#" className="text-slate-400 underline underline-offset-2 hover:text-slate-200">
+              <a href="/privacy" className="text-slate-400 underline underline-offset-2 hover:text-slate-200">
                 Privacy Policy
               </a>
               .
