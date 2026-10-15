@@ -62,8 +62,22 @@ Do these in order. Steps 1–4 need no code changes.
    the connection strings into Vercel yourself.
 2. Pick a region close to the Vercel functions region (Vercel → Project →
    Settings → Functions) — European for an Ireland-only beta.
-3. Copy each project's **pooled** connection string (the host contains
-   `-pooler`).
+3. Use each project's **pooled** connection string (the host contains
+   `-pooler`) for the app's `DATABASE_URL` in Vercel. Use the **direct**
+   (non-pooled) string for `db:migrate`, `db:seed`, and `db:create-admin`, as
+   Neon recommends for schema changes.
+
+Current projects (org `org-green-water-44068398`, region `aws-eu-west-2`,
+Postgres 18):
+
+| Project | ID |
+|---|---|
+| `solartracker-production` | `calm-fog-05302673` |
+| `solartracker-preview` | `dry-thunder-71725093` |
+
+With the Neon CLI logged in (`npx neonctl auth`), fetch a connection string
+without copying it by hand:
+`npx neonctl connection-string --project-id <id>` (direct) or add `--pooled`.
 
 ### 2. Vercel project
 
@@ -85,16 +99,19 @@ before writing — check it.
 # Avoid leaving the password in shell history
 read -s "ADMIN_PASSWORD?Admin password: "; export ADMIN_PASSWORD
 
+PROD="$(npx neonctl connection-string --project-id calm-fog-05302673)"
+PREVIEW="$(npx neonctl connection-string --project-id dry-thunder-71725093)"
+
 # Production: schema + admin only. Never run db:seed here.
-DATABASE_URL='<neon production pooled url>' npm run db:migrate
-DATABASE_URL='<neon production pooled url>' ADMIN_USERNAME=<username> npm run db:create-admin
+DATABASE_URL="$PROD" npm run db:migrate
+DATABASE_URL="$PROD" ADMIN_USERNAME=<username> npm run db:create-admin
 
 # Preview: schema + fixture user + admin
-DATABASE_URL='<neon preview pooled url>' npm run db:migrate
-DATABASE_URL='<neon preview pooled url>' npm run db:seed
-DATABASE_URL='<neon preview pooled url>' ADMIN_USERNAME=<username> npm run db:create-admin
+DATABASE_URL="$PREVIEW" npm run db:migrate
+DATABASE_URL="$PREVIEW" npm run db:seed
+DATABASE_URL="$PREVIEW" ADMIN_USERNAME=<username> npm run db:create-admin
 
-unset ADMIN_PASSWORD
+unset ADMIN_PASSWORD PROD PREVIEW
 ```
 
 `db:create-admin` is safe to re-run: an existing username just gets the new

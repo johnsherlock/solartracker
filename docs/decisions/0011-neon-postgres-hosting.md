@@ -34,7 +34,8 @@ Preview deployments, on the Vercel Hobby plan, at little or no cost.
 4. Hosted databases are changed only with committed migrations
    (`npm run db:migrate`), never `db:push`.
 5. The app keeps using the `pg` driver with Drizzle's `node-postgres` adapter.
-   Hosted `DATABASE_URL` values use Neon's pooled connection string.
+   The app's `DATABASE_URL` uses Neon's pooled connection string; migrations
+   and scripts use the direct (non-pooled) string.
 
 ## Consequences
 
