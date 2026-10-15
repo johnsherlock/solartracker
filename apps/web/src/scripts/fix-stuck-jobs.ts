@@ -1,7 +1,4 @@
-import { config } from 'dotenv';
-// .env.local wins over .env; explicitly passed variables win over both.
-config({ path: '.env.local' });
-config();
+import './load-env';
 import { db } from '../db/client';
 import { jobRuns } from '../db/schema';
 import { isNull } from 'drizzle-orm';
