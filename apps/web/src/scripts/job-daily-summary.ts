@@ -23,13 +23,10 @@
  *
  * Environment:
  *   Requires DATABASE_URL and a valid provider credential ref in the DB.
- *   Loads .env automatically via dotenv/config (imported by db/client).
+ *   Loads .env.local, then .env (see ./load-env); explicit variables win.
  */
 
-import { config } from 'dotenv';
-// .env.local wins over .env; explicitly passed variables win over both.
-config({ path: '.env.local' });
-config();
+import './load-env';
 import { runDailySummaryJob, runCatchUp } from '../jobs/daily-summary';
 
 // ---------------------------------------------------------------------------

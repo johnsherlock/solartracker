@@ -19,10 +19,7 @@
  *   npm run job:build-rollups -- --user alice@example.com --from 2023-01-01
  */
 
-import { config } from 'dotenv';
-// .env.local wins over .env; explicitly passed variables win over both.
-config({ path: '.env.local' });
-config();
+import './load-env';
 
 import { runRollupCatchUp } from '../jobs/daily-summary';
 

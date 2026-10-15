@@ -12,10 +12,7 @@
  *   DATABASE_URL='postgres://...' ADMIN_USERNAME=admin ADMIN_PASSWORD=... npm run db:create-admin
  */
 
-import { config } from 'dotenv';
-// No override: explicitly passed environment variables take precedence.
-config({ path: '.env.local' });
-config();
+import './load-env';
 
 import { sql } from 'drizzle-orm';
 import { db, pool } from '../db/client';
