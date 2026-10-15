@@ -119,18 +119,53 @@ password.
 
 ### 4. Google OAuth (Production only)
 
-In Google Cloud Console → APIs & Services:
+In Google Cloud Console → Google Auth Platform (APIs & Services → OAuth
+consent screen in older layouts). The production client lives in the same
+Google Cloud project as the local-development client, so they share one
+consent screen.
 
-1. **Credentials →** the OAuth 2.0 client used for production (create a new
-   *Web application* client if the existing one is only set up for localhost):
-   - Authorized JavaScript origin: `https://www.solartracker.app`
-   - Authorized redirect URI:
+1. **Branding** — required before the app can be published:
+   - App name: `Solar Tracker`; user support email: `support@solartracker.app`
+   - Application home page: `https://www.solartracker.app`
+   - Privacy policy: `https://www.solartracker.app/privacy`
+   - Terms of service: `https://www.solartracker.app/terms`
+   - Authorised domain: `solartracker.app`
+   - App logo: **optional — leave empty** unless you also do brand verification
+     (below). The policy and terms must be live on the same domain first.
+2. **Audience:** publishing status **In production**. In *Testing* mode only
+   listed test users can sign in, and everyone else sees "Access blocked".
+3. **Clients → Create client →** *Web application*, e.g.
+   `Solar Tracker – production` (keep the existing client for localhost):
+   - Authorised JavaScript origin: `https://www.solartracker.app`
+   - Authorised redirect URI:
      `https://www.solartracker.app/api/auth/callback/google`
-2. **OAuth consent screen:** publishing status must be **In production**. In
-   *Testing* mode only listed test users can sign in, and everyone else sees
-   "Access blocked". Basic `email` / `profile` scopes don't need Google
-   verification.
-3. Put the client ID and secret into Vercel's Production environment.
+   - Save the client secret in your password manager — Google only shows it
+     in full once.
+4. Add the client to Vercel's Production environment, then redeploy:
+   ```bash
+   npx vercel env add GOOGLE_CLIENT_ID production
+   npx vercel env add GOOGLE_CLIENT_SECRET production --sensitive
+   ```
+
+**Two different Google reviews — don't confuse them:**
+
+- **Scope verification** is only needed for sensitive or restricted scopes.
+  Solar Tracker only asks for `openid`, `email`, and `profile`, so it isn't
+  required.
+- **Brand verification** is only needed if you add a logo (or Google flags the
+  branding). Until it passes, the logo isn't shown on the consent screen. To
+  add the logo:
+  1. Verify ownership of `solartracker.app` in Google Search Console (a DNS
+     `TXT` record in Cloudflare; don't touch the existing SPF/DKIM records).
+  2. Upload `docs/ui/assets/brand/solartracker-dark-120x120.png` (120×120 PNG)
+     on the Branding page.
+  3. Click **Verify branding**, and once it passes, publish the branding.
+     Usually automatic within minutes; a manual review can take 2–3 business
+     days. Sign-in keeps working throughout, just without the logo.
+
+See Google's [Manage OAuth app branding](https://support.google.com/cloud/answer/15549049)
+and [brand verification](https://developers.google.com/identity/protocols/oauth2/production-readiness/brand-verification)
+guides.
 
 ### 5. Domain
 
@@ -247,6 +282,16 @@ needs to re-enter their MyEnergi details under Settings → Provider.
 2. Resend dashboard → Logs: was the send accepted, bounced, or rejected?
 3. `RESEND_API_KEY` is set in Production and has sending access
 4. Domain still verified in Resend, and the Cloudflare DNS records are intact
+
+### Domain or certificate
+
+Vercel issues and auto-renews the Let's Encrypt certificate for both hosts. If
+Vercel shows a domain as misconfigured or a certificate error:
+
+- Both Cloudflare records (`A` for the apex, `CNAME` for `www`) still match
+  Vercel → Settings → Domains, and are **DNS only** (grey cloud). Proxied
+  records can break issuance and renewal.
+- There is no `CAA` record, or it allows `letsencrypt.org`.
 
 ### Database
 
